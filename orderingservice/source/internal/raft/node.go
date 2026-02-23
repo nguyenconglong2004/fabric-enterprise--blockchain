@@ -15,6 +15,9 @@ import (
 	"raft-order-service/internal/types"
 )
 
+// AutoProposeBlockSize is the fixed number of transactions per auto-proposed block
+const AutoProposeBlockSize = 3
+
 // RaftNode represents a node in the Raft-based order service
 type RaftNode struct {
 	Transport *netpkg.Transport
@@ -40,10 +43,16 @@ type RaftNode struct {
 	OrderLog *types.OrderLog
 
 	// Channels
-	MessageChan      chan types.Message
-	stopChan         chan struct{}
+	MessageChan        chan types.Message
+	stopChan           chan struct{}
 	LeaderClaimAckChan chan types.Message // acks khi node đang claim leader (MsgLeaderClaimAck)
-	BlockAckChan     chan types.Message
+	BlockAckChan       chan types.Message
+
+	// Auto-propose block
+	autoProposeMu        sync.Mutex
+	autoProposeRunning   bool
+	autoProposeStop      chan struct{}
+	blockCommittedNotify chan struct{} // buffered(1): signals each time a block is committed
 }
 
 // NewRaftNode creates a new Raft node
@@ -54,17 +63,18 @@ func NewRaftNode(ctx context.Context, port int) (*RaftNode, error) {
 	}
 
 	node := &RaftNode{
-		Transport:       transport,
-		state:           types.Follower,
-		currentTerm:     0,
-		Membership:    types.NewMembershipView(),
-		joinTime:      time.Now(),
-		lastHeartbeat: time.Now(),
-		OrderLog:         types.NewOrderLog(),
-		MessageChan:      make(chan types.Message, 100),
-		stopChan:         make(chan struct{}),
-		LeaderClaimAckChan: make(chan types.Message, 100),
-		BlockAckChan:     make(chan types.Message, 100),
+		Transport:            transport,
+		state:                types.Follower,
+		currentTerm:          0,
+		Membership:           types.NewMembershipView(),
+		joinTime:             time.Now(),
+		lastHeartbeat:        time.Now(),
+		OrderLog:             types.NewOrderLog(),
+		MessageChan:          make(chan types.Message, 100),
+		stopChan:             make(chan struct{}),
+		LeaderClaimAckChan:   make(chan types.Message, 100),
+		BlockAckChan:         make(chan types.Message, 100),
+		blockCommittedNotify: make(chan struct{}, 1),
 	}
 
 	// Add self to membership

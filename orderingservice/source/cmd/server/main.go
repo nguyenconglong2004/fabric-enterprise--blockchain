@@ -67,12 +67,14 @@ func main() {
 
 	// Interactive menu
 	fmt.Println("\n=== Commands ===")
-	fmt.Println("1. status - Show node status")
-	fmt.Println("2. order <data> - Submit an order")
-	fmt.Println("3. orders - List all orders")
-	fmt.Println("4. propose <index1> [index2] ... - Propose a block with transactions (leader only, e.g., propose 1 3 4)")
-	fmt.Println("5. connect <address> - Connect to another node")
-	fmt.Println("6. quit - Exit")
+	fmt.Println("1. status          - Show node status")
+	fmt.Println("2. order <data>    - Submit an order")
+	fmt.Println("3. orders          - List all orders")
+	fmt.Println("4. propose <i> ... - Propose a block with given transaction indices (leader only)")
+	fmt.Println("5. autoblock start - Start auto-propose (3 tx/block, leader only)")
+	fmt.Println("6. autoblock stop  - Stop auto-propose")
+	fmt.Println("7. connect <addr>  - Connect to another node")
+	fmt.Println("8. quit            - Exit")
 	fmt.Println()
 
 	// Command loop
@@ -147,6 +149,35 @@ func main() {
 				fmt.Printf("Block proposal sent with %d transaction(s)\n", len(indices))
 			}
 
+		case "autoblock":
+			if len(parts) < 2 {
+				fmt.Println("Usage: autoblock start | autoblock stop")
+				continue
+			}
+			sub := strings.ToLower(strings.TrimSpace(parts[1]))
+			switch sub {
+			case "start":
+				if !node.IsLeader() {
+					fmt.Println("Error: only leader can auto-propose blocks")
+					continue
+				}
+				if err := node.StartAutoProposeBlock(raft.AutoProposeBlockSize); err != nil {
+					fmt.Printf("Error: %v\n", err)
+				} else {
+					fmt.Printf("Auto-propose started (%d tx/block). Use 'autoblock stop' to halt.\n",
+						raft.AutoProposeBlockSize)
+				}
+			case "stop":
+				if !node.IsAutoProposeRunning() {
+					fmt.Println("Auto-propose is not running.")
+					continue
+				}
+				node.StopAutoProposeBlock()
+				fmt.Println("Auto-propose stopped.")
+			default:
+				fmt.Println("Usage: autoblock start | autoblock stop")
+			}
+
 		case "connect":
 			if len(parts) < 2 {
 				fmt.Println("Usage: connect <address>")
@@ -160,17 +191,20 @@ func main() {
 			}
 
 		case "quit", "exit":
+			node.StopAutoProposeBlock()
 			fmt.Println("Shutting down...")
 			return
 
 		case "help":
 			fmt.Println("\n=== Commands ===")
-			fmt.Println("1. status - Show node status")
-			fmt.Println("2. order <data> - Submit an order")
-			fmt.Println("3. orders - List all orders")
-			fmt.Println("4. propose <index1> [index2] ... - Propose a block with transactions (leader only, e.g., propose 1 3 4)")
-			fmt.Println("5. connect <address> - Connect to another node")
-			fmt.Println("6. quit - Exit")
+			fmt.Println("1. status          - Show node status")
+			fmt.Println("2. order <data>    - Submit an order")
+			fmt.Println("3. orders          - List all orders")
+			fmt.Println("4. propose <i> ... - Propose a block with given transaction indices (leader only)")
+			fmt.Println("5. autoblock start - Start auto-propose (3 tx/block, leader only)")
+			fmt.Println("6. autoblock stop  - Stop auto-propose")
+			fmt.Println("7. connect <addr>  - Connect to another node")
+			fmt.Println("8. quit            - Exit")
 			fmt.Println()
 
 		default:

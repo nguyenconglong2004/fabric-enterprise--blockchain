@@ -50,6 +50,37 @@ func (ol *OrderLog) FindOrderByID(orderID string) *Order {
 	return nil
 }
 
+// GetPendingOrderIndices returns 1-based indices of up to maxCount pending orders
+func (ol *OrderLog) GetPendingOrderIndices(maxCount int) []int {
+	ol.mu.RLock()
+	defer ol.mu.RUnlock()
+
+	indices := make([]int, 0, maxCount)
+	for i, order := range ol.Orders {
+		if order.Status == "pending" {
+			indices = append(indices, i+1) // 1-based
+			if len(indices) >= maxCount {
+				break
+			}
+		}
+	}
+	return indices
+}
+
+// CountPendingOrders returns the number of pending orders
+func (ol *OrderLog) CountPendingOrders() int {
+	ol.mu.RLock()
+	defer ol.mu.RUnlock()
+
+	count := 0
+	for _, order := range ol.Orders {
+		if order.Status == "pending" {
+			count++
+		}
+	}
+	return count
+}
+
 // UpdateOrderStatus updates the status of an order by ID
 func (ol *OrderLog) UpdateOrderStatus(orderID string, newStatus string) bool {
 	ol.mu.Lock()

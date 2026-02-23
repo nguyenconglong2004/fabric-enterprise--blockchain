@@ -355,6 +355,12 @@ func (rn *RaftNode) commitBlock(block types.Block) {
 
 	log.Printf("[%s] Block %s committed and notified followers",
 		rn.Transport.ID().ShortString(), block.BlockID)
+
+	// Signal auto-propose goroutine (non-blocking)
+	select {
+	case rn.blockCommittedNotify <- struct{}{}:
+	default:
+	}
 }
 
 // HandleBlockProposal handles block proposal from leader
@@ -555,6 +561,115 @@ func (rn *RaftNode) HandleBlockCommit(msg types.Message) {
 
 	log.Printf("[%s] Block %s commit complete: %d/%d orders committed",
 		rn.Transport.ID().ShortString(), commit.BlockID, committedCount, len(commit.OrderIDs))
+}
+
+// StartAutoProposeBlock starts an auto-propose loop on the leader.
+// It continuously groups up to batchSize pending transactions into a block,
+// proposes it, waits for commit confirmation, then processes the next batch
+// until no pending transactions remain. The loop keeps watching for new arrivals.
+func (rn *RaftNode) StartAutoProposeBlock(batchSize int) error {
+	if !rn.IsLeader() {
+		return fmt.Errorf("only leader can auto-propose blocks")
+	}
+
+	rn.autoProposeMu.Lock()
+	if rn.autoProposeRunning {
+		rn.autoProposeMu.Unlock()
+		return fmt.Errorf("auto-propose already running")
+	}
+	rn.autoProposeRunning = true
+	rn.autoProposeStop = make(chan struct{})
+	stopChan := rn.autoProposeStop
+	rn.autoProposeMu.Unlock()
+
+	log.Printf("[%s] Auto-propose started (batch size: %d tx/block)",
+		rn.Transport.ID().ShortString(), batchSize)
+
+	go func() {
+		defer func() {
+			rn.autoProposeMu.Lock()
+			rn.autoProposeRunning = false
+			rn.autoProposeMu.Unlock()
+			log.Printf("[%s] Auto-propose goroutine exited",
+				rn.Transport.ID().ShortString())
+		}()
+
+		for {
+			// Check stop signal
+			select {
+			case <-stopChan:
+				return
+			default:
+			}
+
+			// Stop if no longer leader
+			if !rn.IsLeader() {
+				log.Printf("[%s] Auto-propose: stepped down from leader, stopping",
+					rn.Transport.ID().ShortString())
+				return
+			}
+
+			// Find next batch of pending transactions
+			indices := rn.OrderLog.GetPendingOrderIndices(batchSize)
+			if len(indices) == 0 {
+				// No pending orders — wait briefly then recheck
+				select {
+				case <-stopChan:
+					return
+				case <-time.After(200 * time.Millisecond):
+				}
+				continue
+			}
+
+			log.Printf("[%s] Auto-propose: proposing block with %d tx (indices %v)",
+				rn.Transport.ID().ShortString(), len(indices), indices)
+
+			if err := rn.ProposeBlock(indices); err != nil {
+				log.Printf("[%s] Auto-propose: ProposeBlock error: %v",
+					rn.Transport.ID().ShortString(), err)
+				select {
+				case <-stopChan:
+					return
+				case <-time.After(500 * time.Millisecond):
+				}
+				continue
+			}
+
+			// Wait for the block commit confirmation before proposing the next batch
+			select {
+			case <-stopChan:
+				return
+			case <-rn.blockCommittedNotify:
+				log.Printf("[%s] Auto-propose: block committed, checking next batch",
+					rn.Transport.ID().ShortString())
+			case <-time.After(10 * time.Second):
+				log.Printf("[%s] Auto-propose: timeout waiting for block commit, retrying",
+					rn.Transport.ID().ShortString())
+			}
+		}
+	}()
+
+	return nil
+}
+
+// StopAutoProposeBlock stops the auto-propose loop.
+func (rn *RaftNode) StopAutoProposeBlock() {
+	rn.autoProposeMu.Lock()
+	defer rn.autoProposeMu.Unlock()
+
+	if !rn.autoProposeRunning || rn.autoProposeStop == nil {
+		return
+	}
+	close(rn.autoProposeStop)
+	rn.autoProposeStop = nil // prevent double-close
+	log.Printf("[%s] Auto-propose stop signal sent", rn.Transport.ID().ShortString())
+}
+
+// IsAutoProposeRunning returns true if the auto-propose loop is active.
+func (rn *RaftNode) IsAutoProposeRunning() bool {
+	rn.autoProposeMu.Lock()
+	defer rn.autoProposeMu.Unlock()
+	return rn.autoProposeRunning
 }
 
 // PrintStatus prints the current status of the node
