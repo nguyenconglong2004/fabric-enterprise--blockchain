@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"sync/atomic"
 	"time"
 
 	"github.com/libp2p/go-libp2p/core/network"
@@ -20,6 +21,10 @@ import (
 type OrderClient struct {
 	Transport              *netpkg.Transport
 	MembershipResponseChan chan types.Message
+
+	// AutoMode suppresses per-order print and counts responses silently
+	AutoMode      bool
+	AutoRecvCount int64 // accessed atomically
 }
 
 // NewOrderClient creates a new order client
@@ -66,11 +71,15 @@ func (oc *OrderClient) handleStream(s network.Stream) {
 			return
 		}
 
-		fmt.Printf("\n Order submitted successfully!\n")
-		fmt.Printf("  Order ID: %s\n", order.ID)
-		fmt.Printf("  Data: %s\n", order.Data)
-		fmt.Printf("  Status: %s\n", order.Status)
-		fmt.Printf("  Timestamp: %s\n\n", order.Timestamp.Format("2006-01-02 15:04:05"))
+		if oc.AutoMode {
+			atomic.AddInt64(&oc.AutoRecvCount, 1)
+		} else {
+			fmt.Printf("\n Order submitted successfully!\n")
+			fmt.Printf("  Order ID: %s\n", order.ID)
+			fmt.Printf("  Data: %s\n", order.Data)
+			fmt.Printf("  Status: %s\n", order.Status)
+			fmt.Printf("  Timestamp: %s\n\n", order.Timestamp.Format("2006-01-02 15:04:05"))
+		}
 
 	case types.MsgMembershipResponse:
 		// Store membership response for later use
@@ -231,6 +240,52 @@ func (oc *OrderClient) SubmitOrder(orderData string, allNodes []peer.AddrInfo) (
 
 	// Wait a bit for response
 	time.Sleep(1 * time.Second)
+
+	return orderID, nil
+}
+
+// SubmitOrderFast submits an order without waiting for response (for high-frequency use)
+func (oc *OrderClient) SubmitOrderFast(orderData string, allNodes []peer.AddrInfo) (string, error) {
+	orderID := fmt.Sprintf("order-%d", time.Now().UnixNano())
+
+	order := types.Order{
+		ID:        orderID,
+		Data:      orderData,
+		Timestamp: time.Now(),
+		Status:    "pending",
+	}
+
+	msg := types.Message{
+		Type:      types.MsgOrderRequest,
+		Term:      0,
+		SenderID:  oc.Transport.ID().String(),
+		Data:      order,
+		Timestamp: time.Now(),
+	}
+
+	successCount := 0
+	for _, nodeInfo := range allNodes {
+		if err := oc.Transport.ConnectToAddrInfo(nodeInfo); err != nil {
+			continue
+		}
+
+		s, err := oc.Transport.Host.NewStream(oc.Transport.Ctx, nodeInfo.ID, protocol.ID(netpkg.ProtocolID))
+		if err != nil {
+			continue
+		}
+
+		encoder := json.NewEncoder(s)
+		if err := encoder.Encode(msg); err != nil {
+			s.Close()
+			continue
+		}
+		s.Close()
+		successCount++
+	}
+
+	if successCount == 0 {
+		return "", fmt.Errorf("failed to send order to any node")
+	}
 
 	return orderID, nil
 }
