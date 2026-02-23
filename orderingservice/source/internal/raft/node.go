@@ -33,7 +33,8 @@ type RaftNode struct {
 	joinTime   time.Time
 
 	// Leader detection
-	lastHeartbeat time.Time
+	lastHeartbeat     time.Time
+	lastBlockSentTime time.Time // last time leader broadcast a block message (proposal or commit)
 
 	// Chờ node có priority cao nhất gửi I AM NEW LEADER (dùng cho follower không phải highest)
 	expectedLeaderID     peer.ID

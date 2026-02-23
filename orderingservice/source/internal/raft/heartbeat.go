@@ -35,9 +35,15 @@ func (rn *RaftNode) checkHeartbeat() {
 	expectedDeadline := rn.expectedLeaderDeadline
 	rn.mu.RUnlock()
 
-	// If we're the leader, send heartbeats
+	// If we're the leader, send heartbeat only when no block message was sent recently
 	if state == types.Leader {
-		rn.sendHeartbeat()
+		rn.mu.RLock()
+		lastBlock := rn.lastBlockSentTime
+		rn.mu.RUnlock()
+
+		if time.Since(lastBlock) >= network.HeartbeatInterval {
+			rn.sendHeartbeat()
+		}
 		return
 	}
 	// Đang claim leader thì không gọi selectNewLeader
@@ -77,6 +83,13 @@ func (rn *RaftNode) sendHeartbeat() {
 	}
 
 	rn.BroadcastMessageWithFailureHandler(msg, rn.leaderOnSendFailure)
+}
+
+// updateLastHeartbeat resets the heartbeat timer (called when any leader message acts as heartbeat)
+func (rn *RaftNode) updateLastHeartbeat() {
+	rn.mu.Lock()
+	rn.lastHeartbeat = time.Now()
+	rn.mu.Unlock()
 }
 
 // handleHeartbeat handles heartbeat message

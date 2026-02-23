@@ -242,6 +242,11 @@ func (rn *RaftNode) ProposeBlock(indices []int) error {
 
 	rn.BroadcastMessage(msg)
 
+	// Block proposal acts as heartbeat — suppress explicit heartbeat until next HeartbeatInterval
+	rn.mu.Lock()
+	rn.lastBlockSentTime = time.Now()
+	rn.mu.Unlock()
+
 	// Wait for ACKs from majority
 	go rn.waitForBlockAcks(block)
 
@@ -353,6 +358,11 @@ func (rn *RaftNode) commitBlock(block types.Block) {
 
 	rn.BroadcastMessage(msg)
 
+	// Block commit acts as heartbeat — suppress explicit heartbeat until next HeartbeatInterval
+	rn.mu.Lock()
+	rn.lastBlockSentTime = time.Now()
+	rn.mu.Unlock()
+
 	log.Printf("[%s] Block %s committed and notified followers",
 		rn.Transport.ID().ShortString(), block.BlockID)
 
@@ -409,6 +419,9 @@ func (rn *RaftNode) HandleBlockProposal(msg types.Message) {
 		rn.sendBlockProposalAck(block.BlockID, false, "old term")
 		return
 	}
+
+	// Block proposal from leader counts as heartbeat
+	rn.updateLastHeartbeat()
 
 	// Verify all transactions in the block
 	allValid := true
@@ -537,6 +550,9 @@ func (rn *RaftNode) HandleBlockCommit(msg types.Message) {
 			rn.Transport.ID().ShortString(), msg.Term, currentTerm)
 		return
 	}
+
+	// Block commit from leader counts as heartbeat
+	rn.updateLastHeartbeat()
 
 	log.Printf("[%s] Received block commit notification for block %s with %d order(s)",
 		rn.Transport.ID().ShortString(), commit.BlockID, len(commit.OrderIDs))
