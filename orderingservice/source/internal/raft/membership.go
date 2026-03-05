@@ -186,11 +186,6 @@ func (rn *RaftNode) handleMembershipRequest(msg types.Message) {
 	}
 }
 
-// handleMembershipResponse handles membership view response (for client)
-func (rn *RaftNode) handleMembershipResponse(msg types.Message) {
-	// This is handled by client, not by nodes
-	// Nodes don't need to handle this
-}
 
 // updateMembershipFromData updates membership from received data
 func (rn *RaftNode) updateMembershipFromData(data interface{}) {

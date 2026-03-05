@@ -37,11 +37,18 @@ type RaftNode struct {
 	lastBlockSentTime time.Time // last time leader broadcast a block message (proposal or commit)
 
 	// Chờ node có priority cao nhất gửi I AM NEW LEADER (dùng cho follower không phải highest)
-	expectedLeaderID     peer.ID
+	expectedLeaderID       peer.ID
 	expectedLeaderDeadline time.Time
 
-	// Order log
-	OrderLog *types.OrderLog
+	// Transaction pool (leader only): pending transactions from clients
+	TxPool   []types.Transaction
+	TxPoolMu sync.Mutex
+
+	// Raft log: uncommitted log entries
+	RaftLog *types.RaftLog
+
+	// Ordering block: committed blocks
+	OrderingBlock *types.OrderingBlock
 
 	// Channels
 	MessageChan        chan types.Message
@@ -70,7 +77,9 @@ func NewRaftNode(ctx context.Context, port int) (*RaftNode, error) {
 		Membership:           types.NewMembershipView(),
 		joinTime:             time.Now(),
 		lastHeartbeat:        time.Now(),
-		OrderLog:             types.NewOrderLog(),
+		TxPool:               make([]types.Transaction, 0),
+		RaftLog:              types.NewRaftLog(),
+		OrderingBlock:        types.NewOrderingBlock(),
 		MessageChan:          make(chan types.Message, 100),
 		stopChan:             make(chan struct{}),
 		LeaderClaimAckChan:   make(chan types.Message, 100),

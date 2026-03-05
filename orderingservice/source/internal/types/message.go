@@ -13,8 +13,8 @@ const (
 	MsgMembershipAck
 	MsgMembershipRequest
 	MsgMembershipResponse
-	MsgOrderRequest
-	MsgOrderResponse
+	MsgTxRequest
+	MsgTxResponse
 	MsgBlockProposal
 	MsgBlockProposalAck
 	MsgBlockCommit
@@ -36,10 +36,10 @@ func (mt MessageType) String() string {
 		return "MembershipRequest"
 	case MsgMembershipResponse:
 		return "MembershipResponse"
-	case MsgOrderRequest:
-		return "OrderRequest"
-	case MsgOrderResponse:
-		return "OrderResponse"
+	case MsgTxRequest:
+		return "TxRequest"
+	case MsgTxResponse:
+		return "TxResponse"
 	case MsgBlockProposal:
 		return "BlockProposal"
 	case MsgBlockProposalAck:

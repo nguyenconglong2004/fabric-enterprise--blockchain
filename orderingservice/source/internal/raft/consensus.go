@@ -33,12 +33,10 @@ func (rn *RaftNode) handleMessage(msg types.Message) {
 		rn.handleMembershipAck(msg)
 	case types.MsgMembershipRequest:
 		rn.handleMembershipRequest(msg)
-	case types.MsgMembershipResponse:
-		rn.handleMembershipResponse(msg)
-	case types.MsgOrderRequest:
-		rn.HandleOrderRequest(msg)
-	case types.MsgOrderResponse:
-		rn.HandleOrderResponse(msg)
+	case types.MsgTxRequest:
+		rn.HandleTxRequest(msg)
+	case types.MsgTxResponse:
+		rn.HandleTxResponse(msg)
 	case types.MsgBlockProposal:
 		rn.HandleBlockProposal(msg)
 	case types.MsgBlockProposalAck:

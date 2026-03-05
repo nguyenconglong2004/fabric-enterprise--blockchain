@@ -45,7 +45,7 @@ go mod tidy
 ```
 
 ## Sử dụng
-
+go build -o server.exe ./cmd/server
 ### Chạy node đầu tiên (Bootstrap node)
 
 ```bash

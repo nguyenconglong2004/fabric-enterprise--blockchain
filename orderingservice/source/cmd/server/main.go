@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -12,11 +13,9 @@ import (
 )
 
 func main() {
-	fmt.Println("=== Raft-based Order Service ===")
-	fmt.Println("This service uses priority-based leader succession instead of elections")
+	fmt.Println("=== Raft-based Ordering Service ===")
 	fmt.Println()
 
-	// Get port from user
 	reader := bufio.NewReader(os.Stdin)
 	fmt.Print("Enter port for this node (e.g., 6000): ")
 	portStr, _ := reader.ReadString('\n')
@@ -28,7 +27,6 @@ func main() {
 		port = 6000
 	}
 
-	// Create node
 	ctx := context.Background()
 	node, err := raft.NewRaftNode(ctx, port)
 	if err != nil {
@@ -37,15 +35,13 @@ func main() {
 	}
 	defer node.Stop()
 
-	// Start node
 	node.Start()
 
-	fmt.Printf("\nNode started successfully!\n")
+	fmt.Printf("\nNode started!\n")
 	fmt.Printf("Node ID: %s\n", node.ID().ShortString())
 	fmt.Printf("Address: %s\n", node.GetAddress())
 	fmt.Println()
 
-	// Ask if this is the first node or wants to join existing network
 	fmt.Print("Is this the first node? (y/n): ")
 	response, _ := reader.ReadString('\n')
 	response = strings.TrimSpace(strings.ToLower(response))
@@ -59,25 +55,20 @@ func main() {
 			if err := node.ConnectToPeer(peerAddr); err != nil {
 				fmt.Printf("Error connecting to peer: %v\n", err)
 			} else {
-				// Wait a bit for membership to sync
 				time.Sleep(2 * time.Second)
 			}
 		}
 	}
 
-	// Interactive menu
 	fmt.Println("\n=== Commands ===")
-	fmt.Println("1. status          - Show node status")
-	fmt.Println("2. order <data>    - Submit an order")
-	fmt.Println("3. orders          - List all orders")
-	fmt.Println("4. propose <i> ... - Propose a block with given transaction indices (leader only)")
-	fmt.Println("5. autoblock start - Start auto-propose (3 tx/block, leader only)")
-	fmt.Println("6. autoblock stop  - Stop auto-propose")
-	fmt.Println("7. connect <addr>  - Connect to another node")
-	fmt.Println("8. quit            - Exit")
+	fmt.Println("  status              - Show node status (membership, raft log, ordering blocks)")
+	fmt.Println("  propose [n]         - Propose a block with first n tx from pool (default 3)")
+	fmt.Println("  autoblock start     - Start auto-propose blocks")
+	fmt.Println("  autoblock stop      - Stop auto-propose blocks")
+	fmt.Println("  connect <addr>      - Connect to another node")
+	fmt.Println("  quit                - Exit")
 	fmt.Println()
 
-	// Command loop
 	for {
 		fmt.Print("> ")
 		input, _ := reader.ReadString('\n')
@@ -94,59 +85,24 @@ func main() {
 		case "status":
 			node.PrintStatus()
 
-		case "order":
-			if len(parts) < 2 {
-				fmt.Println("Usage: order <data>")
-				continue
-			}
-			orderData := parts[1]
-			orderID, err := node.SubmitOrder(orderData)
-			if err != nil {
-				fmt.Printf("Error submitting order: %v\n", err)
-			} else {
-				fmt.Printf("Order submitted: %s\n", orderID)
-			}
-
-		case "orders":
-			orders := node.GetOrders()
-			if len(orders) == 0 {
-				fmt.Println("No orders yet")
-			} else {
-				fmt.Printf("Total orders: %d\n", len(orders))
-				for i, order := range orders {
-					fmt.Printf("  %d. %s: %s (status: %s)\n",
-						i+1, order.ID, order.Data, order.Status)
-				}
-			}
-
 		case "propose":
 			if !node.IsLeader() {
-				fmt.Println("Error: Only leader can propose blocks")
+				fmt.Println("Error: only leader can propose blocks")
 				continue
 			}
-			if len(parts) < 2 {
-				fmt.Println("Usage: propose <index1> [index2] ... (e.g., propose 1 3 4)")
-				continue
-			}
-			// Parse indices
-			indicesStr := strings.Fields(parts[1])
-			indices := make([]int, 0, len(indicesStr))
-			for _, idxStr := range indicesStr {
-				var idx int
-				if _, err := fmt.Sscanf(idxStr, "%d", &idx); err != nil {
-					fmt.Printf("Error: Invalid index '%s'. Must be a number\n", idxStr)
+			n := raft.AutoProposeBlockSize
+			if len(parts) >= 2 {
+				v, err := strconv.Atoi(strings.TrimSpace(parts[1]))
+				if err != nil || v < 1 {
+					fmt.Println("Usage: propose [n]  (n = max number of tx, default 3)")
 					continue
 				}
-				indices = append(indices, idx)
+				n = v
 			}
-			if len(indices) == 0 {
-				fmt.Println("Error: No valid indices provided")
-				continue
-			}
-			if err := node.ProposeBlock(indices); err != nil {
-				fmt.Printf("Error proposing block: %v\n", err)
+			if err := node.ProposeBlock(n); err != nil {
+				fmt.Printf("Error: %v\n", err)
 			} else {
-				fmt.Printf("Block proposal sent with %d transaction(s)\n", len(indices))
+				fmt.Printf("Block proposal sent\n")
 			}
 
 		case "autoblock":
@@ -164,8 +120,7 @@ func main() {
 				if err := node.StartAutoProposeBlock(raft.AutoProposeBlockSize); err != nil {
 					fmt.Printf("Error: %v\n", err)
 				} else {
-					fmt.Printf("Auto-propose started (%d tx/block). Use 'autoblock stop' to halt.\n",
-						raft.AutoProposeBlockSize)
+					fmt.Printf("Auto-propose started (%d tx/block).\n", raft.AutoProposeBlockSize)
 				}
 			case "stop":
 				if !node.IsAutoProposeRunning() {
@@ -183,8 +138,7 @@ func main() {
 				fmt.Println("Usage: connect <address>")
 				continue
 			}
-			peerAddr := parts[1]
-			if err := node.ConnectToPeer(peerAddr); err != nil {
+			if err := node.ConnectToPeer(parts[1]); err != nil {
 				fmt.Printf("Error connecting: %v\n", err)
 			} else {
 				fmt.Println("Connected successfully")
@@ -197,14 +151,12 @@ func main() {
 
 		case "help":
 			fmt.Println("\n=== Commands ===")
-			fmt.Println("1. status          - Show node status")
-			fmt.Println("2. order <data>    - Submit an order")
-			fmt.Println("3. orders          - List all orders")
-			fmt.Println("4. propose <i> ... - Propose a block with given transaction indices (leader only)")
-			fmt.Println("5. autoblock start - Start auto-propose (3 tx/block, leader only)")
-			fmt.Println("6. autoblock stop  - Stop auto-propose")
-			fmt.Println("7. connect <addr>  - Connect to another node")
-			fmt.Println("8. quit            - Exit")
+			fmt.Println("  status              - Show node status")
+			fmt.Println("  propose <i> [i...]  - Propose a block with tx at given indices")
+			fmt.Println("  autoblock start     - Start auto-propose blocks")
+			fmt.Println("  autoblock stop      - Stop auto-propose blocks")
+			fmt.Println("  connect <addr>      - Connect to another node")
+			fmt.Println("  quit                - Exit")
 			fmt.Println()
 
 		default:
