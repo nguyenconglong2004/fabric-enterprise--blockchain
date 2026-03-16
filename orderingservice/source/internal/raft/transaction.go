@@ -291,6 +291,7 @@ func (rn *RaftNode) commitBlock(entry types.LogEntry) {
 
 	// Append block to OrderingBlock (log entry is kept in RaftLog)
 	rn.OrderingBlock.AppendBlock(block)
+	rn.DeliverMgr.NotifyNewBlock(block)
 
 	// Remove committed transactions from TxPool
 	committedIDs := make(map[string]bool, len(block.Transactions))
@@ -532,6 +533,7 @@ func (rn *RaftNode) HandleBlockCommit(msg types.Message) {
 
 	// Append block to OrderingBlock (log entry is kept in RaftLog)
 	rn.OrderingBlock.AppendBlock(entry.Block)
+	rn.DeliverMgr.NotifyNewBlock(entry.Block)
 
 	log.Printf("[%s] Committed block %s (log index %d) — ordering blocks: %d",
 		rn.Transport.ID().ShortString(), commit.BlockID, commit.LogIndex, rn.OrderingBlock.GetLastIndex())

@@ -61,6 +61,9 @@ type RaftNode struct {
 	autoProposeRunning   bool
 	autoProposeStop      chan struct{}
 	blockCommittedNotify chan struct{} // buffered(1): signals each time a block is committed
+
+	// Deliver service: fan-out committed blocks to committing peers
+	DeliverMgr *DeliverManager
 }
 
 // NewRaftNode creates a new Raft node
@@ -85,6 +88,7 @@ func NewRaftNode(ctx context.Context, port int) (*RaftNode, error) {
 		LeaderClaimAckChan:   make(chan types.Message, 100),
 		BlockAckChan:         make(chan types.Message, 100),
 		blockCommittedNotify: make(chan struct{}, 1),
+		DeliverMgr:           NewDeliverManager(),
 	}
 
 	// Add self to membership
@@ -101,6 +105,9 @@ func NewRaftNode(ctx context.Context, port int) (*RaftNode, error) {
 // Start begins the node's operation
 func (rn *RaftNode) Start() {
 	log.Printf("[%s] Starting node", rn.Transport.ID().ShortString())
+
+	// Register deliver stream handler
+	rn.Transport.SetDeliverStreamHandler(rn.HandleDeliverStream)
 
 	// Start message processor
 	go rn.processMessages()
