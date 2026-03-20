@@ -12,6 +12,7 @@ import (
 
 	"github.com/libp2p/go-libp2p/core/peer"
 
+	"raft-order-service/internal/types"
 	"raft-order-service/pkg/client"
 )
 
@@ -124,8 +125,13 @@ func main() {
 
 				case <-ticker.C:
 					n := atomic.AddInt64(&txCounter, 1)
-					data := strconv.FormatInt(n, 10)
-					_, sendErr := orderClient.SubmitTransactionFast(data, targetNode)
+					data := map[string]interface{}{
+						"ID":        fmt.Sprintf("tx-auto-%d", n),
+						"asset_id":  fmt.Sprintf("ASSET-%d", n),
+						"new_owner": fmt.Sprintf("Owner-%d", n),
+						"value":     float64(n * 100),
+					}
+					_, sendErr := orderClient.SubmitTransactionFast(types.TransferType, data, targetNode)
 					if sendErr != nil {
 						fmt.Printf("\n[Auto] Error tx#%d: %v\n> ", n, sendErr)
 					} else {
@@ -156,7 +162,16 @@ func main() {
 				continue
 			}
 			txData := strings.Join(parts[1:], " ")
-			txID, err := orderClient.SubmitTransaction(txData, targetNode)
+
+			// Create a simple asset transfer transaction
+			data := map[string]interface{}{
+				"ID":        fmt.Sprintf("tx-manual-%d", time.Now().UnixNano()),
+				"asset_id":  fmt.Sprintf("ASSET-%s", txData),
+				"new_owner": "ManualOwner",
+				"value":     100.0,
+			}
+
+			txID, err := orderClient.SubmitTransaction(types.TransferType, data, targetNode)
 			if err != nil {
 				fmt.Printf("Error submitting transaction: %v\n", err)
 			} else {

@@ -13,52 +13,72 @@ import (
 
 // SubmitTransaction submits a new transaction to the service.
 // If this node is not the leader, it forwards the request to the leader.
-func (rn *RaftNode) SubmitTransaction(txData string) (string, error) {
+func (rn *RaftNode) SubmitTransaction(txType types.TransactionType, txData interface{}) (string, error) {
+	// Create transaction using factory
+	tx := types.TransactionFactory(txType)
+	if tx == nil {
+		return "", fmt.Errorf("unsupported transaction type: %s", txType)
+	}
+
+	// Unmarshal data into transaction
+	dataBytes, err := json.Marshal(txData)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal transaction data: %w", err)
+	}
+	if err := json.Unmarshal(dataBytes, tx); err != nil {
+		return "", fmt.Errorf("failed to unmarshal transaction data: %w", err)
+	}
+
+	// Validate transaction
+	if err := tx.Validate(); err != nil {
+		return "", fmt.Errorf("transaction validation failed: %w", err)
+	}
+
 	if !rn.IsLeader() {
 		leaderID := rn.GetLeaderID()
 		if leaderID == "" {
 			return "", fmt.Errorf("no leader available")
 		}
-		return rn.forwardTxToLeader(txData, leaderID)
+		return rn.forwardTxToLeader(txType, tx, leaderID)
 	}
-	return rn.processTx(txData)
+	return rn.processTx(txType, tx)
 }
 
 // processTx stores a transaction in the TxPool (leader only)
-func (rn *RaftNode) processTx(txData string) (string, error) {
-	txID := fmt.Sprintf("tx-%d", time.Now().UnixNano())
-
-	tx := types.Transaction{
-		ID:        txID,
-		Data:      txData,
-		Timestamp: time.Now(),
+func (rn *RaftNode) processTx(txType types.TransactionType, tx types.Transaction) (string, error) {
+	wrapper := types.TransactionWrapper{
+		Type:        txType,
+		Transaction: tx,
+		ReceivedAt:  time.Now(),
 	}
 
 	rn.TxPoolMu.Lock()
-	rn.TxPool = append(rn.TxPool, tx)
+	rn.TxPool = append(rn.TxPool, wrapper)
+	poolSize := len(rn.TxPool)
 	rn.TxPoolMu.Unlock()
 
-	log.Printf("[%s] Received tx %s (pool size: %d)", rn.Transport.ID().ShortString(), txID, len(rn.TxPool))
+	log.Printf("[%s] Received tx %s (type: %s, pool size: %d)",
+		rn.Transport.ID().ShortString(), tx.GetID(), txType, poolSize)
 
-	return txID, nil
+	return tx.GetID(), nil
 }
 
 // forwardTxToLeader forwards a transaction to the leader
-func (rn *RaftNode) forwardTxToLeader(txData string, leaderID peer.ID) (string, error) {
-	log.Printf("[%s] Forwarding tx to leader %s",
-		rn.Transport.ID().ShortString(), leaderID.ShortString())
+func (rn *RaftNode) forwardTxToLeader(txType types.TransactionType, tx types.Transaction, leaderID peer.ID) (string, error) {
+	log.Printf("[%s] Forwarding tx %s (type: %s) to leader %s",
+		rn.Transport.ID().ShortString(), tx.GetID(), txType, leaderID.ShortString())
 
-	tx := types.Transaction{
-		ID:        fmt.Sprintf("tx-%d", time.Now().UnixNano()),
-		Data:      txData,
-		Timestamp: time.Now(),
+	wrapper := types.TransactionWrapper{
+		Type:        txType,
+		Transaction: tx,
+		ReceivedAt:  time.Now(),
 	}
 
 	msg := types.Message{
 		Type:      types.MsgTxRequest,
 		Term:      rn.currentTerm,
 		SenderID:  rn.Transport.ID().String(),
-		Data:      tx,
+		Data:      wrapper,
 		Timestamp: time.Now(),
 	}
 
@@ -66,7 +86,7 @@ func (rn *RaftNode) forwardTxToLeader(txData string, leaderID peer.ID) (string, 
 		return "", fmt.Errorf("failed to forward to leader: %w", err)
 	}
 
-	return tx.ID, nil
+	return tx.GetID(), nil
 }
 
 // HandleTxRequest handles a transaction request from a client or another node
@@ -77,9 +97,29 @@ func (rn *RaftNode) HandleTxRequest(msg types.Message) {
 		return
 	}
 
-	var tx types.Transaction
-	if err := json.Unmarshal(data, &tx); err != nil {
+	var wrapper types.TransactionWrapper
+	if err := json.Unmarshal(data, &wrapper); err != nil {
+		log.Printf("[%s] Error unmarshaling tx wrapper: %v", rn.Transport.ID().ShortString(), err)
+		return
+	}
+
+	// Recreate transaction using factory
+	tx := types.TransactionFactory(wrapper.Type)
+	if tx == nil {
+		log.Printf("[%s] Unknown transaction type: %s", rn.Transport.ID().ShortString(), wrapper.Type)
+		return
+	}
+
+	// Unmarshal transaction data
+	txData, _ := json.Marshal(wrapper.Transaction)
+	if err := json.Unmarshal(txData, tx); err != nil {
 		log.Printf("[%s] Error unmarshaling tx: %v", rn.Transport.ID().ShortString(), err)
+		return
+	}
+
+	// Validate transaction
+	if err := tx.Validate(); err != nil {
+		log.Printf("[%s] Transaction validation failed: %v", rn.Transport.ID().ShortString(), err)
 		return
 	}
 
@@ -87,29 +127,33 @@ func (rn *RaftNode) HandleTxRequest(msg types.Message) {
 		// Forward to leader if we know who it is
 		leaderID := rn.GetLeaderID()
 		if leaderID == "" {
-			log.Printf("[%s] Received tx %s but no leader known, dropping", rn.Transport.ID().ShortString(), tx.ID)
+			log.Printf("[%s] Received tx %s but no leader known, dropping",
+				rn.Transport.ID().ShortString(), tx.GetID())
 			return
 		}
 		fwdMsg := types.Message{
 			Type:      types.MsgTxRequest,
 			Term:      rn.currentTerm,
 			SenderID:  rn.Transport.ID().String(),
-			Data:      tx,
+			Data:      wrapper,
 			Timestamp: time.Now(),
 		}
 		if err := rn.Transport.SendMessage(leaderID, fwdMsg); err != nil {
-			log.Printf("[%s] Failed to forward tx %s to leader: %v", rn.Transport.ID().ShortString(), tx.ID, err)
+			log.Printf("[%s] Failed to forward tx %s to leader: %v",
+				rn.Transport.ID().ShortString(), tx.GetID(), err)
 		}
 		return
 	}
 
 	// We are the leader — store in TxPool
+	wrapper.ReceivedAt = time.Now()
 	rn.TxPoolMu.Lock()
-	rn.TxPool = append(rn.TxPool, tx)
+	rn.TxPool = append(rn.TxPool, wrapper)
 	poolSize := len(rn.TxPool)
 	rn.TxPoolMu.Unlock()
 
-	log.Printf("[%s] Accepted tx %s from client (pool size: %d)", rn.Transport.ID().ShortString(), tx.ID, poolSize)
+	log.Printf("[%s] Accepted tx %s (type: %s) from client (pool size: %d)",
+		rn.Transport.ID().ShortString(), tx.GetID(), wrapper.Type, poolSize)
 
 	// Send acknowledgment back to sender
 	senderID, err := peer.Decode(msg.SenderID)
@@ -122,7 +166,7 @@ func (rn *RaftNode) HandleTxRequest(msg types.Message) {
 			Type:      types.MsgTxResponse,
 			Term:      currentTerm,
 			SenderID:  rn.Transport.ID().String(),
-			Data:      tx,
+			Data:      wrapper,
 			Timestamp: time.Now(),
 		}
 		if err := rn.Transport.SendMessage(senderID, ackMsg); err != nil {
@@ -138,11 +182,22 @@ func (rn *RaftNode) HandleTxResponse(msg types.Message) {
 	if err != nil {
 		return
 	}
-	var tx types.Transaction
-	if err := json.Unmarshal(data, &tx); err != nil {
+	var wrapper types.TransactionWrapper
+	if err := json.Unmarshal(data, &wrapper); err != nil {
 		return
 	}
-	log.Printf("[%s] Tx response received: %s", rn.Transport.ID().ShortString(), tx.ID)
+
+	tx := types.TransactionFactory(wrapper.Type)
+	if tx == nil {
+		return
+	}
+	txData, _ := json.Marshal(wrapper.Transaction)
+	if err := json.Unmarshal(txData, tx); err != nil {
+		return
+	}
+
+	log.Printf("[%s] Tx response received: %s (type: %s)",
+		rn.Transport.ID().ShortString(), tx.GetID(), wrapper.Type)
 }
 
 // ProposeBlock proposes a block using the first batchSize transactions from the TxPool (leader only)
@@ -160,7 +215,7 @@ func (rn *RaftNode) ProposeBlock(batchSize int) error {
 	if count > len(rn.TxPool) {
 		count = len(rn.TxPool)
 	}
-	blockTxs := make([]types.Transaction, count)
+	blockTxs := make([]types.TransactionWrapper, count)
 	copy(blockTxs, rn.TxPool[:count])
 	rn.TxPoolMu.Unlock()
 
@@ -168,7 +223,7 @@ func (rn *RaftNode) ProposeBlock(batchSize int) error {
 }
 
 // proposeBlockWithTxs creates a log entry and broadcasts it to followers (leader only)
-func (rn *RaftNode) proposeBlockWithTxs(blockTxs []types.Transaction) error {
+func (rn *RaftNode) proposeBlockWithTxs(blockTxs []types.TransactionWrapper) error {
 	rn.mu.RLock()
 	currentTerm := rn.currentTerm
 	rn.mu.RUnlock()
@@ -177,8 +232,6 @@ func (rn *RaftNode) proposeBlockWithTxs(blockTxs []types.Transaction) error {
 		BlockID:      fmt.Sprintf("block-%d", time.Now().UnixNano()),
 		Transactions: blockTxs,
 		Timestamp:    time.Now(),
-		ProposerID:   rn.Transport.ID().String(),
-		Term:         currentTerm,
 	}
 
 	prevLogIndex := rn.RaftLog.GetLastIndex()
@@ -282,6 +335,36 @@ func (rn *RaftNode) waitForBlockAcks(entry types.LogEntry) {
 	}
 }
 
+// ExecuteBlockTransactions executes all transactions in a committed block
+func (rn *RaftNode) ExecuteBlockTransactions(block types.Block) error {
+	for _, wrapper := range block.Transactions {
+		tx := types.TransactionFactory(wrapper.Type)
+		if tx == nil {
+			log.Printf("[%s] Unknown transaction type: %s",
+				rn.Transport.ID().ShortString(), wrapper.Type)
+			continue
+		}
+
+		txBytes, _ := json.Marshal(wrapper.Transaction)
+		if err := json.Unmarshal(txBytes, tx); err != nil {
+			log.Printf("[%s] Failed to unmarshal tx: %v",
+				rn.Transport.ID().ShortString(), err)
+			continue
+		}
+
+		// Execute transaction
+		if err := tx.Execute(); err != nil {
+			log.Printf("[%s] Failed to execute tx %s: %v",
+				rn.Transport.ID().ShortString(), tx.GetID(), err)
+			// Continue with other transactions even if one fails
+		} else {
+			log.Printf("[%s] Successfully executed tx %s (type: %s)",
+				rn.Transport.ID().ShortString(), tx.GetID(), wrapper.Type)
+		}
+	}
+	return nil
+}
+
 // commitBlock commits a block after receiving majority ACKs (leader only)
 func (rn *RaftNode) commitBlock(entry types.LogEntry) {
 	block := entry.Block
@@ -292,16 +375,21 @@ func (rn *RaftNode) commitBlock(entry types.LogEntry) {
 	// Append block to OrderingBlock (log entry is kept in RaftLog)
 	rn.OrderingBlock.AppendBlock(block)
 
+	// Execute transactions in the block
+	rn.ExecuteBlockTransactions(block)
+
 	// Remove committed transactions from TxPool
 	committedIDs := make(map[string]bool, len(block.Transactions))
-	for _, tx := range block.Transactions {
-		committedIDs[tx.ID] = true
+	for _, wrapper := range block.Transactions {
+		if wrapper.Transaction != nil {
+			committedIDs[wrapper.Transaction.GetID()] = true
+		}
 	}
 	rn.TxPoolMu.Lock()
 	remaining := rn.TxPool[:0]
-	for _, tx := range rn.TxPool {
-		if !committedIDs[tx.ID] {
-			remaining = append(remaining, tx)
+	for _, wrapper := range rn.TxPool {
+		if wrapper.Transaction != nil && !committedIDs[wrapper.Transaction.GetID()] {
+			remaining = append(remaining, wrapper)
 		}
 	}
 	rn.TxPool = remaining
@@ -678,8 +766,10 @@ func (rn *RaftNode) PrintStatus() {
 	fmt.Printf("\n=== Tx Pool (pending) ===\n")
 	rn.TxPoolMu.Lock()
 	fmt.Printf("Pending tx: %d\n", len(rn.TxPool))
-	for i, tx := range rn.TxPool {
-		fmt.Printf("  %d. %s: %s\n", i+1, tx.ID, tx.Data)
+	for i, wrapper := range rn.TxPool {
+		if wrapper.Transaction != nil {
+			fmt.Printf("  %d. %s (type: %s)\n", i+1, wrapper.Transaction.GetID(), wrapper.Type)
+		}
 	}
 	rn.TxPoolMu.Unlock()
 
@@ -695,9 +785,11 @@ func (rn *RaftNode) PrintStatus() {
 	blocks := rn.OrderingBlock.GetBlocks()
 	fmt.Printf("Committed blocks: %d\n", len(blocks))
 	for i, b := range blocks {
-		fmt.Printf("  Block #%d: %s (%d tx, term=%d)\n", i+1, b.BlockID, len(b.Transactions), b.Term)
-		for j, tx := range b.Transactions {
-			fmt.Printf("    %d. %s: %s\n", j+1, tx.ID, tx.Data)
+		fmt.Printf("  Block #%d: %s (%d tx)\n", i+1, b.BlockID, len(b.Transactions))
+		for j, wrapper := range b.Transactions {
+			if wrapper.Transaction != nil {
+				fmt.Printf("    %d. %s (type: %s)\n", j+1, wrapper.Transaction.GetID(), wrapper.Type)
+			}
 		}
 	}
 	fmt.Printf("==================\n\n")

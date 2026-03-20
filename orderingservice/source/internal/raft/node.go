@@ -41,7 +41,7 @@ type RaftNode struct {
 	expectedLeaderDeadline time.Time
 
 	// Transaction pool (leader only): pending transactions from clients
-	TxPool   []types.Transaction
+	TxPool   []types.TransactionWrapper
 	TxPoolMu sync.Mutex
 
 	// Raft log: uncommitted log entries
@@ -77,7 +77,7 @@ func NewRaftNode(ctx context.Context, port int) (*RaftNode, error) {
 		Membership:           types.NewMembershipView(),
 		joinTime:             time.Now(),
 		lastHeartbeat:        time.Now(),
-		TxPool:               make([]types.Transaction, 0),
+		TxPool:               make([]types.TransactionWrapper, 0),
 		RaftLog:              types.NewRaftLog(),
 		OrderingBlock:        types.NewOrderingBlock(),
 		MessageChan:          make(chan types.Message, 100),

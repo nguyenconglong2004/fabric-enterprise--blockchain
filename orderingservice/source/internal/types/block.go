@@ -10,16 +10,14 @@ const LogTypeBlockProposing = "BLOCK_PROPOSING"
 // Block represents a committed block containing multiple transactions
 type Block struct {
 	BlockID      string
-	Transactions []Transaction
+	Transactions []TransactionWrapper
 	Timestamp    time.Time
-	ProposerID   string
-	Term         int64
 }
 
 // LogEntry is a Raft log entry (not yet committed)
 type LogEntry struct {
-	Index        int64  // position in the log, starts from 1
-	PrevLogIndex int64  // index of the previous entry (0 if first entry)
+	Index        int64 // position in the log, starts from 1
+	PrevLogIndex int64 // index of the previous entry (0 if first entry)
 	Term         int64
 	Type         string // e.g. LogTypeBlockProposing
 	Block        Block

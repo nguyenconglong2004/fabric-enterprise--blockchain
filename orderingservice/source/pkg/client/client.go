@@ -66,18 +66,18 @@ func (oc *OrderClient) handleStream(s network.Stream) {
 			return
 		}
 
-		var tx types.Transaction
-		if err := json.Unmarshal(data, &tx); err != nil {
+		var wrapper types.TransactionWrapper
+		if err := json.Unmarshal(data, &wrapper); err != nil {
 			return
 		}
 
 		if oc.AutoMode {
 			atomic.AddInt64(&oc.AutoRecvCount, 1)
 		} else {
-			fmt.Printf("\n Transaction submitted successfully!\n")
-			fmt.Printf("  TX ID:     %s\n", tx.ID)
-			fmt.Printf("  Data:      %s\n", tx.Data)
-			fmt.Printf("  Timestamp: %s\n\n", tx.Timestamp.Format("2006-01-02 15:04:05"))
+			fmt.Printf("\n✅ Transaction submitted successfully!\n")
+			fmt.Printf("  TX ID:     %s\n", wrapper.Transaction.GetID())
+			fmt.Printf("  Type:      %s\n", wrapper.Type)
+			fmt.Printf("  Timestamp: %s\n\n", wrapper.ReceivedAt.Format("2006-01-02 15:04:05"))
 		}
 
 	case types.MsgMembershipResponse:
@@ -180,20 +180,38 @@ func (oc *OrderClient) parseMembershipResponse(msg types.Message) ([]peer.AddrIn
 
 // SubmitTransaction sends a transaction to a single node (preferably the leader).
 // The node will forward to the leader if it is not the leader itself.
-func (oc *OrderClient) SubmitTransaction(txData string, node peer.AddrInfo) (string, error) {
-	txID := fmt.Sprintf("tx-%d", time.Now().UnixNano())
+func (oc *OrderClient) SubmitTransaction(txType types.TransactionType, txData interface{}, node peer.AddrInfo) (string, error) {
+	// Create transaction using factory
+	tx := types.TransactionFactory(txType)
+	if tx == nil {
+		return "", fmt.Errorf("unsupported transaction type: %s", txType)
+	}
 
-	tx := types.Transaction{
-		ID:        txID,
-		Data:      txData,
-		Timestamp: time.Now(),
+	// Marshal and unmarshal to populate transaction fields
+	dataBytes, err := json.Marshal(txData)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal transaction data: %w", err)
+	}
+	if err := json.Unmarshal(dataBytes, tx); err != nil {
+		return "", fmt.Errorf("failed to unmarshal transaction data: %w", err)
+	}
+
+	// Validate transaction
+	if err := tx.Validate(); err != nil {
+		return "", fmt.Errorf("transaction validation failed: %w", err)
+	}
+
+	wrapper := types.TransactionWrapper{
+		Type:        txType,
+		Transaction: tx,
+		ReceivedAt:  time.Now(),
 	}
 
 	msg := types.Message{
 		Type:      types.MsgTxRequest,
 		Term:      0,
 		SenderID:  oc.Transport.ID().String(),
-		Data:      tx,
+		Data:      wrapper,
 		Timestamp: time.Now(),
 	}
 
@@ -213,29 +231,42 @@ func (oc *OrderClient) SubmitTransaction(txData string, node peer.AddrInfo) (str
 	}
 	s.Close()
 
-	log.Printf("Tx %s sent to node %s", txID, node.ID.ShortString())
+	log.Printf("Tx %s (type: %s) sent to node %s", tx.GetID(), txType, node.ID.ShortString())
 
 	// Wait briefly for ack
 	time.Sleep(500 * time.Millisecond)
 
-	return txID, nil
+	return tx.GetID(), nil
 }
 
 // SubmitTransactionFast sends a transaction without waiting for a response (for high-frequency use)
-func (oc *OrderClient) SubmitTransactionFast(txData string, node peer.AddrInfo) (string, error) {
-	txID := fmt.Sprintf("tx-%d", time.Now().UnixNano())
+func (oc *OrderClient) SubmitTransactionFast(txType types.TransactionType, txData interface{}, node peer.AddrInfo) (string, error) {
+	// Create transaction using factory
+	tx := types.TransactionFactory(txType)
+	if tx == nil {
+		return "", fmt.Errorf("unsupported transaction type: %s", txType)
+	}
 
-	tx := types.Transaction{
-		ID:        txID,
-		Data:      txData,
-		Timestamp: time.Now(),
+	// Marshal and unmarshal to populate transaction fields
+	dataBytes, err := json.Marshal(txData)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal transaction data: %w", err)
+	}
+	if err := json.Unmarshal(dataBytes, tx); err != nil {
+		return "", fmt.Errorf("failed to unmarshal transaction data: %w", err)
+	}
+
+	wrapper := types.TransactionWrapper{
+		Type:        txType,
+		Transaction: tx,
+		ReceivedAt:  time.Now(),
 	}
 
 	msg := types.Message{
 		Type:      types.MsgTxRequest,
 		Term:      0,
 		SenderID:  oc.Transport.ID().String(),
-		Data:      tx,
+		Data:      wrapper,
 		Timestamp: time.Now(),
 	}
 
@@ -255,7 +286,7 @@ func (oc *OrderClient) SubmitTransactionFast(txData string, node peer.AddrInfo) 
 	}
 	s.Close()
 
-	return txID, nil
+	return tx.GetID(), nil
 }
 
 // Stop stops the client
