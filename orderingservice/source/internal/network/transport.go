@@ -67,6 +67,11 @@ func (t *Transport) SetStreamHandler(handler network.StreamHandler) {
 	t.Host.SetStreamHandler(protocol.ID(ProtocolID), handler)
 }
 
+// SetDeliverStreamHandler sets the handler for deliver streams
+func (t *Transport) SetDeliverStreamHandler(handler network.StreamHandler) {
+	t.Host.SetStreamHandler(protocol.ID(DeliverProtocolID), handler)
+}
+
 // SendMessage sends a message to a peer
 func (t *Transport) SendMessage(peerID peer.ID, msg types.Message) error {
 	s, err := t.Host.NewStream(t.Ctx, peerID, protocol.ID(ProtocolID))

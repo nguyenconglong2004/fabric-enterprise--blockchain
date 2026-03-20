@@ -3,7 +3,9 @@
     "allow": [
       "Bash(go build ./...)",
       "Bash(grep -rn \"\"\"fmt\"\"|\"\"bufio\"\"|\"\"strconv\"\"|\"\"context\"\"\" cmd/server/main.go internal/raft/*.go)",
-      "Bash(grep -n \"expectedLeader\\\\|joinTime\\\\|lastHeartbeat\\\\|lastBlockSentTime\" internal/raft/node.go internal/raft/*.go)"
+      "Bash(grep -n \"expectedLeader\\\\|joinTime\\\\|lastHeartbeat\\\\|lastBlockSentTime\" internal/raft/node.go internal/raft/*.go)",
+      "Bash(go get:*)",
+      "Bash(go build:*)"
     ]
   }
 }

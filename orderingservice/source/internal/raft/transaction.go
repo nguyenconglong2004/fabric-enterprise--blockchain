@@ -3,7 +3,9 @@ package raft
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
+	"os"
 	"time"
 
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -620,6 +622,7 @@ func (rn *RaftNode) HandleBlockCommit(msg types.Message) {
 
 	// Append block to OrderingBlock (log entry is kept in RaftLog)
 	rn.OrderingBlock.AppendBlock(entry.Block)
+	rn.DeliverMgr.NotifyNewBlock(entry.Block)
 
 	log.Printf("[%s] Committed block %s (log index %d) — ordering blocks: %d",
 		rn.Transport.ID().ShortString(), commit.BlockID, commit.LogIndex, rn.OrderingBlock.GetLastIndex())
@@ -729,8 +732,14 @@ func (rn *RaftNode) IsAutoProposeRunning() bool {
 	return rn.autoProposeRunning
 }
 
-// PrintStatus prints the current status of the node
-func (rn *RaftNode) PrintStatus() {
+// PrintStatus prints the current status of the node to the given writer.
+// Pass nil to use os.Stdout.
+func (rn *RaftNode) PrintStatus(w ...io.Writer) {
+	var out io.Writer = os.Stdout
+	if len(w) > 0 && w[0] != nil {
+		out = w[0]
+	}
+
 	rn.mu.RLock()
 	state := rn.state
 	term := rn.currentTerm
@@ -742,16 +751,16 @@ func (rn *RaftNode) PrintStatus() {
 		leaderStr = leaderID.ShortString()
 	}
 
-	fmt.Printf("\n=== Node Status ===\n")
-	fmt.Printf("Node ID: %s\n", rn.Transport.ID().ShortString())
-	fmt.Printf("State:   %s\n", state)
-	fmt.Printf("Term:    %d\n", term)
-	fmt.Printf("Leader:  %s\n", leaderStr)
-	fmt.Printf("Address: %s\n", rn.GetAddress())
+	fmt.Fprintf(out, "\n=== Node Status ===\n")
+	fmt.Fprintf(out, "Node ID: %s\n", rn.Transport.ID().ShortString())
+	fmt.Fprintf(out, "State:   %s\n", state)
+	fmt.Fprintf(out, "Term:    %d\n", term)
+	fmt.Fprintf(out, "Leader:  %s\n", leaderStr)
+	fmt.Fprintf(out, "Address: %s\n", rn.GetAddress())
 
-	fmt.Printf("\n=== Membership ===\n")
+	fmt.Fprintf(out, "\n=== Membership ===\n")
 	members := rn.Membership.GetAliveMembers()
-	fmt.Printf("Alive members: %d\n", len(members))
+	fmt.Fprintf(out, "Alive members: %d\n", len(members))
 	for _, member := range members {
 		tags := ""
 		if member.PeerID == leaderID {
@@ -760,10 +769,10 @@ func (rn *RaftNode) PrintStatus() {
 		if member.PeerID == rn.Transport.ID() {
 			tags += " (SELF)"
 		}
-		fmt.Printf("  - Priority %d: %s%s\n", member.Priority, member.PeerID.ShortString(), tags)
+		fmt.Fprintf(out, "  - Priority %d: %s%s\n", member.Priority, member.PeerID.ShortString(), tags)
 	}
 
-	fmt.Printf("\n=== Tx Pool (pending) ===\n")
+	fmt.Fprintf(out, "\n=== Tx Pool (pending) ===\n")
 	rn.TxPoolMu.Lock()
 	fmt.Printf("Pending tx: %d\n", len(rn.TxPool))
 	for i, wrapper := range rn.TxPool {
@@ -773,17 +782,17 @@ func (rn *RaftNode) PrintStatus() {
 	}
 	rn.TxPoolMu.Unlock()
 
-	fmt.Printf("\n=== Raft Log (uncommitted) ===\n")
+	fmt.Fprintf(out, "\n=== Raft Log (uncommitted) ===\n")
 	entries := rn.RaftLog.GetEntries()
-	fmt.Printf("Uncommitted entries: %d\n", len(entries))
+	fmt.Fprintf(out, "Uncommitted entries: %d\n", len(entries))
 	for _, e := range entries {
-		fmt.Printf("  [%d] term=%d prev=%d block=%s (%d tx)\n",
+		fmt.Fprintf(out, "  [%d] term=%d prev=%d block=%s (%d tx)\n",
 			e.Index, e.Term, e.PrevLogIndex, e.Block.BlockID, len(e.Block.Transactions))
 	}
 
-	fmt.Printf("\n=== Ordering Blocks (committed) ===\n")
+	fmt.Fprintf(out, "\n=== Ordering Blocks (committed) ===\n")
 	blocks := rn.OrderingBlock.GetBlocks()
-	fmt.Printf("Committed blocks: %d\n", len(blocks))
+	fmt.Fprintf(out, "Committed blocks: %d\n", len(blocks))
 	for i, b := range blocks {
 		fmt.Printf("  Block #%d: %s (%d tx)\n", i+1, b.BlockID, len(b.Transactions))
 		for j, wrapper := range b.Transactions {
@@ -792,5 +801,5 @@ func (rn *RaftNode) PrintStatus() {
 			}
 		}
 	}
-	fmt.Printf("==================\n\n")
+	fmt.Fprintf(out, "==================\n\n")
 }

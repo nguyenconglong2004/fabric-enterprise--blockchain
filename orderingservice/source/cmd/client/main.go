@@ -1,31 +1,32 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"fmt"
-	"os"
+	"io"
+	"log"
 	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
 
+	"github.com/chzyer/readline"
 	"github.com/libp2p/go-libp2p/core/peer"
 
 	"raft-order-service/internal/types"
 	"raft-order-service/pkg/client"
 )
 
-func printHelp() {
-	fmt.Println("\n=== Commands ===")
-	fmt.Println("  tx <data>    - Submit a single transaction")
-	fmt.Println("  start [tps]  - Start auto-send (default 1 TPS)")
-	fmt.Println("  stop         - Stop auto-send")
-	fmt.Println("  speed <tps>  - Change TPS in real-time")
-	fmt.Println("  status       - Show auto-send statistics")
-	fmt.Println("  help         - Show this message")
-	fmt.Println("  quit         - Exit")
-	fmt.Println()
+func printHelp(out io.Writer) {
+	fmt.Fprintln(out, "\n=== Commands ===")
+	fmt.Fprintln(out, "  tx <data>    - Submit a single transaction")
+	fmt.Fprintln(out, "  start [tps]  - Start auto-send (default 1 TPS)")
+	fmt.Fprintln(out, "  stop         - Stop auto-send")
+	fmt.Fprintln(out, "  speed <tps>  - Change TPS in real-time")
+	fmt.Fprintln(out, "  status       - Show auto-send statistics")
+	fmt.Fprintln(out, "  help         - Show this message")
+	fmt.Fprintln(out, "  quit         - Exit")
+	fmt.Fprintln(out)
 }
 
 func main() {
@@ -40,43 +41,61 @@ func main() {
 	}
 	defer orderClient.Stop()
 
-	reader := bufio.NewReader(os.Stdin)
+	// Setup readline trước để dùng cho toàn bộ I/O
+	rl, err := readline.NewEx(&readline.Config{
+		Prompt:          "> ",
+		HistoryFile:     "/tmp/raft-client-history.tmp",
+		InterruptPrompt: "^C",
+		EOFPrompt:       "quit",
+	})
+	if err != nil {
+		fmt.Printf("Error creating readline: %v\n", err)
+		return
+	}
+	defer rl.Close()
 
-	fmt.Print("Enter address of a node in the cluster (e.g., /ip4/127.0.0.1/tcp/6000/p2p/...): ")
-	nodeAddr, _ := reader.ReadString('\n')
+	// Redirect log sang readline.Stdout
+	log.SetOutput(rl.Stdout())
+	out := rl.Stdout()
+
+	fmt.Fprint(out, "Enter address of a node in the cluster (e.g., /ip4/127.0.0.1/tcp/6000/p2p/...): ")
+	rl.SetPrompt("")
+	nodeAddr, err := rl.Readline()
+	rl.SetPrompt("> ")
+	if err != nil {
+		return
+	}
 	nodeAddr = strings.TrimSpace(nodeAddr)
 
 	if nodeAddr == "" {
-		fmt.Println("Node address is required")
+		fmt.Fprintln(out, "Node address is required")
 		return
 	}
 
 	if err := orderClient.ConnectToNode(nodeAddr); err != nil {
-		fmt.Printf("Error connecting to node: %v\n", err)
+		fmt.Fprintf(out, "Error connecting to node: %v\n", err)
 		return
 	}
 
 	addr, err := peer.AddrInfoFromString(nodeAddr)
 	if err != nil {
-		fmt.Printf("Error parsing node address: %v\n", err)
+		fmt.Fprintf(out, "Error parsing node address: %v\n", err)
 		return
 	}
 
 	time.Sleep(2 * time.Second)
 
-	// Discover cluster and pick a target node (use first node; it will forward to leader)
-	fmt.Println("Discovering cluster nodes...")
+	fmt.Fprintln(out, "Discovering cluster nodes...")
 	allNodes, err := orderClient.GetClusterNodes(addr.ID)
 	if err != nil {
-		fmt.Printf("Warning: Could not get full cluster list: %v\n", err)
+		fmt.Fprintf(out, "Warning: Could not get full cluster list: %v\n", err)
 		allNodes = []peer.AddrInfo{*addr}
 	}
-	fmt.Printf("Found %d node(s) in cluster\n", len(allNodes))
+	fmt.Fprintf(out, "Found %d node(s) in cluster\n", len(allNodes))
 
-	// Use the first node as target; it will forward to leader if needed
 	targetNode := allNodes[0]
 
-	printHelp()
+	printHelp(out)
 
 	var txCounter int64
 	var sendCount int64
@@ -86,11 +105,11 @@ func main() {
 
 	startAuto := func(tps float64) {
 		if autoRunning {
-			fmt.Println("Auto-send already running.")
+			fmt.Fprintln(out, "Auto-send already running.")
 			return
 		}
 		if tps <= 0 {
-			fmt.Println("TPS must be > 0.")
+			fmt.Fprintln(out, "TPS must be > 0.")
 			return
 		}
 
@@ -99,7 +118,7 @@ func main() {
 		stopChan = make(chan struct{})
 		speedChan = make(chan float64, 1)
 
-		fmt.Printf("Auto-send started at %.2f TPS.\n", tps)
+		fmt.Fprintf(out, "Auto-send started at %.2f TPS.\n", tps)
 
 		go func() {
 			interval := time.Duration(float64(time.Second) / tps)
@@ -116,12 +135,12 @@ func main() {
 
 				case newTPS := <-speedChan:
 					ticker.Reset(time.Duration(float64(time.Second) / newTPS))
-					fmt.Printf("\n[Auto] Speed changed to %.2f TPS\n> ", newTPS)
+					fmt.Fprintf(out, "[Auto] Speed changed to %.2f TPS\n", newTPS)
 
 				case <-statsTicker.C:
 					sent := atomic.LoadInt64(&sendCount)
 					recv := atomic.LoadInt64(&orderClient.AutoRecvCount)
-					fmt.Printf("\n[Auto] Stats: sent=%d  acked=%d\n> ", sent, recv)
+					fmt.Fprintf(out, "[Auto] Stats: sent=%d  acked=%d\n", sent, recv)
 
 				case <-ticker.C:
 					n := atomic.AddInt64(&txCounter, 1)
@@ -133,10 +152,10 @@ func main() {
 					}
 					_, sendErr := orderClient.SubmitTransactionFast(types.TransferType, data, targetNode)
 					if sendErr != nil {
-						fmt.Printf("\n[Auto] Error tx#%d: %v\n> ", n, sendErr)
+						fmt.Fprintf(out, "[Auto] Error tx#%d: %v\n", n, sendErr)
 					} else {
 						atomic.AddInt64(&sendCount, 1)
-						fmt.Printf("\r[Auto] Sent tx#%d (total: %d)", n, atomic.LoadInt64(&sendCount))
+						fmt.Fprintf(out, "[Auto] Sent tx#%d (total: %d)\n", n, atomic.LoadInt64(&sendCount))
 					}
 				}
 			}
@@ -144,8 +163,13 @@ func main() {
 	}
 
 	for {
-		fmt.Print("\n> ")
-		input, _ := reader.ReadString('\n')
+		input, err := rl.Readline()
+		if err != nil {
+			if err == readline.ErrInterrupt || err == io.EOF {
+				break
+			}
+			continue
+		}
 		input = strings.TrimSpace(input)
 
 		if input == "" {
@@ -158,7 +182,7 @@ func main() {
 		switch command {
 		case "tx":
 			if len(parts) < 2 {
-				fmt.Println("Usage: tx <data>")
+				fmt.Fprintln(out, "Usage: tx <data>")
 				continue
 			}
 			txData := strings.Join(parts[1:], " ")
@@ -173,9 +197,9 @@ func main() {
 
 			txID, err := orderClient.SubmitTransaction(types.TransferType, data, targetNode)
 			if err != nil {
-				fmt.Printf("Error submitting transaction: %v\n", err)
+				fmt.Fprintf(out, "Error submitting transaction: %v\n", err)
 			} else {
-				fmt.Printf("Transaction sent: %s\n", txID)
+				fmt.Fprintf(out, "Transaction sent: %s\n", txID)
 			}
 
 		case "start":
@@ -183,7 +207,7 @@ func main() {
 			if len(parts) >= 2 {
 				v, parseErr := strconv.ParseFloat(parts[1], 64)
 				if parseErr != nil || v <= 0 {
-					fmt.Println("Invalid TPS. Usage: start [tps]")
+					fmt.Fprintln(out, "Invalid TPS. Usage: start [tps]")
 					continue
 				}
 				tps = v
@@ -192,28 +216,28 @@ func main() {
 
 		case "stop":
 			if !autoRunning {
-				fmt.Println("Auto-send is not running.")
+				fmt.Fprintln(out, "Auto-send is not running.")
 				continue
 			}
 			close(stopChan)
 			autoRunning = false
 			orderClient.AutoMode = false
-			fmt.Printf("Auto-send stopped. Sent: %d  Acked: %d\n",
+			fmt.Fprintf(out, "Auto-send stopped. Sent: %d  Acked: %d\n",
 				atomic.LoadInt64(&sendCount),
 				atomic.LoadInt64(&orderClient.AutoRecvCount))
 
 		case "speed":
 			if len(parts) < 2 {
-				fmt.Println("Usage: speed <tps>")
+				fmt.Fprintln(out, "Usage: speed <tps>")
 				continue
 			}
 			tps, parseErr := strconv.ParseFloat(parts[1], 64)
 			if parseErr != nil || tps <= 0 {
-				fmt.Println("Invalid TPS value.")
+				fmt.Fprintln(out, "Invalid TPS value.")
 				continue
 			}
 			if !autoRunning {
-				fmt.Println("Auto-send is not running.")
+				fmt.Fprintln(out, "Auto-send is not running.")
 				continue
 			}
 			speedChan <- tps
@@ -223,7 +247,7 @@ func main() {
 			if autoRunning {
 				state = "RUNNING"
 			}
-			fmt.Printf("Auto-send: %s | TX counter: %d | Sent: %d | Acked: %d\n",
+			fmt.Fprintf(out, "Auto-send: %s | TX counter: %d | Sent: %d | Acked: %d\n",
 				state,
 				atomic.LoadInt64(&txCounter),
 				atomic.LoadInt64(&sendCount),
@@ -233,14 +257,14 @@ func main() {
 			if autoRunning {
 				close(stopChan)
 			}
-			fmt.Println("Shutting down...")
+			fmt.Fprintln(out, "Shutting down...")
 			return
 
 		case "help":
-			printHelp()
+			printHelp(out)
 
 		default:
-			fmt.Printf("Unknown command: %s (type 'help')\n", command)
+			fmt.Fprintf(out, "Unknown command: %s (type 'help')\n", command)
 		}
 	}
 }
