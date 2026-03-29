@@ -12,9 +12,6 @@ type AssetAction struct {
 	Action string `json:"action"`
 }
 
-// 1. KHAI BÁO MƯỢN HÀM TỪ CORE NODE
-//
-//go:wasmimport env PutState
 func PutState(keyPtr uint32, keySize uint32, valPtr uint32, valSize uint32) uint32
 
 //export allocate
@@ -35,18 +32,15 @@ func verify_tx(ptr uint32, size uint32) uint32 {
 	if data.Action == "create" {
 		print("=> [WASM] Bắt đầu tạo tài sản ID: ", data.ID, "\n")
 
-		// 2. CHUẨN BỊ KEY VÀ VALUE
 		keyStr := "Asset_" + data.ID
 		keyBytes := []byte(keyStr)
-		valBytes := payloadBytes // Lưu luôn cả cục JSON cho lẹ
+		valBytes := payloadBytes
 
-		// Lấy con trỏ (tọa độ RAM)
 		kPtr := uint32(uintptr(unsafe.Pointer(&keyBytes[0])))
 		kSize := uint32(len(keyBytes))
 		vPtr := uint32(uintptr(unsafe.Pointer(&valBytes[0])))
 		vSize := uint32(len(valBytes))
 
-		// 3. GỌI CORE NODE ĐỂ LƯU
 		result := PutState(kPtr, kSize, vPtr, vSize)
 
 		if result == 1 {
