@@ -283,15 +283,15 @@ func (rn *RaftNode) waitForBlockAcks(entry types.LogEntry) {
 	acks := make(map[peer.ID]bool)
 	acks[rn.Transport.ID()] = true // Count ourselves
 
-	aliveCount := len(rn.Membership.GetAliveMembers())
-	majority := aliveCount/2 + 1
+	totalCount := rn.Membership.GetTotalCount()
+	majority := totalCount/2 + 1
 
 	timeout := time.After(5 * time.Second)
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 
 	log.Printf("[%s] Waiting for block ACKs (need %d/%d)",
-		rn.Transport.ID().ShortString(), majority, aliveCount)
+		rn.Transport.ID().ShortString(), majority, totalCount)
 
 	for {
 		select {

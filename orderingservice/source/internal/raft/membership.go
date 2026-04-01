@@ -20,7 +20,16 @@ func (rn *RaftNode) handleMembershipUpdate(msg types.Message) {
 	// Check if this is a broadcast update from leader (contains full membership view)
 	if dataMap, ok := msg.Data.(map[string]interface{}); ok {
 		if _, hasMembers := dataMap["members"]; hasMembers {
-			// This is a broadcast update from leader - apply it
+			// Only apply if sender's term >= our current term to reject stale broadcasts
+			// from nodes that have already stepped down.
+			rn.mu.RLock()
+			curTerm := rn.currentTerm
+			rn.mu.RUnlock()
+			if msg.Term < curTerm {
+				log.Printf("[%s] Ignoring stale membership broadcast from %s (term %d < current %d)",
+					rn.Transport.ID().ShortString(), msg.SenderID, msg.Term, curTerm)
+				return
+			}
 			log.Printf("[%s] Applying membership update from leader", rn.Transport.ID().ShortString())
 			rn.updateMembershipFromData(msg.Data)
 			return
@@ -54,7 +63,9 @@ func (rn *RaftNode) handleMembershipUpdate(msg types.Message) {
 	}
 
 	rn.Membership.AddMember(peerID, proposal.JoinTime)
-	log.Printf("[%s] Added member %s with priority %d",
+	// Mark alive in case the node was previously marked dead (e.g. stale leader rejoining)
+	rn.Membership.MarkAlive(peerID)
+	log.Printf("[%s] Added/restored member %s with priority %d",
 		rn.Transport.ID().ShortString(),
 		peerID.ShortString(),
 		rn.Membership.Members[peerID].Priority)

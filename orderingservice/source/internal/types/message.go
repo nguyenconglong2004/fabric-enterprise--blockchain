@@ -7,6 +7,7 @@ type MessageType int
 
 const (
 	MsgHeartbeat MessageType = iota
+	MsgHeartbeatResponse
 	MsgIAmNewLeader
 	MsgLeaderClaimAck
 	MsgMembershipUpdate
@@ -24,6 +25,8 @@ func (mt MessageType) String() string {
 	switch mt {
 	case MsgHeartbeat:
 		return "Heartbeat"
+	case MsgHeartbeatResponse:
+		return "HeartbeatResponse"
 	case MsgIAmNewLeader:
 		return "IAmNewLeader"
 	case MsgLeaderClaimAck:
@@ -71,6 +74,15 @@ type IAmNewLeaderClaim struct {
 type LeaderClaimAckData struct {
 	Accept bool // true = YES (agree), false = NO (disagree)
 	Term   int64
+}
+
+// HeartbeatResponse is sent by a follower back to a stale leader.
+// It informs the stale leader of the current term, current leader, and membership state
+// so it can step down and resync without waiting for a new heartbeat.
+type HeartbeatResponse struct {
+	CurrentTerm     int64
+	CurrentLeaderID string
+	MembershipData  map[string]interface{}
 }
 
 // MembershipProposal is sent when a new member wants to join

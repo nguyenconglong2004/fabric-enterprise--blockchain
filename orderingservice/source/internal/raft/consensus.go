@@ -23,6 +23,8 @@ func (rn *RaftNode) handleMessage(msg types.Message) {
 	switch msg.Type {
 	case types.MsgHeartbeat:
 		rn.handleHeartbeat(msg)
+	case types.MsgHeartbeatResponse:
+		rn.handleHeartbeatResponse(msg)
 	case types.MsgIAmNewLeader:
 		rn.handleIAmNewLeader(msg)
 	case types.MsgLeaderClaimAck:

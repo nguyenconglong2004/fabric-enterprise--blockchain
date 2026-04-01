@@ -56,7 +56,7 @@ func (rn *RaftNode) selectNewLeader() {
 		rn.currentTerm++ // term mới khi chuyển sang expected leader
 		rn.currentLeaderID = highestPriority.PeerID
 		rn.expectedLeaderID = highestPriority.PeerID
-		rn.expectedLeaderDeadline = time.Now().Add(network.HeartbeatTimeout)
+		rn.expectedLeaderDeadline = time.Now().Add(3 * network.HeartbeatTimeout)
 		rn.lastHeartbeat = time.Now() // tránh gọi selectNewLeader lại ngay
 		rn.mu.Unlock()
 	}
@@ -87,18 +87,22 @@ func (rn *RaftNode) sendIAmNewLeaderAndWaitForAcks() {
 		Data:      claim,
 		Timestamp: time.Now(),
 	}
-	rn.BroadcastMessage(msg)
+	// Broadcast to ALL members (including those marked dead) so a stale-but-alive
+	// leader that was incorrectly MarkDead'd can still receive and step down.
+	rn.BroadcastToAllMembers(msg)
 
 	go rn.waitForLeaderClaimAcks(newTerm)
 }
 
 // waitForLeaderClaimAcks chờ tối đa HeartbeatTimeout; đếm YES; nếu >= majority thì becomeLeader, không thì về Follower.
+// majority được tính trên tổng số node (alive + dead) để tránh split-brain khi partition:
+// nếu cluster bị chia đôi 2/2, không nhóm nào đủ majority và leader cũ được giữ nguyên.
 func (rn *RaftNode) waitForLeaderClaimAcks(claimTerm int64) {
 	yesCount := 1 // bản thân coi như YES
-	aliveCount := len(rn.Membership.GetAliveMembers())
-	majority := aliveCount/2 + 1
+	totalCount := rn.Membership.GetTotalCount()
+	majority := totalCount/2 + 1
 
-	timeout := time.After(network.HeartbeatTimeout)
+	timeout := time.After(2 * network.HeartbeatTimeout)
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 
@@ -114,8 +118,8 @@ func (rn *RaftNode) waitForLeaderClaimAcks(claimTerm int64) {
 			data, err := rn.parseLeaderClaimAckData(m.Data)
 			if err == nil && data.Accept {
 				yesCount++
-				log.Printf("[%s] Leader claim ack YES from %s (total YES: %d, majority: %d)",
-					rn.Transport.ID().ShortString(), m.SenderID, yesCount, majority)
+				log.Printf("[%s] Leader claim ack YES from %s (total YES: %d/%d, need: %d)",
+					rn.Transport.ID().ShortString(), m.SenderID, yesCount, totalCount, majority)
 			}
 		case <-ticker.C:
 			if yesCount >= majority {
@@ -147,6 +151,7 @@ func (rn *RaftNode) finishClaim(claimTerm int64, yesCount, majority int) {
 
 // handleIAmNewLeader xử lý message I AM NEW LEADER.
 // Trả lời YES nếu công nhận sender là leader mới (đúng là expected leader hoặc đúng là highest priority); NO nếu không.
+// Nếu claimer không phải highest priority nhưng leader hiện tại sắp timeout, chờ đến lúc timeout rồi kiểm tra lại.
 func (rn *RaftNode) handleIAmNewLeader(msg types.Message) {
 	data, err := rn.parseIAmNewLeaderData(msg.Data)
 	if err != nil {
@@ -161,11 +166,10 @@ func (rn *RaftNode) handleIAmNewLeader(msg types.Message) {
 	expectedID := rn.expectedLeaderID
 	rn.mu.RUnlock()
 
-	accept := false
 	if expectedID != "" {
 		// Đang chờ I AM NEW LEADER từ expected leader
-		if claimerID == expectedID {
-			accept = true
+		accept := claimerID == expectedID
+		if accept {
 			rn.mu.Lock()
 			rn.currentLeaderID = claimerID
 			rn.currentTerm = data.NewTerm
@@ -174,26 +178,58 @@ func (rn *RaftNode) handleIAmNewLeader(msg types.Message) {
 			rn.expectedLeaderDeadline = time.Time{}
 			rn.mu.Unlock()
 		}
-	} else {
-		// Không có expected (có thể đang claim hoặc vừa timeout): chỉ YES nếu claimer là highest priority trong view
-		hp := rn.Membership.GetHighestPriorityAliveNode()
-		rn.mu.RLock()
-		curTerm := rn.currentTerm
-		rn.mu.RUnlock()
-		if hp != nil && hp.PeerID == claimerID && data.NewTerm > curTerm {
-			accept = true
-			rn.mu.Lock()
-			rn.currentLeaderID = claimerID
-			rn.currentTerm = data.NewTerm
-			rn.lastHeartbeat = time.Now()
-			rn.mu.Unlock()
-		}
+		rn.sendLeaderClaimAck(claimerID, data.NewTerm, accept)
+		return
 	}
 
-	ackData := types.LeaderClaimAckData{Accept: accept, Term: data.NewTerm}
+	// Không có expected leader: kiểm tra claimer có phải highest priority không.
+	// Nếu không phải, có thể do leader cũ chưa bị timeout ở node này — chờ đến
+	// lúc timeout rồi kiểm tra lại thay vì reject ngay.
+	go rn.evaluateAndAckLeaderClaim(claimerID, data)
+}
+
+// evaluateAndAckLeaderClaim kiểm tra claim sau khi chờ timeout leader cũ nếu cần.
+func (rn *RaftNode) evaluateAndAckLeaderClaim(claimerID peer.ID, data types.IAmNewLeaderClaim) {
+	hp := rn.Membership.GetHighestPriorityAliveNode()
+	rn.mu.RLock()
+	curTerm := rn.currentTerm
+	lastHB := rn.lastHeartbeat
+	rn.mu.RUnlock()
+
+	if hp != nil && hp.PeerID != claimerID {
+		// Claimer không phải highest priority — tính thời gian còn lại đến timeout leader hiện tại
+		timeoutAt := lastHB.Add(network.HeartbeatTimeout)
+		remaining := time.Until(timeoutAt)
+		if remaining > 0 {
+			log.Printf("[%s] Waiting %v for current leader to timeout before evaluating claim from %s",
+				rn.Transport.ID().ShortString(), remaining.Round(time.Millisecond), claimerID.ShortString())
+			time.Sleep(remaining)
+		}
+		// Kiểm tra lại sau khi chờ
+		hp = rn.Membership.GetHighestPriorityAliveNode()
+		rn.mu.RLock()
+		curTerm = rn.currentTerm
+		rn.mu.RUnlock()
+	}
+
+	accept := false
+	if hp != nil && hp.PeerID == claimerID && data.NewTerm >= curTerm {
+		accept = true
+		rn.mu.Lock()
+		rn.currentLeaderID = claimerID
+		rn.currentTerm = data.NewTerm
+		rn.lastHeartbeat = time.Now()
+		rn.mu.Unlock()
+	}
+	rn.sendLeaderClaimAck(claimerID, data.NewTerm, accept)
+}
+
+// sendLeaderClaimAck gửi ACK (YES/NO) tới claimer.
+func (rn *RaftNode) sendLeaderClaimAck(claimerID peer.ID, term int64, accept bool) {
+	ackData := types.LeaderClaimAckData{Accept: accept, Term: term}
 	ackMsg := types.Message{
 		Type:      types.MsgLeaderClaimAck,
-		Term:      data.NewTerm,
+		Term:      term,
 		SenderID:  rn.Transport.ID().String(),
 		Data:      ackData,
 		Timestamp: time.Now(),

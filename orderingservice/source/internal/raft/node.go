@@ -64,6 +64,13 @@ type RaftNode struct {
 
 	// Deliver service: fan-out committed blocks to committing peers
 	DeliverMgr *DeliverManager
+
+	// Heartbeat delay simulation (testing only).
+	// When delayTargetPriorities is non-empty, the next sendHeartbeat() call will sleep
+	// delayDuration before sending to nodes whose priority is in the set (one-shot per call).
+	delayMu              sync.Mutex
+	delayedPriorities    map[int]bool
+	heartbeatPausedUntil time.Time // leader will not send any heartbeat before this time
 }
 
 // NewRaftNode creates a new Raft node
@@ -89,6 +96,7 @@ func NewRaftNode(ctx context.Context, port int) (*RaftNode, error) {
 		BlockAckChan:         make(chan types.Message, 100),
 		blockCommittedNotify: make(chan struct{}, 1),
 		DeliverMgr:           NewDeliverManager(),
+		delayedPriorities:    make(map[int]bool),
 	}
 
 	// Add self to membership
@@ -264,6 +272,12 @@ func (rn *RaftNode) BroadcastMessage(msg types.Message) {
 // BroadcastMessageWithFailureHandler giống BroadcastMessage nhưng gọi onSendFailure(peerID) khi gửi tới peer thất bại
 func (rn *RaftNode) BroadcastMessageWithFailureHandler(msg types.Message, onSendFailure func(peer.ID)) {
 	rn.Transport.BroadcastMessage(msg, rn.Membership.GetAliveMembers(), onSendFailure)
+}
+
+// BroadcastToAllMembers broadcasts a message to ALL known members (alive + dead).
+// Used for MsgIAmNewLeader to reach nodes that may have been incorrectly marked dead.
+func (rn *RaftNode) BroadcastToAllMembers(msg types.Message) {
+	rn.Transport.BroadcastMessage(msg, rn.Membership.GetAllMembers(), nil)
 }
 
 // Stop gracefully stops the node

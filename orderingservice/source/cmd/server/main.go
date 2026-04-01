@@ -86,6 +86,7 @@ func main() {
 	fmt.Fprintln(rl.Stdout(), "  autoblock start     - Start auto-propose blocks")
 	fmt.Fprintln(rl.Stdout(), "  autoblock stop      - Stop auto-propose blocks")
 	fmt.Fprintln(rl.Stdout(), "  connect <addr>      - Connect to another node")
+	fmt.Fprintln(rl.Stdout(), "  delay <seconds> <p1> [p2]...  - Delay heartbeat to nodes with given priorities for X seconds (leader only)")
 	fmt.Fprintln(rl.Stdout(), "  quit                - Exit")
 	fmt.Fprintln(rl.Stdout())
 
@@ -159,6 +160,43 @@ func main() {
 				fmt.Fprintln(out, "Usage: autoblock start | autoblock stop")
 			}
 
+		case "delay":
+			if !node.IsLeader() {
+				fmt.Fprintln(out, "Error: only leader can use delay")
+				continue
+			}
+			if len(parts) < 2 || strings.TrimSpace(parts[1]) == "" {
+				fmt.Fprintln(out, "Usage: delay <seconds> <priority1> [priority2] ...")
+				continue
+			}
+			tokens := strings.Fields(parts[1])
+			if len(tokens) < 2 {
+				fmt.Fprintln(out, "Usage: delay <seconds> <priority1> [priority2] ...")
+				continue
+			}
+			delaySecs, err := strconv.Atoi(tokens[0])
+			if err != nil || delaySecs <= 0 {
+				fmt.Fprintf(out, "Invalid delay seconds: %q (must be a positive integer)\n", tokens[0])
+				continue
+			}
+			priorities := make([]int, 0, len(tokens)-1)
+			parseErr := false
+			for _, tok := range tokens[1:] {
+				p, err := strconv.Atoi(tok)
+				if err != nil || p < 0 {
+					fmt.Fprintf(out, "Invalid priority: %q (must be a non-negative integer)\n", tok)
+					parseErr = true
+					break
+				}
+				priorities = append(priorities, p)
+			}
+			if parseErr {
+				continue
+			}
+			duration := time.Duration(delaySecs) * time.Second
+			node.SetHeartbeatDelay(priorities, duration)
+			fmt.Fprintf(out, "Next heartbeat to priority %v will be delayed by %ds\n", priorities, delaySecs)
+
 		case "connect":
 			if len(parts) < 2 {
 				fmt.Fprintln(out, "Usage: connect <address>")
@@ -182,6 +220,7 @@ func main() {
 			fmt.Fprintln(out, "  autoblock start     - Start auto-propose blocks")
 			fmt.Fprintln(out, "  autoblock stop      - Stop auto-propose blocks")
 			fmt.Fprintln(out, "  connect <addr>      - Connect to another node")
+			fmt.Fprintln(out, "  delay <seconds> <p1> [p2]...  - Delay heartbeat to nodes with given priorities for X seconds (leader only)")
 			fmt.Fprintln(out, "  quit                - Exit")
 			fmt.Fprintln(out)
 

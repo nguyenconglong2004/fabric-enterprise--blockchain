@@ -54,6 +54,16 @@ func (mv *MembershipView) MarkDead(peerID peer.ID) {
 	}
 }
 
+func (mv *MembershipView) MarkAlive(peerID peer.ID) {
+	mv.Mu.Lock()
+	defer mv.Mu.Unlock()
+
+	if member, exists := mv.Members[peerID]; exists {
+		member.IsAlive = true
+		mv.Version++
+	}
+}
+
 func (mv *MembershipView) GetHighestPriorityAliveNode() *MemberInfo {
 	mv.Mu.RLock()
 	defer mv.Mu.RUnlock()
@@ -68,6 +78,27 @@ func (mv *MembershipView) GetHighestPriorityAliveNode() *MemberInfo {
 		}
 	}
 	return highest
+}
+
+// GetTotalCount returns the total number of known members (alive + dead).
+// Used to compute quorum against the full cluster size, not just alive nodes.
+func (mv *MembershipView) GetTotalCount() int {
+	mv.Mu.RLock()
+	defer mv.Mu.RUnlock()
+	return len(mv.Members)
+}
+
+// GetAllMembers returns all known members regardless of alive status.
+// Used when broadcasting to nodes that may have been incorrectly marked dead.
+func (mv *MembershipView) GetAllMembers() []*MemberInfo {
+	mv.Mu.RLock()
+	defer mv.Mu.RUnlock()
+
+	all := make([]*MemberInfo, 0, len(mv.Members))
+	for _, member := range mv.Members {
+		all = append(all, member)
+	}
+	return all
 }
 
 func (mv *MembershipView) GetAliveMembers() []*MemberInfo {
