@@ -8,12 +8,15 @@ import (
 	"net/http"
 
 	"coreservice/internal/core"
+	"coreservice/internal/crypto"
 	"coreservice/internal/vm"
 )
 
 // APIServer bọc lấy WasmEngine để xử lý request
 type APIServer struct {
-	Engine *vm.WasmEngine
+	Engine      *vm.WasmEngine
+	NodePrivKey string
+	NodeID      string
 }
 
 func (s *APIServer) HandleSubmitTx(w http.ResponseWriter, r *http.Request) {
@@ -22,16 +25,16 @@ func (s *APIServer) HandleSubmitTx(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var tx core.Transaction
-	err := json.NewDecoder(r.Body).Decode(&tx)
+	var txProposal core.TransactionProposal
+	err := json.NewDecoder(r.Body).Decode(&txProposal)
 	if err != nil {
 		http.Error(w, "JSON gửi lên sai định dạng", http.StatusBadRequest)
 		return
 	}
 
-	fmt.Printf("\n📥 [API] Nhận được giao dịch: %s gọi contract '%s'\n", tx.TxID, tx.ContractName)
+	fmt.Printf("\n📥 [API] Nhận được giao dịch: %s gọi contract '%s'\n", txProposal.TxID, txProposal.ContractName)
 
-	err = s.Engine.Execute(r.Context(), tx)
+	rwSet, err := s.Engine.Execute(r.Context(), &txProposal)
 
 	w.Header().Set("Content-Type", "application/json")
 
@@ -45,9 +48,10 @@ func (s *APIServer) HandleSubmitTx(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{
+	json.NewEncoder(w).Encode(map[string]interface{}{
 		"status": "success",
-		"tx_id":  tx.TxID,
+		"tx_id":  txProposal.TxID,
+		"rw_set": rwSet,
 	})
 }
 
@@ -69,7 +73,6 @@ func (s *APIServer) HandleDeployContract(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// 3. Lấy file .wasm đính kèm
 	file, _, err := r.FormFile("file")
 	if err != nil {
 		http.Error(w, "Thiếu file đính kèm (field 'file')", http.StatusBadRequest)
@@ -122,4 +125,40 @@ func (s *APIServer) HandleGetState(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	w.Write(val)
+}
+func (s *APIServer) HandleProposeTx(w http.ResponseWriter, r *http.Request) {
+	var proposal core.TransactionProposal
+	json.NewDecoder(r.Body).Decode(&proposal)
+
+	isValid := crypto.Verify(proposal.ClientPubKey, proposal.Payload, proposal.Signature)
+	if !isValid {
+		http.Error(w, "Chữ ký Client không hợp lệ (Giả mạo!)", http.StatusUnauthorized)
+		return
+	}
+	fmt.Printf("✅ [Crypto] Chữ ký của Client hợp lệ!\n")
+
+	// 2. Ném vào lò WASM để CHẠY NHÁP (Simulate) sinh ra RWSet
+	rwSet, err := s.Engine.Execute(r.Context(), &proposal)
+	if err != nil {
+		// ... Trả lỗi 500 (như cũ) ...
+		return
+	}
+
+	rwSetBytes, _ := json.Marshal(rwSet)
+	peerSignature, err := crypto.Sign(s.NodePrivKey, rwSetBytes)
+	if err != nil {
+		http.Error(w, "Lỗi Server: Không thể ký RWSet", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(core.EndorsementResponse{
+		TxID:       proposal.TxID,
+		EndorserID: s.NodeID,
+		RWSet:      rwSet,
+		Status:     200,
+		Message:    "Mô phỏng thành công, trả về RW Set",
+		Signature:  peerSignature, // HÀNG REAL CHUẨN MẬT MÃ!
+	})
 }

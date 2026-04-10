@@ -98,60 +98,79 @@ func (e *WasmEngine) Close() {
 	fmt.Println("🛑 [VM] Đã tắt máy ảo WASM")
 }
 
-func (e *WasmEngine) Execute(ctx context.Context, tx core.Transaction) error {
+func (e *WasmEngine) Execute(ctx context.Context, tx *core.TransactionProposal) (core.RWSet, error) {
+	// Khởi tạo RWSet rỗng cho giao dịch này
+	rwSet := core.RWSet{
+		ReadSet:  make(map[string]string),
+		WriteSet: make(map[string][]byte),
+	}
 
+	// ==========================================
+	// BƯỚC 1 & 2: Khởi tạo và đúc Sandbox
+	// ==========================================
 	compiled, err := e.getOrCompile(ctx, tx.ContractName)
 	if err != nil {
-		return fmt.Errorf("lỗi nạp contract: %w", err)
+		return rwSet, fmt.Errorf("lỗi nạp contract: %w", err)
 	}
 
 	config := wazero.NewModuleConfig().WithStdout(os.Stdout).WithStderr(os.Stderr)
 	sandbox, err := e.runtime.InstantiateModule(ctx, compiled, config)
 	if err != nil {
-		return fmt.Errorf("lỗi tạo sandbox: %w", err)
+		return rwSet, fmt.Errorf("lỗi tạo sandbox: %w", err)
 	}
-
 	defer sandbox.Close(ctx)
 
+	// ==========================================
+	// BƯỚC 3: Truyền Payload vào RAM của Sandbox
+	// ==========================================
 	payloadLen := uint64(len(tx.Payload))
 	var ptr uint64 = 0
 
 	if payloadLen > 0 {
 		allocFunc := sandbox.ExportedFunction("allocate")
 		if allocFunc == nil {
-			return fmt.Errorf("smart contract thiếu hàm bắt buộc: 'allocate'")
+			return rwSet, fmt.Errorf("smart contract thiếu hàm bắt buộc: 'allocate'")
 		}
 
 		results, err := allocFunc.Call(ctx, payloadLen)
 		if err != nil {
-			return fmt.Errorf("lỗi xin cấp phát RAM (allocate): %w", err)
+			return rwSet, fmt.Errorf("lỗi xin cấp phát RAM (allocate): %w", err)
 		}
 
 		ptr = results[0]
 
 		ok := sandbox.Memory().Write(uint32(ptr), tx.Payload)
 		if !ok {
-			return fmt.Errorf("không thể ghi payload vào vùng nhớ %d của sandbox", ptr)
+			return rwSet, fmt.Errorf("không thể ghi payload vào vùng nhớ %d của sandbox", ptr)
 		}
 	}
 
+	// ==========================================
+	// BƯỚC 4: Tiêm RWSet vào Context & Chạy Logic
+	// ==========================================
+	// CHÌA KHÓA NẰM ĐÂY: Tiêm cái túi nháp này vào Context
+	// để Host Function (PutState/GetState) có thể móc ra xài
+	ctx = context.WithValue(ctx, "rw_set", &rwSet)
+
 	targetFunc := sandbox.ExportedFunction(tx.FunctionName)
 	if targetFunc == nil {
-		return fmt.Errorf("smart contract không có hàm: '%s'", tx.FunctionName)
+		return rwSet, fmt.Errorf("smart contract không có hàm: '%s'", tx.FunctionName)
 	}
 
 	results, err := targetFunc.Call(ctx, ptr, payloadLen)
 
 	if err != nil {
-		return fmt.Errorf("lỗi hệ thống WASM (runtime error): %w", err)
+		return rwSet, fmt.Errorf("lỗi hệ thống WASM (runtime error): %w", err)
 	}
 
 	if len(results) > 0 && results[0] == 0 {
-		return fmt.Errorf("bị Smart Contract từ chối (sai logic hoặc không có quyền)")
+		return rwSet, fmt.Errorf("bị Smart Contract từ chối (sai logic hoặc không có quyền)")
 	}
 
-	fmt.Printf("✅ [VM] Giao dịch '%s' đã thực thi thành công!\n", tx.TxID)
-	return nil
+	fmt.Printf("✅ [Simulate] Đã chạy nháp xong '%s' sinh ra RWSet!\n", tx.TxID)
+
+	// Trả về cái RWSet đã được nhồi đầy dữ liệu từ Host Function
+	return rwSet, nil
 }
 func (e *WasmEngine) GetDB() *state.StateDB {
 	return e.db

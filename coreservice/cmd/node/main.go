@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"coreservice/internal/api"
+	"coreservice/internal/crypto"
 	"coreservice/internal/state"
 	"coreservice/internal/vm"
 )
@@ -18,8 +19,15 @@ func main() {
 	engine := vm.NewWasmEngine(db)
 	defer engine.Close()
 
-	apiServer := &api.APIServer{Engine: engine}
+	nodePubKey, nodePrivKey, _ := crypto.GenerateKeyPair()
+	fmt.Printf("🚀 Khởi động Node (Endorser). PubKey: %s\n", nodePubKey[:15]+"...")
 
+	// 2. Truyền Private Key này vào cho APIServer để nó đi ký
+	apiServer := &api.APIServer{
+		Engine:      engine,
+		NodePrivKey: nodePrivKey, // SỬA STRUCT APIServer ĐỂ NHẬN BIẾN NÀY
+		NodeID:      "Org1_Peer0",
+	}
 	http.HandleFunc("/api/tx/deploy", apiServer.HandleDeployContract)
 	http.HandleFunc("/api/tx/submit", apiServer.HandleSubmitTx)
 	http.HandleFunc("/api/state", apiServer.HandleGetState)
