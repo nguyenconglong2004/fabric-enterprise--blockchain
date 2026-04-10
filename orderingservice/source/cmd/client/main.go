@@ -2,6 +2,9 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/binary"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"log"
@@ -29,6 +32,54 @@ func printHelp(out io.Writer) {
 	fmt.Fprintln(out)
 }
 
+// makeDemoTx builds a minimal demo transaction with a deterministic Txid.
+// In production, transactions would be signed by real wallets using Ed25519.
+func makeDemoTx(label string, n int64) types.Transaction {
+	// Build a dummy scriptPubKey representing a P2PKH output
+	spk := types.ScriptPubKey{
+		ASM:       "OP_DUP OP_HASH160 <demo> OP_EQUALVERIFY OP_CHECKSIG",
+		Hex:       "76a914" + fmt.Sprintf("%040x", n) + "88ac",
+		Addresses: []string{fmt.Sprintf("demo-addr-%d", n)},
+	}
+
+	tx := types.Transaction{
+		Version: 1,
+		Vin: []types.VIN{
+			{
+				Txid: fmt.Sprintf("%064x", n),
+				Vout: 0,
+				ScriptSig: types.ScriptSig{
+					ASM: label,
+					Hex: "",
+				},
+			},
+		},
+		Vout: []types.VOUT{
+			{
+				Value:        int64(n * 100),
+				N:            0,
+				ScriptPubKey: spk,
+			},
+		},
+		LockTime: 0,
+	}
+
+	// Compute a deterministic Txid from the label + n
+	raw := make([]byte, 8)
+	binary.LittleEndian.PutUint64(raw, uint64(n))
+	raw = append(raw, []byte(label)...)
+	h1 := sha256.Sum256(raw)
+	h2 := sha256.Sum256(h1[:])
+	// reverse for display (Bitcoin convention)
+	rev := make([]byte, 32)
+	for i := range h2 {
+		rev[i] = h2[31-i]
+	}
+	tx.Txid = hex.EncodeToString(rev)
+
+	return tx
+}
+
 func main() {
 	fmt.Println("=== Raft Ordering Service Client ===")
 	fmt.Println()
@@ -41,7 +92,6 @@ func main() {
 	}
 	defer orderClient.Stop()
 
-	// Setup readline trước để dùng cho toàn bộ I/O
 	rl, err := readline.NewEx(&readline.Config{
 		Prompt:          "> ",
 		HistoryFile:     "/tmp/raft-client-history.tmp",
@@ -54,7 +104,6 @@ func main() {
 	}
 	defer rl.Close()
 
-	// Redirect log sang readline.Stdout
 	log.SetOutput(rl.Stdout())
 	out := rl.Stdout()
 
@@ -144,18 +193,14 @@ func main() {
 
 				case <-ticker.C:
 					n := atomic.AddInt64(&txCounter, 1)
-					data := map[string]interface{}{
-						"ID":        fmt.Sprintf("tx-auto-%d", n),
-						"asset_id":  fmt.Sprintf("ASSET-%d", n),
-						"new_owner": fmt.Sprintf("Owner-%d", n),
-						"value":     float64(n * 100),
-					}
-					_, sendErr := orderClient.SubmitTransactionFast(types.TransferType, data, targetNode)
+					tx := makeDemoTx("auto", n)
+					_, sendErr := orderClient.SubmitTransactionFast(tx, targetNode)
 					if sendErr != nil {
 						fmt.Fprintf(out, "[Auto] Error tx#%d: %v\n", n, sendErr)
 					} else {
 						atomic.AddInt64(&sendCount, 1)
-						fmt.Fprintf(out, "[Auto] Sent tx#%d (total: %d)\n", n, atomic.LoadInt64(&sendCount))
+						fmt.Fprintf(out, "[Auto] Sent tx#%d %s (total: %d)\n",
+							n, tx.Txid[:8], atomic.LoadInt64(&sendCount))
 					}
 				}
 			}
@@ -182,20 +227,14 @@ func main() {
 		switch command {
 		case "tx":
 			if len(parts) < 2 {
-				fmt.Fprintln(out, "Usage: tx <data>")
+				fmt.Fprintln(out, "Usage: tx <label>")
 				continue
 			}
-			txData := strings.Join(parts[1:], " ")
+			label := strings.Join(parts[1:], " ")
+			n := atomic.AddInt64(&txCounter, 1)
+			tx := makeDemoTx(label, n)
 
-			// Create a simple asset transfer transaction
-			data := map[string]interface{}{
-				"ID":        fmt.Sprintf("tx-manual-%d", time.Now().UnixNano()),
-				"asset_id":  fmt.Sprintf("ASSET-%s", txData),
-				"new_owner": "ManualOwner",
-				"value":     100.0,
-			}
-
-			txID, err := orderClient.SubmitTransaction(types.TransferType, data, targetNode)
+			txID, err := orderClient.SubmitTransaction(tx, targetNode)
 			if err != nil {
 				fmt.Fprintf(out, "Error submitting transaction: %v\n", err)
 			} else {

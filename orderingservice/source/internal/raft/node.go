@@ -41,8 +41,12 @@ type RaftNode struct {
 	expectedLeaderDeadline time.Time
 
 	// Transaction pool (leader only): pending transactions from clients
-	TxPool   []types.TransactionWrapper
+	TxPool   []types.Transaction
 	TxPoolMu sync.Mutex
+
+	// lastCommittedHash is the Hash of the most recently committed block,
+	// used as PrevHash when creating new blocks to maintain the hash chain.
+	lastCommittedHash []byte
 
 	// Raft log: uncommitted log entries
 	RaftLog *types.RaftLog
@@ -87,7 +91,7 @@ func NewRaftNode(ctx context.Context, port int) (*RaftNode, error) {
 		Membership:           types.NewMembershipView(),
 		joinTime:             time.Now(),
 		lastHeartbeat:        time.Now(),
-		TxPool:               make([]types.TransactionWrapper, 0),
+		TxPool:               make([]types.Transaction, 0),
 		RaftLog:              types.NewRaftLog(),
 		OrderingBlock:        types.NewOrderingBlock(),
 		MessageChan:          make(chan types.Message, 100),

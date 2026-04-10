@@ -1,134 +1,159 @@
 package types
 
 import (
-	"fmt"
-	"time"
+	"bytes"
+	"crypto/sha256"
+	"encoding/binary"
+	"encoding/hex"
+	"errors"
 )
 
-type TransactionType string
+// Transaction is a Bitcoin-like UTXO transaction.
+type Transaction struct {
+	Version  uint32 `json:"version"`
+	Vin      []VIN  `json:"vin"`
+	Vout     []VOUT `json:"vout"`
+	LockTime uint32 `json:"locktime"`
+	Txid     string `json:"txid"`
+}
 
-const (
-	TransferType TransactionType = "TRANSFER"
-	RegisterType TransactionType = "REGISTER"
-	UpdateType   TransactionType = "UPDATE"
-)
+// VIN is a transaction input referencing a previous output.
+type VIN struct {
+	Txid      string    `json:"txid"`
+	Vout      int       `json:"vout"`
+	ScriptSig ScriptSig `json:"scriptSig"`
+}
 
-func TransactionFactory(tType TransactionType) Transaction {
-	switch tType {
-	case TransferType:
-		return &AssetTransferTransaction{}
-	case RegisterType:
-		return &AssetRegisterTransaction{}
-	case UpdateType:
-		return &AssetUpdateTransaction{}
+// ScriptSig unlocks a previous output.
+type ScriptSig struct {
+	ASM string `json:"asm"`
+	Hex string `json:"hex"`
+}
+
+// VOUT is a transaction output.
+type VOUT struct {
+	Value        int64        `json:"value"`
+	N            int          `json:"n"`
+	ScriptPubKey ScriptPubKey `json:"scriptPubKey"`
+}
+
+// ScriptPubKey locks an output to an address.
+type ScriptPubKey struct {
+	ASM       string   `json:"asm"`
+	Hex       string   `json:"hex"`
+	Addresses []string `json:"addresses"`
+}
+
+// Serialize returns the binary encoding of the transaction (Bitcoin wire format).
+func (tx *Transaction) Serialize() []byte {
+	buf := new(bytes.Buffer)
+
+	binary.Write(buf, binary.LittleEndian, tx.Version)
+
+	writeVarInt(buf, uint64(len(tx.Vin)))
+	for _, vin := range tx.Vin {
+		prevBytes, _ := hexToBytesFixed32(vin.Txid)
+		buf.Write(reverseBytes(prevBytes))
+		binary.Write(buf, binary.LittleEndian, uint32(vin.Vout))
+		script, _ := hex.DecodeString(vin.ScriptSig.Hex)
+		writeVarInt(buf, uint64(len(script)))
+		buf.Write(script)
+		binary.Write(buf, binary.LittleEndian, uint32(0xffffffff))
+	}
+
+	writeVarInt(buf, uint64(len(tx.Vout)))
+	for _, vout := range tx.Vout {
+		binary.Write(buf, binary.LittleEndian, uint64(vout.Value))
+		scriptBytes, _ := hex.DecodeString(vout.ScriptPubKey.Hex)
+		writeVarInt(buf, uint64(len(scriptBytes)))
+		buf.Write(scriptBytes)
+	}
+
+	binary.Write(buf, binary.LittleEndian, tx.LockTime)
+	return buf.Bytes()
+}
+
+// ComputeTxID computes the double-SHA256 of the serialized transaction.
+func (tx *Transaction) ComputeTxID() string {
+	raw := tx.Serialize()
+	h1 := sha256.Sum256(raw)
+	h2 := sha256.Sum256(h1[:])
+	return hex.EncodeToString(reverseBytes(h2[:]))
+}
+
+// Size returns the byte length of the serialized transaction.
+func (tx *Transaction) Size() int {
+	return len(tx.Serialize())
+}
+
+// ShallowCopyEmptySigs returns a copy of the transaction with all ScriptSig fields cleared.
+func (tx *Transaction) ShallowCopyEmptySigs() Transaction {
+	newVin := make([]VIN, len(tx.Vin))
+	for i := range tx.Vin {
+		newVin[i] = VIN{
+			Txid: tx.Vin[i].Txid,
+			Vout: tx.Vin[i].Vout,
+		}
+	}
+	newVout := make([]VOUT, len(tx.Vout))
+	copy(newVout, tx.Vout)
+	return Transaction{
+		Version:  tx.Version,
+		Vin:      newVin,
+		Vout:     newVout,
+		LockTime: tx.LockTime,
+	}
+}
+
+// Validate performs basic sanity checks on the transaction.
+func (tx *Transaction) Validate() error {
+	if tx.Txid == "" {
+		return errors.New("transaction must have a valid txid")
+	}
+	if len(tx.Vin) == 0 {
+		return errors.New("transaction must have at least one input")
+	}
+	if len(tx.Vout) == 0 {
+		return errors.New("transaction must have at least one output")
+	}
+	return nil
+}
+
+// --- internal helpers (not exported) ---
+
+func writeVarInt(buf *bytes.Buffer, n uint64) {
+	switch {
+	case n < 0xfd:
+		buf.WriteByte(byte(n))
+	case n <= 0xffff:
+		buf.WriteByte(0xfd)
+		binary.Write(buf, binary.LittleEndian, uint16(n))
+	case n <= 0xffffffff:
+		buf.WriteByte(0xfe)
+		binary.Write(buf, binary.LittleEndian, uint32(n))
 	default:
-		return nil
+		buf.WriteByte(0xff)
+		binary.Write(buf, binary.LittleEndian, n)
 	}
 }
 
-type Transaction interface {
-	GetID() string
-	Validate() error
-	Execute() error // Logic xử lý thực tế
-}
-
-// Transaction represents a client transaction submitted to the ordering service
-type BaseTransaction struct {
-	ID        string
-	Data      string
-	Timestamp time.Time
-}
-
-type AssetTransferTransaction struct {
-	BaseTransaction
-	AssetID  string  `json:"asset_id"`
-	NewOwner string  `json:"new_owner"`
-	Value    float64 `json:"value"`
-}
-
-func (t *AssetTransferTransaction) GetID() string { return t.ID }
-
-func (t *AssetTransferTransaction) Validate() error {
-	if t.AssetID == "" {
-		return fmt.Errorf("asset id cannot be empty")
+func hexToBytesFixed32(hexStr string) ([]byte, error) {
+	raw, err := hex.DecodeString(hexStr)
+	if err != nil {
+		return nil, err
 	}
-	if t.NewOwner == "" {
-		return fmt.Errorf("new owner cannot be empty")
+	if len(raw) > 32 {
+		return nil, errors.New("hex string too long for 32-byte field")
 	}
-	if t.Value <= 0 {
-		return fmt.Errorf("value must be positive")
+	padded := make([]byte, 32)
+	copy(padded[32-len(raw):], raw)
+	return padded, nil
+}
+
+func reverseBytes(b []byte) []byte {
+	out := make([]byte, len(b))
+	for i := range b {
+		out[i] = b[len(b)-1-i]
 	}
-	return nil
-}
-
-func (t *AssetTransferTransaction) Execute() error {
-	// Logic xử lý thực tế cho giao dịch chuyển nhượng tài sản
-	fmt.Printf("Executing AssetTransfer: Asset %s transferred to %s with value %.2f\n",
-		t.AssetID, t.NewOwner, t.Value)
-	return nil
-}
-
-// AssetRegisterTransaction represents a transaction to register a new asset
-type AssetRegisterTransaction struct {
-	BaseTransaction
-	AssetID    string                 `json:"asset_id"`
-	Owner      string                 `json:"owner"`
-	AssetType  string                 `json:"asset_type"`
-	Properties map[string]interface{} `json:"properties"`
-}
-
-func (t *AssetRegisterTransaction) GetID() string { return t.ID }
-
-func (t *AssetRegisterTransaction) Validate() error {
-	if t.AssetID == "" {
-		return fmt.Errorf("asset id cannot be empty")
-	}
-	if t.Owner == "" {
-		return fmt.Errorf("owner cannot be empty")
-	}
-	if t.AssetType == "" {
-		return fmt.Errorf("asset type cannot be empty")
-	}
-	return nil
-}
-
-func (t *AssetRegisterTransaction) Execute() error {
-	// Logic xử lý thực tế cho giao dịch đăng ký tài sản
-	fmt.Printf("Executing AssetRegister: Registering asset %s (type: %s) for owner %s\n",
-		t.AssetID, t.AssetType, t.Owner)
-	return nil
-}
-
-// AssetUpdateTransaction represents a transaction to update asset properties
-type AssetUpdateTransaction struct {
-	BaseTransaction
-	AssetID       string                 `json:"asset_id"`
-	UpdatedFields map[string]interface{} `json:"updated_fields"`
-	Reason        string                 `json:"reason"`
-}
-
-func (t *AssetUpdateTransaction) GetID() string { return t.ID }
-
-func (t *AssetUpdateTransaction) Validate() error {
-	if t.AssetID == "" {
-		return fmt.Errorf("asset id cannot be empty")
-	}
-	if len(t.UpdatedFields) == 0 {
-		return fmt.Errorf("no fields to update")
-	}
-	return nil
-}
-
-func (t *AssetUpdateTransaction) Execute() error {
-	// Logic xử lý thực tế cho giao dịch cập nhật tài sản
-	fmt.Printf("Executing AssetUpdate: Updating asset %s with %d fields (reason: %s)\n",
-		t.AssetID, len(t.UpdatedFields), t.Reason)
-	return nil
-}
-
-// TransactionWrapper wraps transaction interface for storage and serialization
-type TransactionWrapper struct {
-	Type        TransactionType `json:"type"`
-	Transaction Transaction     `json:"transaction"`
-	ReceivedAt  time.Time       `json:"received_at"`
+	return out
 }
