@@ -126,26 +126,39 @@ func (s *APIServer) HandleGetState(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	w.Write(val)
 }
+
 func (s *APIServer) HandleProposeTx(w http.ResponseWriter, r *http.Request) {
 	var proposal core.TransactionProposal
-	json.NewDecoder(r.Body).Decode(&proposal)
 
+	// 1. Thêm log và bắt lỗi ngay lúc hứng JSON
+	if err := json.NewDecoder(r.Body).Decode(&proposal); err != nil {
+		fmt.Printf("❌ [API] Lỗi parse JSON Proposal: %v\n", err)
+		http.Error(w, "JSON sai định dạng", http.StatusBadRequest)
+		return
+	}
+
+	// 2. Thêm log cảnh báo khi có kẻ giả mạo chữ ký
 	isValid := crypto.Verify(proposal.ClientPubKey, proposal.Payload, proposal.Signature)
 	if !isValid {
+		fmt.Printf("❌ [Crypto] Chữ ký Client KHÔNG hợp lệ (Nghi vấn giả mạo)! TxID: %s\n", proposal.TxID)
 		http.Error(w, "Chữ ký Client không hợp lệ (Giả mạo!)", http.StatusUnauthorized)
 		return
 	}
-	fmt.Printf("✅ [Crypto] Chữ ký của Client hợp lệ!\n")
+	fmt.Printf("✅ [Crypto] Chữ ký của Client hợp lệ! TxID: %s\n", proposal.TxID)
 
+	// 3. Thêm log chi tiết khi WASM chạy nháp thất bại (Rất quan trọng để biết vì sao văng lỗi)
 	rwSet, err := s.Engine.Execute(r.Context(), &proposal)
 	if err != nil {
+		fmt.Printf("❌ [Simulate] Lỗi thực thi WASM cho TxID '%s': %v\n", proposal.TxID, err)
 		http.Error(w, fmt.Sprintf("Lỗi khi chạy nháp: %v", err), http.StatusInternalServerError)
 		return
 	}
 
+	// 4. Thêm log khi Node bị lỗi không tự ký được
 	rwSetBytes, _ := json.Marshal(rwSet)
 	peerSignature, err := crypto.Sign(s.NodePrivKey, rwSetBytes)
 	if err != nil {
+		fmt.Printf("❌ [Crypto] Node không thể ký RWSet cho TxID '%s': %v\n", proposal.TxID, err)
 		http.Error(w, "Lỗi Server: Không thể ký RWSet", http.StatusInternalServerError)
 		return
 	}

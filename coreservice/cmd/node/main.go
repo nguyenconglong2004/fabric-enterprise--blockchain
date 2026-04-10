@@ -25,12 +25,13 @@ func main() {
 	// 2. Truyền Private Key này vào cho APIServer để nó đi ký
 	apiServer := &api.APIServer{
 		Engine:      engine,
-		NodePrivKey: nodePrivKey, // SỬA STRUCT APIServer ĐỂ NHẬN BIẾN NÀY
+		NodePrivKey: nodePrivKey,
 		NodeID:      "Org1_Peer0",
 	}
 	http.HandleFunc("/api/tx/deploy", apiServer.HandleDeployContract)
 	http.HandleFunc("/api/tx/submit", apiServer.HandleSubmitTx)
 	http.HandleFunc("/api/state", apiServer.HandleGetState)
+	http.HandleFunc("/api/tx/propose", apiServer.HandleProposeTx)
 
 	port := ":8080"
 	fmt.Printf("🌐 Core Node API Server đang chạy tại http://localhost%s\n", port)
