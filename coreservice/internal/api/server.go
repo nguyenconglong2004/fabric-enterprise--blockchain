@@ -137,10 +137,9 @@ func (s *APIServer) HandleProposeTx(w http.ResponseWriter, r *http.Request) {
 	}
 	fmt.Printf("✅ [Crypto] Chữ ký của Client hợp lệ!\n")
 
-	// 2. Ném vào lò WASM để CHẠY NHÁP (Simulate) sinh ra RWSet
 	rwSet, err := s.Engine.Execute(r.Context(), &proposal)
 	if err != nil {
-		// ... Trả lỗi 500 (như cũ) ...
+		http.Error(w, fmt.Sprintf("Lỗi khi chạy nháp: %v", err), http.StatusInternalServerError)
 		return
 	}
 
