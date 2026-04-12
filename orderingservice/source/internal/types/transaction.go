@@ -2,10 +2,12 @@ package types
 
 import (
 	"bytes"
+	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
 	"errors"
+	"fmt"
 )
 
 // Transaction is a Bitcoin-like UTXO transaction.
@@ -156,4 +158,120 @@ func reverseBytes(b []byte) []byte {
 		out[i] = b[len(b)-1-i]
 	}
 	return out
+}
+
+// --- Ed25519 signing and transaction creation ---
+
+// SignEd25519 signs each input of the transaction using Ed25519.
+// prevOuts[i] must be the VOUT that Vin[i] is spending; its ScriptPubKey.Hex is
+// injected into the sighash computation (matching the blockchain/ signing protocol).
+// After signing all inputs, Txid is recomputed.
+func (t *Transaction) SignEd25519(priv ed25519.PrivateKey, prevOuts []VOUT) error {
+	if len(prevOuts) != len(t.Vin) {
+		return fmt.Errorf("prevOuts length (%d) must match Vin length (%d)", len(prevOuts), len(t.Vin))
+	}
+
+	pub := priv.Public().(ed25519.PublicKey)
+
+	for i := range t.Vin {
+		// Create a copy with all ScriptSig fields cleared.
+		txCopy := t.ShallowCopyEmptySigs()
+		// Inject the previous output's ScriptPubKey into this input's ScriptSig for hashing.
+		txCopy.Vin[i].ScriptSig.Hex = prevOuts[i].ScriptPubKey.Hex
+
+		// Double SHA256 of the serialized copy (sighash).
+		raw := txCopy.Serialize()
+		h1 := sha256.Sum256(raw)
+		h2 := sha256.Sum256(h1[:])
+
+		// Sign with Ed25519 → 64-byte signature.
+		sig := ed25519.Sign(priv, h2[:])
+
+		// ScriptSig = sig(64 bytes) || pubkey(32 bytes) = 96 bytes total.
+		script := append(sig, pub...)
+		t.Vin[i].ScriptSig.Hex = hex.EncodeToString(script)
+		t.Vin[i].ScriptSig.ASM = fmt.Sprintf("%x %x", sig, pub)
+	}
+
+	// Recompute Txid with signatures in place.
+	t.Txid = t.ComputeTxID()
+	return nil
+}
+
+// ClientUTXO represents an unspent output available for spending by the client.
+type ClientUTXO struct {
+	Txid    string
+	VoutIdx int
+	Out     VOUT
+}
+
+// CreateTransaction creates and signs a new UTXO-based transaction.
+// It greedily selects from availableUTXOs until the total covers amount,
+// builds a P2PKH output to toAddr, and sends change back to fromAddr if any.
+// fromAddr and toAddr must be 40-char hex strings (output of AddressFromPub).
+func CreateTransaction(
+	priv ed25519.PrivateKey,
+	fromAddr string,
+	toAddr string,
+	amount int64,
+	availableUTXOs []ClientUTXO,
+) (Transaction, error) {
+	if amount <= 0 {
+		return Transaction{}, errors.New("amount must be positive")
+	}
+
+	// Greedy input selection.
+	var selected []ClientUTXO
+	var total int64
+	for _, u := range availableUTXOs {
+		selected = append(selected, u)
+		total += u.Out.Value
+		if total >= amount {
+			break
+		}
+	}
+	if total < amount {
+		return Transaction{}, fmt.Errorf("insufficient funds: have %d, need %d", total, amount)
+	}
+
+	// Build VINs with empty ScriptSig (filled by signing).
+	vins := make([]VIN, len(selected))
+	prevOuts := make([]VOUT, len(selected))
+	for i, u := range selected {
+		vins[i] = VIN{
+			Txid:      u.Txid,
+			Vout:      u.VoutIdx,
+			ScriptSig: ScriptSig{},
+		}
+		prevOuts[i] = u.Out
+	}
+
+	// Build VOUTs: payment to toAddr + change to fromAddr.
+	vouts := []VOUT{
+		{
+			Value:        amount,
+			N:            0,
+			ScriptPubKey: MakeP2PKHScriptPubKey(toAddr),
+		},
+	}
+	if total > amount {
+		vouts = append(vouts, VOUT{
+			Value:        total - amount,
+			N:            1,
+			ScriptPubKey: MakeP2PKHScriptPubKey(fromAddr),
+		})
+	}
+
+	tx := Transaction{
+		Version:  1,
+		Vin:      vins,
+		Vout:     vouts,
+		LockTime: 0,
+	}
+
+	if err := tx.SignEd25519(priv, prevOuts); err != nil {
+		return Transaction{}, fmt.Errorf("signing failed: %w", err)
+	}
+
+	return tx, nil
 }
