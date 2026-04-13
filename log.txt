@@ -1,0 +1,36 @@
+-----CLIENT 1-----
+> keygen
+New keypair generated.
+  Seed (hex): 31e09576dd52f477247360069a689df779a2a22e56108e78beadf6a372310f7c
+  Address:    3dfc2c9bd62bc6108558d9a6d8cc56ad6df0f59a
+> sync /ip4/10.40.104.121/tcp/64277/p2p/12D3KooWPL2tuju5TemzZ9JhLNYektZT8zvYDJPJZrZXGzN9WbHd
+Syncing UTXOs for address 3dfc2c9b......
+Sync complete: +0 new UTXO(s) from blockchain, wallet total = 0 UTXO(s), balance = 0
+> fund 100
+Genesis UTXO created (not submitted to network).
+  Txid:    b03f14860f585e169d58b5cbf7cd72f5610e81379a761b156814aab79dce5868
+  Amount:  100
+  Address: 3dfc2c9bd62bc6108558d9a6d8cc56ad6df0f59a
+> tx 687e8154e6010f11db4ca36b237176a7ed86653c 3
+2026/04/13 17:44:12 Tx a5800bf368491b5cb0e53f064873036732333843b2761608744b34eb3375962c sent to node <peer.ID 12*uZzKR1>
+Transaction submitted: a5800bf368491b5cb0e53f064873036732333843b2761608744b34eb3375962c
+  Inputs:  1  Outputs: 2
+
+
+-----CLIENT 2-----
+> keygen
+New keypair generated.
+  Seed (hex): 4944a746d1234aa62f373ce25c80c53567664a551f6076b58271139a512f69bf
+  Address:    687e8154e6010f11db4ca36b237176a7ed86653c
+> sync /ip4/10.40.104.121/tcp/64277/p2p/12D3KooWPL2tuju5TemzZ9JhLNYektZT8zvYDJPJZrZXGzN9WbHd
+Syncing UTXOs for address 687e8154......
+Sync complete: +0 new UTXO(s) from blockchain, wallet total = 0 UTXO(s), balance = 0
+> fund 100
+Genesis UTXO created (not submitted to network).
+  Txid:    e361967ccdc1cfcf0542f088b001acafc6449ced5d6de57c0355851f02bd8bcc
+  Amount:  100
+  Address: 687e8154e6010f11db4ca36b237176a7ed86653c
+> utxos
+UTXOs (1):
+  e361967ccdc1cfcf...[0]  value=100
+Total: 100

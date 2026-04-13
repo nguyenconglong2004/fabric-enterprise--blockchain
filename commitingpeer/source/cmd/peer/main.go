@@ -71,15 +71,24 @@ func main() {
 
 	validator := validation.NewEngine()
 	peer := peerpkg.New(deliverClient, validator, blockStore, worldState)
+
+	// Register the UTXO sync handler BEFORE starting the peer so the protocol
+	// is available as soon as clients connect.
+	peer.RegisterSyncHandler()
+
 	if err := peer.Start(ctx, ordererAddr, 1); err != nil {
 		fmt.Printf("Error starting peer: %v\n", err)
 		return
 	}
 
+	syncAddr := deliverClient.GetAddress()
+
 	fmt.Printf("\nCommitting peer started!\n")
 	fmt.Printf("Orderer   : %s\n", ordererAddr)
 	fmt.Printf("BlockFile : %s\n", blockFile)
 	fmt.Printf("WorldState: %s\n", dbPath)
+	fmt.Printf("Sync addr : %s\n", syncAddr)
+	fmt.Println("  ^ Share this address with ordering service clients (sync command)")
 	fmt.Println()
 
 	rl, err := readline.NewEx(&readline.Config{
@@ -119,7 +128,7 @@ func main() {
 
 		// ─── status ───────────────────────────────────────────────────────────
 		case "status":
-			cmdStatus(out, peer, blockFile, dbPath, worldState)
+			cmdStatus(out, peer, blockFile, dbPath, syncAddr, worldState)
 
 		// ─── chain ────────────────────────────────────────────────────────────
 		case "chain":
@@ -186,7 +195,7 @@ func main() {
 // Command implementations
 // ──────────────────────────────────────────────────────────────────────────────
 
-func cmdStatus(out io.Writer, peer *peerpkg.CommittingPeer, blockFile, dbPath string, ws *storage.WorldState) {
+func cmdStatus(out io.Writer, peer *peerpkg.CommittingPeer, blockFile, dbPath, syncAddr string, ws *storage.WorldState) {
 	s := peer.GetStats()
 
 	utxoCount, _ := ws.UTXOCount()
@@ -204,6 +213,7 @@ func cmdStatus(out io.Writer, peer *peerpkg.CommittingPeer, blockFile, dbPath st
 	fmt.Fprintf(out, "Orderer    : %s\n", s.OrdeerAddr)
 	fmt.Fprintf(out, "Block file : %s\n", blockFile)
 	fmt.Fprintf(out, "World state: %s\n", dbPath)
+	fmt.Fprintf(out, "Sync addr  : %s\n", syncAddr)
 	fmt.Fprintf(out, "\n=== Blockchain ===\n")
 	fmt.Fprintf(out, "Committed blocks : %d\n", s.BlockCount)
 	fmt.Fprintf(out, "Last block hash  : %s\n", lastHashStr)

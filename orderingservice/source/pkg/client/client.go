@@ -248,6 +248,41 @@ func (oc *OrderClient) SubmitTransactionFast(tx types.Transaction, node peer.Add
 	return tx.Txid, nil
 }
 
+// SyncProtocolID is the libp2p protocol spoken by committing peers for UTXO sync.
+const SyncProtocolID = "/commiting-peer/sync/1.0.0"
+
+// SyncUTXOs connects to a committing peer at peerAddr and retrieves all UTXOs
+// whose ScriptPubKey contains walletAddress. The returned slice replaces the
+// caller's local UTXO set so that it reflects the blockchain world state.
+func (oc *OrderClient) SyncUTXOs(ctx context.Context, peerAddr, walletAddress string) ([]types.ClientUTXO, error) {
+	addrInfo, err := peer.AddrInfoFromString(peerAddr)
+	if err != nil {
+		return nil, fmt.Errorf("sync: parse peer address: %w", err)
+	}
+
+	if err := oc.Transport.Host.Connect(ctx, *addrInfo); err != nil {
+		return nil, fmt.Errorf("sync: connect to committing peer: %w", err)
+	}
+
+	s, err := oc.Transport.Host.NewStream(ctx, addrInfo.ID, protocol.ID(SyncProtocolID))
+	if err != nil {
+		return nil, fmt.Errorf("sync: open stream: %w", err)
+	}
+	defer s.Close()
+
+	req := types.SyncRequest{Address: walletAddress}
+	if err := json.NewEncoder(s).Encode(req); err != nil {
+		return nil, fmt.Errorf("sync: send request: %w", err)
+	}
+
+	var resp types.SyncResponse
+	if err := json.NewDecoder(s).Decode(&resp); err != nil {
+		return nil, fmt.Errorf("sync: decode response: %w", err)
+	}
+
+	return resp.UTXOs, nil
+}
+
 // Stop stops the client.
 func (oc *OrderClient) Stop() {
 	oc.Transport.Close()

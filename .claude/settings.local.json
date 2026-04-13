@@ -6,7 +6,8 @@
       "Bash(grep -n \"expectedLeader\\\\|joinTime\\\\|lastHeartbeat\\\\|lastBlockSentTime\" internal/raft/node.go internal/raft/*.go)",
       "Bash(go get:*)",
       "Bash(go build:*)",
-      "Bash(go mod:*)"
+      "Bash(go mod:*)",
+      "Bash(echo \"EXIT:$?\")"
     ]
   }
 }

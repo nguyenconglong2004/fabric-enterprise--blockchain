@@ -8,18 +8,20 @@
 4. [Mô hình UTXO phía Client](#4-mô-hình-utxo-phía-client)
 5. [Tạo và ký giao dịch](#5-tạo-và-ký-giao-dịch)
 6. [Giao tiếp với Ordering Service](#6-giao-tiếp-với-ordering-service)
-7. [Auto-send và Load Testing](#7-auto-send-và-load-testing)
-8. [CLI Reference](#8-cli-reference)
-9. [Luồng hoàn chỉnh từ đầu đến cuối](#9-luồng-hoàn-chỉnh-từ-đầu-đến-cuối)
+7. [Đồng bộ UTXO với Committing Peer](#7-đồng-bộ-utxo-với-committing-peer)
+8. [Auto-send và Load Testing](#8-auto-send-và-load-testing)
+9. [CLI Reference](#9-cli-reference)
+10. [Luồng hoàn chỉnh từ đầu đến cuối](#10-luồng-hoàn-chỉnh-từ-đầu-đến-cuối)
 
 ---
 
 ## 1. Tổng quan
 
-Client (`cmd/client/main.go`) là công cụ tương tác trực tiếp với Ordering Service cluster. Client có hai nhiệm vụ chính:
+Client (`cmd/client/main.go`) là công cụ tương tác trực tiếp với Ordering Service cluster. Client có ba nhiệm vụ chính:
 
 1. **Quản lý ví (wallet):** Sinh và lưu trữ keypair Ed25519, theo dõi UTXO phía client, ký giao dịch trước khi gửi đi.
 2. **Gửi giao dịch:** Submit transaction đơn lẻ (`tx`) hoặc tự động ở tốc độ cấu hình được (`start`) để stress-test cluster.
+3. **Đồng bộ UTXO từ blockchain:** Kết nối tới Committing Peer qua giao thức `/commiting-peer/sync/1.0.0` để lấy UTXO thực tế từ World State — đặc biệt cần thiết khi ví nhận tiền từ ví khác.
 
 Client sử dụng cùng stack mạng `go-libp2p` với các node trong cluster, kết nối trực tiếp tới bất kỳ node nào (không cần biết node đó có phải là leader hay không — node sẽ tự forward giao dịch về leader).
 
@@ -36,11 +38,14 @@ cmd/client/main.go
         │     ├── address  string  (40-hex, P2PKH)
         │     └── utxos  map[string]ClientUTXO
         │
+        ├── peerAddr  string       ← địa chỉ Committing Peer (đăng ký qua 'sync')
+        │
         └── pkg/client.OrderClient ← giao tiếp mạng
               ├── Transport         (libp2p host)
               ├── SubmitTransaction()       (chờ ACK)
               ├── SubmitTransactionFast()   (không chờ)
-              └── GetClusterNodes()
+              ├── GetClusterNodes()
+              └── SyncUTXOs()               (đồng bộ UTXO từ Committing Peer)
 ```
 
 **`OrderClient`** (`pkg/client/client.go`) được khởi tạo với một libp2p host ngẫu nhiên (random port). Khi kết nối tới một node trong cluster, client:
@@ -106,29 +111,19 @@ type walletState struct {
 }
 
 type ClientUTXO struct {
-    Txid    string
-    VoutIdx int
-    Out     VOUT
+    Txid    string `json:"txid"`
+    VoutIdx int    `json:"vout_idx"`
+    Out     VOUT   `json:"out"`
 }
 ```
 
-Client tự duy trì một **local UTXO set** trong bộ nhớ — không query từ World State. Mỗi lần gửi giao dịch thành công, `applyTx()` cập nhật map:
+Client duy trì một **local UTXO set** trong bộ nhớ. Set này được cập nhật từ hai nguồn:
 
-```go
-func (w *walletState) applyTx(tx Transaction) {
-    // Xóa các input đã tiêu thụ
-    for _, vin := range tx.Vin {
-        delete(w.utxos, fmt.Sprintf("%s:%d", vin.Txid, vin.Vout))
-    }
-    // Thêm output nào thuộc địa chỉ của ví (tiền thối)
-    myScript := MakeP2PKHScriptPubKey(w.address)
-    for i, vout := range tx.Vout {
-        if vout.ScriptPubKey.Hex == myScript.Hex {
-            w.addUTXO(tx.Txid, i, vout)
-        }
-    }
-}
-```
+| Nguồn | Khi nào | Cơ chế |
+|-------|---------|--------|
+| `fund` | Người dùng tự cấp vốn | Thêm genesis UTXO trực tiếp vào map |
+| `applyTx()` | Sau mỗi `tx` gửi thành công | Xóa input đã tiêu, thêm tiền thối |
+| `autoSync()` | Trước `utxos`, `tx`, `start` | Merge UTXO từ Committing Peer vào map |
 
 ### 4.2 Genesis UTXO (Coinbase-like)
 
@@ -143,6 +138,26 @@ Vout[0] = VOUT{ Value: amount, ScriptPubKey: P2PKH(wallet.address) }
 ```
 
 Giao dịch này hợp lệ về mặt cấu trúc, nhưng trong triển khai thực tế cần cơ chế kiểm soát để chặn coinbase giả. Hiện tại Validation Engine ở Committing Peer là stub nên chấp nhận tất cả.
+
+### 4.3 Đồng bộ UTXO từ Blockchain (auto-sync)
+
+Local UTXO set chỉ theo dõi được những giao dịch **do chính ví này gửi đi**. Khi một ví khác gửi tiền đến địa chỉ này, local set không biết đến khoản tiền đó.
+
+Để giải quyết, lệnh `sync <peer_addr>` đăng ký địa chỉ Committing Peer. Sau đó, hàm `autoSync()` được gọi **ngầm** trước những lệnh cần UTXO:
+
+```go
+// autoSync chạy im lặng — không in gì ra màn hình
+func autoSync(ctx, orderClient, wallet) {
+    if peerAddr == "" || wallet == nil { return }
+    synced, _ := orderClient.SyncUTXOs(ctx, peerAddr, wallet.address)
+    for _, u := range synced {
+        key := fmt.Sprintf("%s:%d", u.Txid, u.VoutIdx)
+        wallet.utxos[key] = u   // merge: giữ lại local UTXOs, ghi đè nếu trùng key
+    }
+}
+```
+
+**Chiến lược merge (không replace):** UTXO đã có sẵn trong local wallet (ví dụ từ `fund`) được giữ nguyên. UTXO từ blockchain được thêm vào hoặc ghi đè nếu cùng key. Kết quả: ví luôn có cái nhìn đầy đủ nhất có thể.
 
 ---
 
@@ -238,9 +253,72 @@ Khi không phải leader, node nhận giao dịch **forward** cho leader và lea
 
 ---
 
-## 7. Auto-send và Load Testing
+## 7. Đồng bộ UTXO với Committing Peer
 
-### 7.1 Goroutine auto-send
+### 7.1 Vấn đề: Ví nhận không thấy tiền
+
+Local UTXO set chỉ biết về:
+- UTXO do `fund` tạo ra
+- Tiền thối (`change`) từ giao dịch mà ví này gửi đi
+
+Khi ví khác gửi tiền đến, local set **không tự động cập nhật**. Ví nhận phải truy vấn World State trên Committing Peer để phát hiện UTXO mới.
+
+### 7.2 Giao thức sync: `/commiting-peer/sync/1.0.0`
+
+```
+Client                          Committing Peer
+  │                                  │
+  │── SyncRequest{address} ─────────►│
+  │                                  │  query LevelDB:
+  │                                  │  prefix scan "utxo:*"
+  │                                  │  filter Addresses ∋ address
+  │◄── SyncResponse{utxos: [...]} ───│
+```
+
+Cả hai phía đều dùng JSON newline-delimited trên libp2p stream. `SyncRequest` và `SyncResponse` được định nghĩa trong `internal/types/transaction.go`:
+
+```go
+type SyncRequest  struct { Address string       `json:"address"` }
+type SyncResponse struct { UTXOs []ClientUTXO   `json:"utxos"` }
+```
+
+### 7.3 Auto-sync ngầm
+
+Sau khi đăng ký peer qua lệnh `sync`, ba lệnh sau tự gọi `autoSync()` trước khi thực thi:
+
+| Lệnh | Lý do cần auto-sync |
+|------|---------------------|
+| `utxos` | Hiển thị số dư chính xác, kể cả tiền nhận từ người khác |
+| `tx` | Đảm bảo có đủ UTXO thực tế từ blockchain trước khi build transaction |
+| `start` | Khởi tạo UTXO set đúng một lần trước khi bắt đầu vòng lặp |
+
+`autoSync()` hoạt động **hoàn toàn ngầm** — không in gì ra màn hình, không block nếu peer không phản hồi (lỗi bị bỏ qua, local UTXO vẫn được giữ).
+
+### 7.4 Thứ tự hoạt động đúng
+
+```
+Ví A gửi 50 cho Ví B
+      │
+      ▼ ordering service batch → block
+      ▼ Raft consensus commit
+      ▼ Committing Peer nhận block qua deliver
+      ▼ ApplyBlock → LevelDB ghi UTXO của Ví B
+      │
+Ví B chạy: utxos  (hoặc tx)
+      ▼ autoSync() truy vấn Committing Peer
+      ▼ SyncResponse{utxos:[{txid, vout_idx=0, value=50}]}
+      ▼ merge vào wallet.utxos
+      │
+Ví B thấy balance = 50 ✓
+```
+
+> **Lưu ý thời điểm:** `sync` (lần đầu) hoặc `autoSync` chỉ thấy tiền sau khi block đã được **committed và applied** bởi Committing Peer. Nếu chạy ngay sau khi gửi tx, có thể cần chờ vài giây để block được xử lý xong.
+
+---
+
+## 8. Auto-send và Load Testing
+
+### 8.1 Goroutine auto-send
 
 Lệnh `start [tps]` khởi động một goroutine với ba ticker:
 
@@ -255,7 +333,7 @@ goroutine auto-send
         case <-stopChan:       → return
 ```
 
-### 7.2 `makeAutoTx` — Tự cấp vốn khi hết UTXO
+### 8.2 `makeAutoTx` — Tự cấp vốn khi hết UTXO
 
 ```
 makeAutoTx(n):
@@ -268,7 +346,7 @@ makeAutoTx(n):
 
 Auto-send gửi 1 satoshi cho **chính ví mình** — mục đích chỉ để test throughput của cluster, không mang ý nghĩa kinh tế.
 
-### 7.3 Đo hiệu năng
+### 8.3 Đo hiệu năng
 
 Hai counter atomic theo dõi song song:
 
@@ -281,7 +359,7 @@ Hiệu số `sendCount - AutoRecvCount` = số tx "trên đường" hoặc bị 
 
 ---
 
-## 8. CLI Reference
+## 9. CLI Reference
 
 ### Startup
 
@@ -353,7 +431,40 @@ Genesis UTXO created (not submitted to network).
   Address: 9f8e7d6c5b4a3e2f1d0c9b8a7e6f5d4c
 ```
 
-> Phải chạy `fund` (hoặc nhận tiền thối từ giao dịch trước) trước khi dùng `tx`.
+> Phải chạy `fund` (hoặc `sync` để nhận UTXO từ blockchain, hoặc nhận tiền thối từ giao dịch trước) trước khi dùng `tx`.
+
+---
+
+### `sync <peer_addr>` — Đăng ký Committing Peer và đồng bộ UTXO
+
+**Cú pháp:** `sync <peer_addr>`
+
+**Mô tả:** Đây là lệnh **chỉ cần chạy một lần**. Nó thực hiện hai việc:
+
+1. **Đăng ký** địa chỉ Committing Peer vào biến `peerAddr` — lưu suốt phiên làm việc.
+2. **Đồng bộ lần đầu** — lấy tất cả UTXO thuộc địa chỉ ví từ World State trên Committing Peer và merge vào local wallet.
+
+Sau lần `sync` đầu tiên, các lệnh `utxos`, `tx`, `start` sẽ **tự động gọi sync ngầm** mỗi khi cần UTXO — người dùng không cần gõ `sync` lại.
+
+Địa chỉ `<peer_addr>` lấy từ dòng **Sync addr** in ra khi khởi động Committing Peer:
+```
+Sync addr : /ip4/10.0.0.1/tcp/54321/p2p/12D3KooW...
+```
+
+```
+> sync /ip4/10.0.0.1/tcp/54321/p2p/12D3KooWPL2tuju5...
+Syncing UTXOs for address 9f8e7d6c......
+Sync complete: +2 new UTXO(s) from blockchain, wallet total = 3 UTXO(s), balance = 50300
+Peer registered — utxos/tx will auto-sync from now on.
+```
+
+Nếu địa chỉ peer không kết nối được:
+```
+Sync failed: sync: connect to committing peer: failed to dial ...
+```
+Khi đó `peerAddr` **không** được lưu — cần thử lại với địa chỉ đúng.
+
+> **Chiến lược merge:** UTXO đã có trong local wallet (ví dụ từ `fund`) được **giữ nguyên**. UTXO từ blockchain được thêm vào hoặc ghi đè nếu trùng key (`txid:voutIdx`). Kết quả: không mất UTXO local khi sync.
 
 ---
 
@@ -361,17 +472,23 @@ Genesis UTXO created (not submitted to network).
 
 **Cú pháp:** `utxos`
 
-**Mô tả:** In nội dung local UTXO set. Tổng `Total` là số dư có thể chi tiêu.
+**Mô tả:** Tự động gọi `autoSync()` ngầm (nếu peer đã đăng ký), sau đó in danh sách UTXO hiện có. Tổng `Total` là số dư có thể chi tiêu.
 
 ```
 > utxos
 UTXOs (2):
   ab34cd56ef789012...[0]  value=99999
-  bc45de67fa890123...[1]  value=50000
+  bc45de67fa890123...[0]  value=50000
 Total: 149999
 ```
 
-> UTXO set này chỉ phản ánh góc nhìn của client — **không đồng bộ** với World State trên Committing Peer.
+Nếu chưa đăng ký peer, hiển thị UTXO local (chỉ từ `fund` và tiền thối):
+```
+> utxos
+UTXOs (1):
+  ab34cd56ef789012...[0]  value=100000
+Total: 100000
+```
 
 ---
 
@@ -379,7 +496,7 @@ Total: 149999
 
 **Cú pháp:** `tx <to_addr> <amount>`
 
-**Mô tả:** Tạo giao dịch UTXO đầy đủ (greedy input selection, P2PKH output, tiền thối), ký bằng Ed25519, gửi lên cluster và chờ ACK.
+**Mô tả:** Trước khi build transaction, tự động gọi `autoSync()` ngầm để đảm bảo UTXO set phản ánh trạng thái mới nhất từ blockchain (kể cả tiền vừa nhận từ ví khác). Sau đó tạo giao dịch UTXO đầy đủ (greedy input selection, P2PKH output, tiền thối), ký bằng Ed25519, gửi lên cluster và chờ ACK.
 
 ```
 > tx 1a2b3c4d5e6f7890ab1a2b3c4d5e6f7890ab1a2b3c4d5e6f7890ab1a2b3c4d 5000
@@ -391,7 +508,7 @@ Sau khi gửi, `wallet.applyTx()` cập nhật local UTXO:
 - Xóa input đã dùng
 - Thêm tiền thối (Vout có địa chỉ = ví mình)
 
-Nếu số dư không đủ:
+Nếu số dư không đủ (kể cả sau auto-sync):
 ```
 Error creating transaction: insufficient funds: have 50000, need 100000
 ```
@@ -402,7 +519,7 @@ Error creating transaction: insufficient funds: have 50000, need 100000
 
 **Cú pháp:** `start [tps]`  (mặc định `tps = 1.0`)
 
-**Mô tả:** Khởi động goroutine nền gửi giao dịch tự động. Mỗi giao dịch gửi 1 satoshi cho chính ví, tự động tái cấp vốn nếu hết UTXO. Cứ 5 giây in thống kê.
+**Mô tả:** Gọi `autoSync()` một lần để đồng bộ UTXO trước khi bắt đầu, sau đó khởi động goroutine nền gửi giao dịch tự động. Mỗi giao dịch gửi 1 satoshi cho chính ví, tự động tái cấp vốn nếu hết UTXO. Cứ 5 giây in thống kê.
 
 ```
 > start 10
@@ -468,8 +585,9 @@ Auto-send: RUNNING | Wallet: 9f8e7d6c... | TX counter: 300 | Sent: 287 | Acked: 
   wallet <seed_hex>   - Load keypair from existing seed hex
   addr                - Show current wallet address
   fund <amount>       - Create a genesis (coinbase-like) UTXO for current address
-  utxos               - List available UTXOs in local wallet
-  tx <to_addr> <amt>  - Create and submit a signed Ed25519 transaction
+  utxos               - List available UTXOs (auto-syncs from peer if registered)
+  sync <peer_addr>    - Register committing peer; auto-sync runs before utxos/tx
+  tx <to_addr> <amt>  - Create and submit a signed Ed25519 transaction (auto-syncs)
   start [tps]         - Start auto-send signed transactions (default 1 TPS)
   stop                - Stop auto-send
   speed <tps>         - Change TPS in real-time
@@ -491,9 +609,9 @@ Nếu auto-send đang chạy, `stopChan` được đóng trước khi thoát.
 
 ---
 
-## 9. Luồng hoàn chỉnh từ đầu đến cuối
+## 10. Luồng hoàn chỉnh từ đầu đến cuối
 
-### 9.1 Phiên làm việc thông thường
+### 10.1 Phiên làm việc thông thường (một ví)
 
 ```
 1. Khởi động:  client.exe
@@ -504,9 +622,14 @@ Nếu auto-send đang chạy, `stopChan` được đóng trước khi thoát.
 3. Tạo ví:     keygen          ← sinh seed + keypair
                (hoặc wallet <seed>  ← khôi phục)
 
-4. Cấp vốn:    fund 100000     ← thêm genesis UTXO vào local wallet
+4. Đăng ký:    sync /ip4/.../p2p/12D3...  ← lần đầu và duy nhất
+               → peerAddr được lưu lại
+               → sync lần đầu (thường 0 UTXO nếu ví mới)
 
-5. Gửi tx:     tx <addr> 5000
+5. Cấp vốn:    fund 100000     ← thêm genesis UTXO vào local wallet
+
+6. Gửi tx:     tx <addr> 5000
+                 └─ autoSync() ngầm (merge UTXO từ blockchain)
                  └─ CreateTransaction():
                       greedy select UTXO từ wallet
                       build Vin + Vout (payment + change)
@@ -517,55 +640,84 @@ Nếu auto-send đang chạy, `stopChan` được đóng trước khi thoát.
                  └─ wallet.applyTx()
                       cập nhật local UTXO set
 
-6. Kiểm tra:   utxos           ← xem số dư sau giao dịch
+7. Kiểm tra:   utxos
+                 └─ autoSync() ngầm (cập nhật số dư mới nhất)
+                 └─ in danh sách UTXO
 ```
 
-### 9.2 Luồng dữ liệu đầy đủ (tx → block committed)
+### 10.2 Phiên hai ví — Ví B nhận tiền từ Ví A
+
+```
+Ví A                              Ví B
+─────                             ─────
+keygen → addr_A                   keygen → addr_B
+sync <peer>                       sync <peer>
+fund 100000
+tx addr_B 50                      (chờ block được commit)
+                                  utxos
+                                    └─ autoSync() ngầm
+                                    └─ thấy +1 UTXO value=50 ✓
+                                  tx addr_A 10  (gửi lại)
+                                    └─ autoSync() ngầm
+                                    └─ dùng UTXO 50 làm input
+```
+
+### 10.3 Luồng dữ liệu đầy đủ (tx → block committed → sync)
 
 ```
 Client
   │
-  │ (1) CreateTransaction + SignEd25519
+  │ (1) autoSync() — truy vấn Committing Peer qua /commiting-peer/sync/1.0.0
+  │     merge UTXO mới vào wallet.utxos
+  │
+  │ (2) CreateTransaction + SignEd25519
   │     Vin[0] = { Txid: "ab34...", ScriptSig: sig||pubkey }
   │     Vout[0] = { value: 5000, addr: to }
   │     Vout[1] = { value: 94999, addr: self }
   │
-  │ (2) SubmitTransaction → MsgTxRequest
+  │ (3) SubmitTransaction → MsgTxRequest
   ▼
 Ordering Node (any)
   │
-  │ (3a) Nếu là Follower: forward → Leader
-  │ (3b) Nếu là Leader:
+  │ (4a) Nếu là Follower: forward → Leader
+  │ (4b) Nếu là Leader:
   │       TxPool.append(tx)
   │       gửi MsgTxResponse → Client
   │
-  │ (4) Leader: ProposeBlock(txs)
+  │ (5) Leader: ProposeBlock(txs)
   │       NewBlock(txs, prevHash)
   │       BroadcastMessage(MsgBlockProposal)
   ▼
 Followers
-  │ (5) HandleBlockProposal: xác nhận log continuity
+  │ (6) HandleBlockProposal: xác nhận log continuity
   │       gửi MsgBlockProposalAck → Leader
   ▼
 Leader (nhận đủ majority ACKs)
-  │ (6) commitBlock():
+  │ (7) commitBlock():
   │       OrderingBlock.AppendBlock(block)
   │       BroadcastMessage(MsgBlockCommit)
   ▼
 Followers
-  │ (7) HandleBlockCommit():
+  │ (8) HandleBlockCommit():
   │       OrderingBlock.AppendBlock(block)
   │       DeliverMgr.NotifyNewBlock(block) → subscriber channels
   ▼
 Committing Peer
-  │ (8) deliver goroutine: json.Decode(block) → blockChan
-  │ (9) commitLoop: ValidateBlock → AppendBlock → ApplyBlock(WorldState)
+  │ (9) deliver goroutine: json.Decode(block) → blockChan
+  │ (10) commitLoop: ValidateBlock → AppendBlock → ApplyBlock(WorldState)
+  │      LevelDB: xóa UTXO đã tiêu, thêm UTXO mới (bao gồm output cho Ví B)
   ▼
 chain.block + LevelDB (WorldState)
-     Giao dịch được ghi vĩnh viễn
+  │
+  │ (11) Ví B chạy 'utxos' hoặc 'tx'
+  │      autoSync() → SyncRequest{addr_B} → Committing Peer
+  │      SyncResponse{utxos:[{value:50,...}]}
+  │      merge → wallet.utxos của Ví B
+  ▼
+Ví B thấy balance = 50 ✓
 ```
 
-### 9.3 Vòng lặp UTXO
+### 10.4 Vòng lặp UTXO
 
 ```
                 fund 100000
@@ -574,6 +726,8 @@ chain.block + LevelDB (WorldState)
          wallet.utxos = { genesis: 100000 }
                     │
               tx addr 5000
+                    │
+         autoSync() → merge từ blockchain (nếu có)
                     │
          CreateTransaction:
            input:  genesis(100000)

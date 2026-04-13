@@ -2,11 +2,14 @@ package peer
 
 import (
 	"context"
+	"encoding/json"
 	"encoding/hex"
 	"log"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/libp2p/go-libp2p/core/network"
 
 	"commiting-peer/internal/deliver"
 	"commiting-peer/internal/storage"
@@ -136,6 +139,53 @@ func (p *CommittingPeer) GetStats() Stats {
 		LastBlockTime: p.lastBlockTime,
 		LastBlockTxs:  p.lastBlockTxs,
 	}
+}
+
+// HandleSyncStream handles an incoming sync stream from an ordering service client.
+// It reads a SyncRequest containing a wallet address, then responds with all UTXOs
+// from the world state whose ScriptPubKey.Addresses contains that address.
+func (p *CommittingPeer) HandleSyncStream(s network.Stream) {
+	defer s.Close()
+
+	var req types.SyncRequest
+	if err := json.NewDecoder(s).Decode(&req); err != nil {
+		log.Printf("[peer] sync: failed to decode request: %v", err)
+		return
+	}
+
+	allUTXOs, err := p.worldState.AllUTXOs()
+	if err != nil {
+		log.Printf("[peer] sync: failed to read world state: %v", err)
+		return
+	}
+
+	var matched []types.SyncUTXO
+	for _, entry := range allUTXOs {
+		for _, addr := range entry.Out.ScriptPubKey.Addresses {
+			if addr == req.Address {
+				matched = append(matched, types.SyncUTXO{
+					Txid:    entry.Txid,
+					VoutIdx: entry.Index,
+					Out:     entry.Out,
+				})
+				break
+			}
+		}
+	}
+
+	resp := types.SyncResponse{UTXOs: matched}
+	if err := json.NewEncoder(s).Encode(resp); err != nil {
+		log.Printf("[peer] sync: failed to encode response: %v", err)
+		return
+	}
+
+	log.Printf("[peer] sync: address=%s matched=%d UTXOs", req.Address, len(matched))
+}
+
+// RegisterSyncHandler registers the HandleSyncStream method on the deliver client
+// so incoming sync connections from ordering service clients are handled.
+func (p *CommittingPeer) RegisterSyncHandler() {
+	p.deliverClient.SetStreamHandler(deliver.SyncProtocolID, p.HandleSyncStream)
 }
 
 // Stop closes all underlying resources.

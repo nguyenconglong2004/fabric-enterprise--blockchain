@@ -200,9 +200,19 @@ func (t *Transaction) SignEd25519(priv ed25519.PrivateKey, prevOuts []VOUT) erro
 
 // ClientUTXO represents an unspent output available for spending by the client.
 type ClientUTXO struct {
-	Txid    string
-	VoutIdx int
-	Out     VOUT
+	Txid    string `json:"txid"`
+	VoutIdx int    `json:"vout_idx"`
+	Out     VOUT   `json:"out"`
+}
+
+// SyncRequest is sent to a committing peer to query UTXOs for a wallet address.
+type SyncRequest struct {
+	Address string `json:"address"`
+}
+
+// SyncResponse is the committing peer's reply to a SyncRequest.
+type SyncResponse struct {
+	UTXOs []ClientUTXO `json:"utxos"`
 }
 
 // CreateTransaction creates and signs a new UTXO-based transaction.

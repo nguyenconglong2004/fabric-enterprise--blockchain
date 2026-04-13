@@ -24,8 +24,9 @@ func printHelp(out io.Writer) {
 	fmt.Fprintln(out, "  wallet <seed_hex>   - Load keypair from existing seed hex")
 	fmt.Fprintln(out, "  addr                - Show current wallet address")
 	fmt.Fprintln(out, "  fund <amount>       - Create a genesis (coinbase-like) UTXO for current address")
-	fmt.Fprintln(out, "  utxos               - List available UTXOs in local wallet")
-	fmt.Fprintln(out, "  tx <to_addr> <amt>  - Create and submit a signed Ed25519 transaction")
+	fmt.Fprintln(out, "  utxos               - List available UTXOs (auto-syncs from peer if registered)")
+	fmt.Fprintln(out, "  sync <peer_addr>    - Register committing peer; auto-sync runs before utxos/tx")
+	fmt.Fprintln(out, "  tx <to_addr> <amt>  - Create and submit a signed Ed25519 transaction (auto-syncs)")
 	fmt.Fprintln(out, "  start [tps]         - Start auto-send signed transactions (default 1 TPS)")
 	fmt.Fprintln(out, "  stop                - Stop auto-send")
 	fmt.Fprintln(out, "  speed <tps>         - Change TPS in real-time")
@@ -34,6 +35,26 @@ func printHelp(out io.Writer) {
 	fmt.Fprintln(out, "  quit                - Exit")
 	fmt.Fprintln(out)
 }
+
+// autoSync silently merges blockchain-confirmed UTXOs into the wallet.
+// It is a no-op if no peer address has been registered via the sync command.
+func autoSync(ctx context.Context, oc *client.OrderClient, w *walletState) {
+	if w == nil || peerAddr == "" {
+		return
+	}
+	synced, err := oc.SyncUTXOs(ctx, peerAddr, w.address)
+	if err != nil {
+		// Non-fatal: local UTXOs are still usable.
+		return
+	}
+	for _, u := range synced {
+		key := fmt.Sprintf("%s:%d", u.Txid, u.VoutIdx)
+		w.utxos[key] = u
+	}
+}
+
+// peerAddr is set once by the 'sync' command and reused for every subsequent auto-sync.
+var peerAddr string
 
 // walletState holds the active keypair and local UTXO tracker.
 type walletState struct {
@@ -360,9 +381,10 @@ func main() {
 				fmt.Fprintln(out, "No wallet loaded.")
 				continue
 			}
+			autoSync(ctx, orderClient, wallet)
 			utxos := wallet.listUTXOs()
 			if len(utxos) == 0 {
-				fmt.Fprintln(out, "No UTXOs. Run 'fund <amount>' to create a genesis UTXO.")
+				fmt.Fprintln(out, "No UTXOs. Run 'fund <amount>' or 'sync <peer_addr>' to load UTXOs.")
 				continue
 			}
 			var total int64
@@ -372,6 +394,41 @@ func main() {
 				total += u.Out.Value
 			}
 			fmt.Fprintf(out, "Total: %d\n", total)
+
+		case "sync":
+			if len(parts) < 2 {
+				fmt.Fprintln(out, "Usage: sync <committing-peer-addr>")
+				fmt.Fprintln(out, "  (the Sync addr printed by the committing peer on startup)")
+				continue
+			}
+			if wallet == nil {
+				fmt.Fprintln(out, "No wallet loaded. Run 'keygen' or 'wallet <seed>' first.")
+				continue
+			}
+			// Save the peer address so future commands auto-sync without asking again.
+			peerAddr = parts[1]
+			fmt.Fprintf(out, "Syncing UTXOs for address %s...\n", wallet.address[:8]+"...")
+			synced, sErr := orderClient.SyncUTXOs(ctx, peerAddr, wallet.address)
+			if sErr != nil {
+				fmt.Fprintf(out, "Sync failed: %v\n", sErr)
+				peerAddr = "" // reset so we don't keep retrying a bad address
+				continue
+			}
+			added := 0
+			for _, u := range synced {
+				key := fmt.Sprintf("%s:%d", u.Txid, u.VoutIdx)
+				if _, exists := wallet.utxos[key]; !exists {
+					added++
+				}
+				wallet.utxos[key] = u
+			}
+			var total int64
+			for _, u := range wallet.utxos {
+				total += u.Out.Value
+			}
+			fmt.Fprintf(out, "Sync complete: +%d new UTXO(s) from blockchain, wallet total = %d UTXO(s), balance = %d\n",
+				added, len(wallet.utxos), total)
+			fmt.Fprintf(out, "Peer registered — utxos/tx will auto-sync from now on.\n")
 
 		case "tx":
 			if len(parts) < 3 {
@@ -388,6 +445,9 @@ func main() {
 				fmt.Fprintln(out, "Invalid amount.")
 				continue
 			}
+
+			// Fetch latest UTXOs from blockchain before building the transaction.
+			autoSync(ctx, orderClient, wallet)
 
 			signedTx, tErr := types.CreateTransaction(
 				wallet.priv, wallet.address, toAddr, amount, wallet.listUTXOs(),
@@ -416,6 +476,8 @@ func main() {
 				}
 				tps = v
 			}
+			// Pull latest UTXOs once before starting the auto-send loop.
+			autoSync(ctx, orderClient, wallet)
 			startAuto(tps)
 
 		case "stop":

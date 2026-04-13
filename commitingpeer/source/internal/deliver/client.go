@@ -8,6 +8,7 @@ import (
 
 	"github.com/libp2p/go-libp2p"
 	"github.com/libp2p/go-libp2p/core/host"
+	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/protocol"
 
@@ -16,6 +17,9 @@ import (
 
 // DeliverProtocolID must match the constant in the ordering service.
 const DeliverProtocolID = "/raft-order-service/deliver/1.0.0"
+
+// SyncProtocolID is used by ordering service clients to query UTXOs by address.
+const SyncProtocolID = "/commiting-peer/sync/1.0.0"
 
 // Client holds a libp2p host used to connect to ordering service nodes.
 type Client struct {
@@ -102,6 +106,23 @@ func (c *Client) Subscribe(
 	}()
 
 	return nil
+}
+
+// SetStreamHandler registers a handler for the given protocol ID on the host.
+// Used to register the sync protocol handler so external clients can query UTXOs.
+func (c *Client) SetStreamHandler(protocolID string, handler network.StreamHandler) {
+	c.host.SetStreamHandler(protocol.ID(protocolID), handler)
+}
+
+// GetAddress returns the first multiaddr of this host in the form
+// /ip4/…/tcp/…/p2p/<peerID>, which callers can share with ordering service
+// clients so they can open a sync stream.
+func (c *Client) GetAddress() string {
+	addrs := c.host.Addrs()
+	if len(addrs) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("%s/p2p/%s", addrs[0], c.host.ID())
 }
 
 // Close shuts down the underlying libp2p host.
