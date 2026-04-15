@@ -12,38 +12,39 @@ import (
 	"strings"
 	"time"
 
-	"github.com/chzyer/readline"
-
 	"commiting-peer/internal/deliver"
 	peerpkg "commiting-peer/internal/peer"
 	"commiting-peer/internal/storage"
 	"commiting-peer/internal/validation"
 )
 
+// in reads one trimmed line from stdin.
+func in(scanner *bufio.Scanner, prompt string) string {
+	fmt.Print(prompt)
+	if scanner.Scan() {
+		return strings.TrimSpace(scanner.Text())
+	}
+	return ""
+}
+
 func main() {
 	fmt.Println("=== Committing Peer ===")
 	fmt.Println()
 
-	reader := bufio.NewReader(os.Stdin)
+	sc := bufio.NewScanner(os.Stdin)
 
-	fmt.Print("Enter orderer address (e.g. /ip4/127.0.0.1/tcp/6000/p2p/<PeerID>): ")
-	ordererAddr, _ := reader.ReadString('\n')
-	ordererAddr = strings.TrimSpace(ordererAddr)
+	ordererAddr := in(sc, "Enter orderer address (e.g. /ip4/127.0.0.1/tcp/6000/p2p/<PeerID>): ")
 	if ordererAddr == "" {
 		fmt.Println("Error: orderer address is required")
 		return
 	}
 
-	fmt.Print("Enter block file path (default: chain.block): ")
-	blockFile, _ := reader.ReadString('\n')
-	blockFile = strings.TrimSpace(blockFile)
+	blockFile := in(sc, "Enter block file path (default: chain.block): ")
 	if blockFile == "" {
 		blockFile = "chain.block"
 	}
 
-	fmt.Print("Enter world state directory (default: worldstate): ")
-	dbPath, _ := reader.ReadString('\n')
-	dbPath = strings.TrimSpace(dbPath)
+	dbPath := in(sc, "Enter world state directory (default: worldstate): ")
 	if dbPath == "" {
 		dbPath = "worldstate"
 	}
@@ -71,9 +72,6 @@ func main() {
 
 	validator := validation.NewEngine()
 	peer := peerpkg.New(deliverClient, validator, blockStore, worldState)
-
-	// Register the UTXO sync handler BEFORE starting the peer so the protocol
-	// is available as soon as clients connect.
 	peer.RegisterSyncHandler()
 
 	if err := peer.Start(ctx, ordererAddr, 1); err != nil {
@@ -83,6 +81,10 @@ func main() {
 
 	syncAddr := deliverClient.GetAddress()
 
+	// Send background goroutine logs to stderr so they do not overwrite the
+	// current input prompt on stdout.
+	log.SetOutput(os.Stderr)
+
 	fmt.Printf("\nCommitting peer started!\n")
 	fmt.Printf("Orderer   : %s\n", ordererAddr)
 	fmt.Printf("BlockFile : %s\n", blockFile)
@@ -91,99 +93,74 @@ func main() {
 	fmt.Println("  ^ Share this address with ordering service clients (sync command)")
 	fmt.Println()
 
-	rl, err := readline.NewEx(&readline.Config{
-		Prompt:          "> ",
-		HistoryFile:     "/tmp/commiting-peer-history.tmp",
-		InterruptPrompt: "^C",
-		EOFPrompt:       "quit",
-	})
-	if err != nil {
-		fmt.Printf("Error creating readline: %v\n", err)
-		return
-	}
-	defer rl.Close()
-
-	log.SetOutput(rl.Stdout())
-
-	printHelp(rl.Stdout())
+	printHelp(os.Stdout)
 
 	for {
-		input, err := rl.Readline()
-		if err != nil {
-			if err == readline.ErrInterrupt || err == io.EOF {
-				break
-			}
-			continue
+		fmt.Print("> ")
+		if !sc.Scan() {
+			break
 		}
-		input = strings.TrimSpace(input)
+		input := strings.TrimSpace(sc.Text())
 		if input == "" {
 			continue
 		}
 
 		parts := strings.Fields(input)
 		cmd := strings.ToLower(parts[0])
-		out := rl.Stdout()
 
 		switch cmd {
 
-		// ─── status ───────────────────────────────────────────────────────────
 		case "status":
-			cmdStatus(out, peer, blockFile, dbPath, syncAddr, worldState)
+			cmdStatus(os.Stdout, peer, blockFile, dbPath, syncAddr, worldState)
 
-		// ─── chain ────────────────────────────────────────────────────────────
 		case "chain":
-			cmdChain(out, blockFile)
+			cmdChain(os.Stdout, blockFile)
 
-		// ─── block <n> ────────────────────────────────────────────────────────
 		case "block":
 			if len(parts) < 2 {
-				fmt.Fprintln(out, "Usage: block <n>  (block number, 1-based)")
+				fmt.Println("Usage: block <n>  (block number, 1-based)")
 				continue
 			}
 			n, err := strconv.Atoi(parts[1])
 			if err != nil || n < 1 {
-				fmt.Fprintf(out, "Invalid block number: %q\n", parts[1])
+				fmt.Printf("Invalid block number: %q\n", parts[1])
 				continue
 			}
-			cmdBlock(out, blockFile, n)
+			cmdBlock(os.Stdout, blockFile, n)
 
-		// ─── tx <txid> ────────────────────────────────────────────────────────
 		case "tx":
 			if len(parts) < 2 {
-				fmt.Fprintln(out, "Usage: tx <txid>")
+				fmt.Println("Usage: tx <txid>")
 				continue
 			}
-			cmdTx(out, blockFile, parts[1])
+			cmdTx(os.Stdout, blockFile, parts[1])
 
-		// ─── utxo <txid> <n> ─────────────────────────────────────────────────
 		case "utxo":
 			if len(parts) < 3 {
-				fmt.Fprintln(out, "Usage: utxo <txid> <output_index>")
+				fmt.Println("Usage: utxo <txid> <output_index>")
 				continue
 			}
 			n, err := strconv.Atoi(parts[2])
 			if err != nil || n < 0 {
-				fmt.Fprintf(out, "Invalid output index: %q\n", parts[2])
+				fmt.Printf("Invalid output index: %q\n", parts[2])
 				continue
 			}
-			cmdUTXO(out, worldState, parts[1], n)
+			cmdUTXO(os.Stdout, worldState, parts[1], n)
 
-		// ─── worldstate ───────────────────────────────────────────────────────
 		case "worldstate":
-			cmdWorldState(out, worldState)
+			cmdWorldState(os.Stdout, worldState)
 
-		// ─── help / quit ──────────────────────────────────────────────────────
 		case "help":
-			printHelp(out)
+			printHelp(os.Stdout)
 
 		case "quit", "exit":
-			fmt.Fprintln(out, "Shutting down...")
+			fmt.Println("Shutting down...")
 			cancel()
 			peer.Stop()
 			return
 
 		default:
-			fmt.Fprintf(out, "Unknown command: %q  (type 'help' for available commands)\n", cmd)
+			fmt.Printf("Unknown command: %q  (type 'help' for available commands)\n", cmd)
 		}
 	}
 
@@ -197,7 +174,6 @@ func main() {
 
 func cmdStatus(out io.Writer, peer *peerpkg.CommittingPeer, blockFile, dbPath, syncAddr string, ws *storage.WorldState) {
 	s := peer.GetStats()
-
 	utxoCount, _ := ws.UTXOCount()
 
 	lastHashStr := "(none)"
@@ -270,7 +246,6 @@ func cmdBlock(out io.Writer, blockFile string, n int) {
 	fmt.Fprintf(out, "Nonce      : %d\n", b.Nonce)
 	fmt.Fprintf(out, "Size       : %d bytes\n", b.Size)
 	fmt.Fprintf(out, "Txs        : %d\n", len(b.Transactions))
-
 	fmt.Fprintf(out, "\n--- Transactions ---\n")
 	for j, tx := range b.Transactions {
 		fmt.Fprintf(out, "  [%d] txid=%s\n", j+1, tx.Txid)
@@ -350,7 +325,6 @@ func cmdWorldState(out io.Writer, ws *storage.WorldState) {
 		fmt.Fprintln(out, "World state is empty (no unspent outputs).")
 		return
 	}
-
 	fmt.Fprintf(out, "\n=== World State (%d UTXOs) ===\n", len(entries))
 	for i, e := range entries {
 		addrs := strings.Join(e.Out.ScriptPubKey.Addresses, ", ")
@@ -380,7 +354,6 @@ func printHelp(out io.Writer) {
 	fmt.Fprintln(out)
 }
 
-// short returns the first n characters of s (useful for truncating hashes).
 func short(s string, n int) string {
 	if len(s) <= n {
 		return s

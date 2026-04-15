@@ -1,0 +1,15 @@
+=============== Apr 14, 2026 (+07) ===============
+19:53:23.100026 log@legend F·NumFile S·FileSize N·Entry C·BadEntry B·BadBlock Ke·KeyError D·DroppedEntry L·Level Q·SeqNum T·TimeElapsed
+19:53:23.121121 db@open opening
+19:53:23.128000 version@stat F·[] S·0B[] Sc·[]
+19:53:23.131036 db@janitor F·2 G·0
+19:53:23.131036 db@open done T·9.9146ms
+=============== Apr 14, 2026 (+07) ===============
+20:14:51.267441 log@legend F·NumFile S·FileSize N·Entry C·BadEntry B·BadBlock Ke·KeyError D·DroppedEntry L·Level Q·SeqNum T·TimeElapsed
+20:14:51.281616 version@stat F·[] S·0B[] Sc·[]
+20:14:51.281616 db@open opening
+20:14:51.282264 journal@recovery F·1
+20:14:51.282264 journal@recovery recovering @1
+20:14:51.295215 version@stat F·[] S·0B[] Sc·[]
+20:14:51.342492 db@janitor F·2 G·0
+20:14:51.342492 db@open done T·60.8757ms

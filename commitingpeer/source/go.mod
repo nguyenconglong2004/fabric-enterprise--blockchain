@@ -3,7 +3,6 @@ module commiting-peer
 go 1.21
 
 require (
-	github.com/chzyer/readline v1.5.1
 	github.com/libp2p/go-libp2p v0.32.2
 	github.com/syndtr/goleveldb v1.0.0
 )
