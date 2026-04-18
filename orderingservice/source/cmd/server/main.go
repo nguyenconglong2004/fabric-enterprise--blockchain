@@ -13,6 +13,7 @@ import (
 
 	"github.com/chzyer/readline"
 
+	"raft-order-service/internal/api"
 	"raft-order-service/internal/raft"
 )
 
@@ -40,6 +41,16 @@ func main() {
 	defer node.Stop()
 
 	node.Start()
+
+	// Start HTTP API server in background
+	apiServer := api.NewAPIServer(node)
+	apiPort := 8081
+	go func() {
+		fmt.Printf("🌐 Order Service API Server khởi động trên port %d\n", apiPort)
+		if err := apiServer.Start(apiPort); err != nil {
+			fmt.Printf("❌ API Server error: %v\n", err)
+		}
+	}()
 
 	fmt.Printf("\nNode started!\n")
 	fmt.Printf("Node ID: %s\n", node.ID().ShortString())

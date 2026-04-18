@@ -10,13 +10,25 @@ import (
 	"fmt"
 )
 
-// Transaction is a Bitcoin-like UTXO transaction.
+// Transaction supports both UTXO and smart contract transaction types.
+// For UTXO transactions: Vin, Vout, LockTime are populated
+// For smart contract transactions: Payload, ContractName, FunctionName, Endorsements are populated
 type Transaction struct {
+	// UTXO fields (for Bitcoin-like transactions)
 	Version  uint32 `json:"version"`
 	Vin      []VIN  `json:"vin"`
 	Vout     []VOUT `json:"vout"`
 	LockTime uint32 `json:"locktime"`
-	Txid     string `json:"txid"`
+	Txid     string `json:"tx_id"`
+
+	// Smart contract fields (for contract execution transactions)
+	Payload      []byte        `json:"payload"`       // JSON-encoded arguments for the contract function
+	ContractName string        `json:"contract_name"` // Name of the smart contract
+	FunctionName string        `json:"function_name"` // Name of the function to call
+	ClientPubKey string        `json:"client_pubkey"` // Public key of the client who submitted
+	SenderPubKey string        `json:"sender_pubkey"` // Public key of the endorser
+	Signature    string        `json:"signature"`     // Signature from endorser
+	Endorsements []Endorsement `json:"endorsements"`  // Array of endorsements from peers
 }
 
 // VIN is a transaction input referencing a previous output.
@@ -30,6 +42,13 @@ type VIN struct {
 type ScriptSig struct {
 	ASM string `json:"asm"`
 	Hex string `json:"hex"`
+}
+
+// Endorsement represents a signature from a peer who endorsed this transaction.
+type Endorsement struct {
+	EndorserID string `json:"endorser_id"` // ID of the endorsing peer
+	Signature  string `json:"signature"`   // Signature from the endorser
+	Status     string `json:"status"`      // "SUCCESS" or error message
 }
 
 // VOUT is a transaction output.
@@ -84,7 +103,14 @@ func (tx *Transaction) ComputeTxID() string {
 }
 
 // Size returns the byte length of the serialized transaction.
+// For UTXO transactions: returns serialized size
+// For smart contract transactions: returns payload size
 func (tx *Transaction) Size() int {
+	// If this is a smart contract transaction
+	if len(tx.Payload) > 0 && tx.ContractName != "" {
+		return len(tx.Payload)
+	}
+	// Otherwise, it's a UTXO transaction
 	return len(tx.Serialize())
 }
 
@@ -108,15 +134,30 @@ func (tx *Transaction) ShallowCopyEmptySigs() Transaction {
 }
 
 // Validate performs basic sanity checks on the transaction.
+// Supports both UTXO transactions and smart contract transactions.
 func (tx *Transaction) Validate() error {
+	// Both types must have a txid
 	if tx.Txid == "" {
 		return errors.New("transaction must have a valid txid")
 	}
+
+	// Determine transaction type: if it has payload and contract info, it's a smart contract tx
+	// Otherwise, it's a UTXO transaction
+	if len(tx.Payload) > 0 && tx.ContractName != "" && tx.FunctionName != "" {
+		// Smart contract transaction validation
+		if tx.ClientPubKey == "" {
+			return errors.New("smart contract transaction must have client_pubkey")
+		}
+		// Note: Endorsement validation will be done in CommittingPeer, not here
+		return nil
+	}
+
+	// UTXO transaction validation
 	if len(tx.Vin) == 0 {
-		return errors.New("transaction must have at least one input")
+		return errors.New("UTXO transaction must have at least one input")
 	}
 	if len(tx.Vout) == 0 {
-		return errors.New("transaction must have at least one output")
+		return errors.New("UTXO transaction must have at least one output")
 	}
 	return nil
 }

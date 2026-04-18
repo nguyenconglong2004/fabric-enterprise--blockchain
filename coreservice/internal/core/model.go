@@ -3,7 +3,8 @@ package core
 
 type Transaction struct {
 	TxID         string `json:"tx_id"`
-	SenderPubKey string `json:"sender_pubkey"`
+	SenderPubKey string `json:"sender_pubkey"` // Endorser public key
+	ClientPubKey string `json:"client_pubkey"` // Client public key
 	Signature    string `json:"signature"`
 
 	ContractName string `json:"contract_name"`

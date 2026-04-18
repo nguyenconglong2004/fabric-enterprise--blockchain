@@ -3,6 +3,7 @@ package raft
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"sync"
 	"time"
@@ -121,6 +122,9 @@ func (rn *RaftNode) Start() {
 	// Register deliver stream handler
 	rn.Transport.SetDeliverStreamHandler(rn.HandleDeliverStream)
 
+	// Register endorsement stream handler
+	rn.Transport.SetEndorsementStreamHandler(rn.HandleEndorsementStream)
+
 	// Start message processor
 	go rn.processMessages()
 
@@ -223,12 +227,103 @@ func (rn *RaftNode) ID() peer.ID {
 	return rn.Transport.ID()
 }
 
+// GetLeaderAddress returns the leader's address information
+func (rn *RaftNode) GetLeaderAddress() (peer.AddrInfo, error) {
+	leaderID := rn.GetLeaderID()
+	if leaderID == "" {
+		return peer.AddrInfo{}, fmt.Errorf("no leader known")
+	}
+
+	members := rn.Membership.GetAliveMembers()
+	for _, member := range members {
+		if member.PeerID == leaderID {
+			var addrs []string
+			if member.PeerID == rn.Transport.ID() {
+				hostAddrs := rn.Transport.Addrs()
+				addrs = make([]string, 0, len(hostAddrs))
+				for _, addr := range hostAddrs {
+					addrs = append(addrs, addr.String())
+				}
+			} else {
+				peerAddrs := rn.Transport.Peerstore().Addrs(member.PeerID)
+				addrs = make([]string, 0, len(peerAddrs))
+				for _, addr := range peerAddrs {
+					addrs = append(addrs, addr.String())
+				}
+			}
+
+			if len(addrs) > 0 {
+				addrInfo := peer.AddrInfo{
+					ID:    member.PeerID,
+					Addrs: make([]multiaddr.Multiaddr, 0, len(addrs)),
+				}
+				for _, addrStr := range addrs {
+					if addr, err := multiaddr.NewMultiaddr(addrStr); err == nil {
+						addrInfo.Addrs = append(addrInfo.Addrs, addr)
+					}
+				}
+				if len(addrInfo.Addrs) > 0 {
+					return addrInfo, nil
+				}
+			}
+		}
+	}
+
+	return peer.AddrInfo{}, fmt.Errorf("leader address not found")
+}
+
 // GetMembershipViewForClient returns membership view with addresses for client
 func (rn *RaftNode) GetMembershipViewForClient() []peer.AddrInfo {
 	members := rn.Membership.GetAliveMembers()
 	nodes := make([]peer.AddrInfo, 0, len(members))
 
 	for _, member := range members {
+		var addrs []string
+		if member.PeerID == rn.Transport.ID() {
+			hostAddrs := rn.Transport.Addrs()
+			addrs = make([]string, 0, len(hostAddrs))
+			for _, addr := range hostAddrs {
+				addrs = append(addrs, addr.String())
+			}
+		} else {
+			peerAddrs := rn.Transport.Peerstore().Addrs(member.PeerID)
+			addrs = make([]string, 0, len(peerAddrs))
+			for _, addr := range peerAddrs {
+				addrs = append(addrs, addr.String())
+			}
+		}
+
+		if len(addrs) > 0 {
+			addrInfo := peer.AddrInfo{
+				ID:    member.PeerID,
+				Addrs: make([]multiaddr.Multiaddr, 0, len(addrs)),
+			}
+			for _, addrStr := range addrs {
+				if addr, err := multiaddr.NewMultiaddr(addrStr); err == nil {
+					addrInfo.Addrs = append(addrInfo.Addrs, addr)
+				}
+			}
+			if len(addrInfo.Addrs) > 0 {
+				nodes = append(nodes, addrInfo)
+			}
+		}
+	}
+
+	return nodes
+}
+
+// GetFollowerAddresses returns list of follower addresses (all except leader)
+func (rn *RaftNode) GetFollowerAddresses() []peer.AddrInfo {
+	members := rn.Membership.GetAliveMembers()
+	leaderID := rn.GetLeaderID()
+	nodes := make([]peer.AddrInfo, 0)
+
+	for _, member := range members {
+		// Skip leader
+		if member.PeerID == leaderID {
+			continue
+		}
+
 		var addrs []string
 		if member.PeerID == rn.Transport.ID() {
 			hostAddrs := rn.Transport.Addrs()

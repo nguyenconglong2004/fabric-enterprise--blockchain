@@ -72,6 +72,11 @@ func (t *Transport) SetDeliverStreamHandler(handler network.StreamHandler) {
 	t.Host.SetStreamHandler(protocol.ID(DeliverProtocolID), handler)
 }
 
+// SetEndorsementStreamHandler sets the handler for endorsement streams
+func (t *Transport) SetEndorsementStreamHandler(handler network.StreamHandler) {
+	t.Host.SetStreamHandler(protocol.ID(EndorsementProtocolID), handler)
+}
+
 // SendMessage sends a message to a peer
 func (t *Transport) SendMessage(peerID peer.ID, msg types.Message) error {
 	s, err := t.Host.NewStream(t.Ctx, peerID, protocol.ID(ProtocolID))
@@ -83,6 +88,22 @@ func (t *Transport) SendMessage(peerID peer.ID, msg types.Message) error {
 	encoder := json.NewEncoder(s)
 	if err := encoder.Encode(msg); err != nil {
 		return fmt.Errorf("failed to encode message: %w", err)
+	}
+
+	return nil
+}
+
+// SendEndorsement sends an endorsement transaction to the leader
+func (t *Transport) SendEndorsement(peerID peer.ID, tx types.Transaction) error {
+	s, err := t.Host.NewStream(t.Ctx, peerID, protocol.ID(EndorsementProtocolID))
+	if err != nil {
+		return fmt.Errorf("failed to create endorsement stream: %w", err)
+	}
+	defer s.Close()
+
+	encoder := json.NewEncoder(s)
+	if err := encoder.Encode(tx); err != nil {
+		return fmt.Errorf("failed to encode endorsement: %w", err)
 	}
 
 	return nil
