@@ -22,18 +22,29 @@ func main() {
 	fmt.Println()
 
 	reader := bufio.NewReader(os.Stdin)
-	fmt.Print("Enter port for this node (e.g., 6000): ")
-	portStr, _ := reader.ReadString('\n')
-	portStr = strings.TrimSpace(portStr)
 
-	var port int
-	fmt.Sscanf(portStr, "%d", &port)
-	if port == 0 {
-		port = 6000
+	// Ask for P2P port
+	fmt.Print("Enter port for P2P network (e.g., 6000): ")
+	p2pPortStr, _ := reader.ReadString('\n')
+	p2pPortStr = strings.TrimSpace(p2pPortStr)
+
+	p2pPort := 6000
+	if parsed, err := strconv.Atoi(p2pPortStr); err == nil && parsed > 0 {
+		p2pPort = parsed
+	}
+
+	// Ask for API port
+	fmt.Print("Enter port for API server (e.g., 8081): ")
+	apiPortStr, _ := reader.ReadString('\n')
+	apiPortStr = strings.TrimSpace(apiPortStr)
+
+	apiPort := 8081
+	if parsed, err := strconv.Atoi(apiPortStr); err == nil && parsed > 0 {
+		apiPort = parsed
 	}
 
 	ctx := context.Background()
-	node, err := raft.NewRaftNode(ctx, port)
+	node, err := raft.NewRaftNode(ctx, p2pPort)
 	if err != nil {
 		fmt.Printf("Error creating node: %v\n", err)
 		return
@@ -44,7 +55,6 @@ func main() {
 
 	// Start HTTP API server in background
 	apiServer := api.NewAPIServer(node)
-	apiPort := 8081
 	go func() {
 		fmt.Printf("🌐 Order Service API Server khởi động trên port %d\n", apiPort)
 		if err := apiServer.Start(apiPort); err != nil {
