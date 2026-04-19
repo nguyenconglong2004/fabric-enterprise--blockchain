@@ -77,6 +77,16 @@ func (t *Transport) SetEndorsementStreamHandler(handler network.StreamHandler) {
 	t.Host.SetStreamHandler(protocol.ID(EndorsementProtocolID), handler)
 }
 
+// SetTransactionStreamHandler sets the handler for transaction streams from Core Service
+func (t *Transport) SetTransactionStreamHandler(handler network.StreamHandler) {
+	t.Host.SetStreamHandler(protocol.ID(TransactionProtocolID), handler)
+}
+
+// SetMembershipStreamHandler sets the handler for membership queries
+func (t *Transport) SetMembershipStreamHandler(handler network.StreamHandler) {
+	t.Host.SetStreamHandler(protocol.ID(MembershipProtocolID), handler)
+}
+
 // SendMessage sends a message to a peer
 func (t *Transport) SendMessage(peerID peer.ID, msg types.Message) error {
 	s, err := t.Host.NewStream(t.Ctx, peerID, protocol.ID(ProtocolID))

@@ -4,13 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 
 	"github.com/libp2p/go-libp2p"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/protocol"
+	"github.com/multiformats/go-multiaddr"
 )
 
 // MemberInfo represents a member in the network
@@ -80,26 +79,64 @@ func (t *Transport) ID() peer.ID {
 	return t.Host.ID()
 }
 
-// GetMembershipFromOrderService fetches membership view from Order Service HTTP API
-// orderServiceAddr should be like "http://localhost:8080"
+// GetMembershipFromOrderService fetches membership via P2P protocol
+// orderServiceAddr should be like "/ip4/127.0.0.1/tcp/6000/p2p/12D3Koo..."
 func (t *Transport) GetMembershipFromOrderService(orderServiceAddr string) (*MembershipView, error) {
-	url := fmt.Sprintf("%s/api/membership", orderServiceAddr)
+	if orderServiceAddr == "" {
+		return nil, fmt.Errorf("orderServiceAddr is empty")
+	}
 
-	resp, err := http.Get(url)
+	// Parse the multiaddr to get peer info
+	maddr, err := multiaddr.NewMultiaddr(orderServiceAddr)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch membership: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("membership API returned status %d: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("failed to parse multiaddr: %w", err)
 	}
 
+	// Extract peer ID from multiaddr
+	peerInfo, err := peer.AddrInfoFromP2pAddr(maddr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to extract peer info: %w", err)
+	}
+
+	fmt.Printf("[Transport] 🔄 Fetching membership from P2P: %s\n", peerInfo.ID.ShortString())
+
+	// Connect to the peer
+	if err := t.Host.Connect(t.Ctx, *peerInfo); err != nil {
+		return nil, fmt.Errorf("failed to connect to Order Service: %w", err)
+	}
+
+	// Open stream to membership protocol
+	s, err := t.Host.NewStream(t.Ctx, peerInfo.ID, protocol.ID("/raft-order-service/membership/1.0.0"))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create membership stream: %w", err)
+	}
+	defer s.Close()
+
+	// Decode membership response
+	decoder := json.NewDecoder(s)
 	var membership MembershipView
-	if err := json.NewDecoder(resp.Body).Decode(&membership); err != nil {
+	if err := decoder.Decode(&membership); err != nil {
 		return nil, fmt.Errorf("failed to decode membership: %w", err)
 	}
 
+	fmt.Printf("[Transport] ✅ Got membership: leader=%s, members=%d\n", membership.LeaderID[:8], len(membership.Members))
 	return &membership, nil
+}
+
+// SendTransaction sends a transaction to Order Service via libp2p
+func (t *Transport) SendTransaction(peerID peer.ID, tx interface{}) error {
+	// Open stream to transaction protocol
+	s, err := t.Host.NewStream(t.Ctx, peerID, protocol.ID("/raft-order-service/transaction/1.0.0"))
+	if err != nil {
+		return fmt.Errorf("failed to create stream: %w", err)
+	}
+	defer s.Close()
+
+	// Send transaction via JSON
+	encoder := json.NewEncoder(s)
+	if err := encoder.Encode(tx); err != nil {
+		return fmt.Errorf("failed to encode transaction: %w", err)
+	}
+
+	return nil
 }

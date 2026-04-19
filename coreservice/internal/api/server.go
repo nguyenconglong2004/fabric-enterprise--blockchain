@@ -2,11 +2,12 @@
 package api
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+
+	"github.com/libp2p/go-libp2p/core/peer"
 
 	"coreservice/internal/core"
 	"coreservice/internal/crypto"
@@ -84,73 +85,71 @@ func (s *APIServer) HandleSubmitTx(w http.ResponseWriter, r *http.Request) {
 
 	fmt.Printf("✅ [API] Signature verified successfully\n")
 
-	// Send endorsement to Order Service followers
-	fmt.Printf("🔍 [API] DEBUG: OrderServiceAddr='%s', Transport=%v\n", s.OrderServiceAddr, s.Transport != nil)
+	// Send transaction to Order Service via libp2p
+	fmt.Printf("📤 [API] Fetching membership from Order Service...\n")
 
-	if s.OrderServiceAddr != "" {
-		fmt.Printf("📤 [API] Lấy membership từ Order Service...\n")
+	if s.Transport == nil {
+		fmt.Printf("❌ [API] ERROR: Transport is nil!\n")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{
+			"status":  "error",
+			"message": "Transport not initialized",
+		})
+		return
+	}
 
-		if s.Transport == nil {
-			fmt.Printf("❌ [API] ERROR: Transport is nil!\n")
-		} else {
-			// Fetch membership to get all followers
-			membership, err := s.Transport.GetMembershipFromOrderService(s.OrderServiceAddr)
-			if err != nil {
-				fmt.Printf("⚠️  [API] Lỗi lấy membership: %v\n", err)
-			} else {
-				fmt.Printf("📋 [API] Membership: Leader=%s, Members=%d\n", membership.LeaderID[:8], len(membership.Members))
+	// Fetch membership to find Order Service node
+	membership, err := s.Transport.GetMembershipFromOrderService(s.OrderServiceAddr)
+	if err != nil {
+		fmt.Printf("⚠️  [API] Error fetching membership: %v\n", err)
+		w.WriteHeader(http.StatusBadGateway)
+		json.NewEncoder(w).Encode(map[string]string{
+			"status":  "error",
+			"message": "Failed to fetch membership from Order Service",
+		})
+		return
+	}
 
-				// Collect all follower addresses (not leader)
-				var followers []network.MemberInfo
-				for _, member := range membership.Members {
-					if member.ID != membership.LeaderID {
-						followers = append(followers, member)
-					}
-				}
+	fmt.Printf("📋 [API] Membership: Leader=%s, Members=%d\n", membership.LeaderID[:8], len(membership.Members))
 
-				// If no follower, use leader
-				if len(followers) == 0 && len(membership.Members) > 0 {
-					followers = append(followers, membership.Members[0])
-				}
-
-				// Try to send to each follower
-				sent := false
-				txBytes, _ := json.Marshal(tx)
-
-				for _, follower := range followers {
-					fmt.Printf("🔄 [API] Thử gửi tới node %s (%d addresses)\n", follower.ID[:8], len(follower.Addresses))
-
-					// Use Order Service address as endpoint
-					endpoint := s.OrderServiceAddr + "/api/endorsement"
-
-					if endpoint != "" {
-						resp, err := http.Post(
-							endpoint,
-							"application/json",
-							bytes.NewReader(txBytes),
-						)
-
-						if err == nil && resp.StatusCode == http.StatusOK {
-							resp.Body.Close()
-							fmt.Printf("✅ [API] Gửi endorsement thành công tới %s\n", follower.ID[:8])
-							sent = true
-							break
-						}
-
-						if resp != nil {
-							resp.Body.Close()
-						}
-						fmt.Printf("⚠️  [API] Thử gửi tới %s thất bại\n", follower.ID[:8])
-					}
-				}
-
-				if !sent && len(followers) > 0 {
-					fmt.Printf("❌ [API] Không gửi được endorsement tới bất cứ follower nào\n")
-				}
-			}
+	// Try to find and connect to leader first, then followers
+	nodes := []string{membership.LeaderID}
+	for _, member := range membership.Members {
+		if member.ID != membership.LeaderID {
+			nodes = append(nodes, member.ID)
 		}
-	} else {
-		fmt.Printf("📤 [API] Không có Order Service để gửi endorsement\n")
+	}
+
+	sent := false
+	for _, nodeID := range nodes {
+		fmt.Printf("🔄 [API] Attempting to send transaction to %s via libp2p...\n", nodeID[:8])
+
+		// Decode peer ID and connect
+		peerID, err := parsePeerID(nodeID)
+		if err != nil {
+			fmt.Printf("⚠️  [API] Failed to parse peer ID: %v\n", err)
+			continue
+		}
+
+		// Send transaction via libp2p
+		if err := s.Transport.SendTransaction(peerID, tx); err != nil {
+			fmt.Printf("⚠️  [API] Failed to send to %s: %v\n", nodeID[:8], err)
+			continue
+		}
+
+		fmt.Printf("✅ [API] Transaction sent successfully to %s\n", nodeID[:8])
+		sent = true
+		break
+	}
+
+	if !sent {
+		fmt.Printf("❌ [API] Failed to send transaction to any node\n")
+		w.WriteHeader(http.StatusBadGateway)
+		json.NewEncoder(w).Encode(map[string]string{
+			"status":  "error",
+			"message": "Failed to send transaction to Order Service",
+		})
+		return
 	}
 
 	w.WriteHeader(http.StatusOK)
@@ -232,4 +231,9 @@ func (s *APIServer) HandleGetState(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	w.Write(val)
+}
+
+// parsePeerID converts a peer ID string to peer.ID
+func parsePeerID(peerIDStr string) (peer.ID, error) {
+	return peer.Decode(peerIDStr)
 }

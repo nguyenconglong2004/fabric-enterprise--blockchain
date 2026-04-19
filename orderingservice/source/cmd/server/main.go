@@ -33,15 +33,8 @@ func main() {
 		p2pPort = parsed
 	}
 
-	// Ask for API port
-	fmt.Print("Enter port for API server (e.g., 8081): ")
-	apiPortStr, _ := reader.ReadString('\n')
-	apiPortStr = strings.TrimSpace(apiPortStr)
-
+	// API port is fixed at 8081
 	apiPort := 8081
-	if parsed, err := strconv.Atoi(apiPortStr); err == nil && parsed > 0 {
-		apiPort = parsed
-	}
 
 	ctx := context.Background()
 	node, err := raft.NewRaftNode(ctx, p2pPort)

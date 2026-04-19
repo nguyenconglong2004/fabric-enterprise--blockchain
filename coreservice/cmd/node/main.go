@@ -1,9 +1,12 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"net/http"
+	"os"
+	"strings"
 
 	"coreservice/internal/api"
 	"coreservice/internal/crypto"
@@ -14,6 +17,16 @@ import (
 
 func main() {
 	fmt.Println("🚀 Đang khởi động Core Node...")
+
+	reader := bufio.NewReader(os.Stdin)
+	fmt.Print("Enter Order Service P2P address (e.g., /ip4/127.0.0.1/tcp/6000/p2p/12D3Koo...): ")
+	orderServiceAddr, _ := reader.ReadString('\n')
+	orderServiceAddr = strings.TrimSpace(orderServiceAddr)
+
+	if orderServiceAddr == "" {
+		fmt.Printf("❌ Order Service address is required!\n")
+		return
+	}
 
 	// Generate or load key pair
 	keyPair, err := crypto.GenerateKeyPair()
@@ -46,7 +59,7 @@ func main() {
 		Engine:           engine,
 		KeyPair:          keyPair,
 		Transport:        transport,
-		OrderServiceAddr: "http://localhost:8081",
+		OrderServiceAddr: orderServiceAddr,
 	}
 
 	http.HandleFunc("/api/tx/deploy", apiServer.HandleDeployContract)

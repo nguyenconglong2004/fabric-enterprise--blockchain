@@ -121,9 +121,19 @@ func (rn *RaftNode) Start() {
 
 	// Register deliver stream handler
 	rn.Transport.SetDeliverStreamHandler(rn.HandleDeliverStream)
+	log.Printf("[%s] ✅ Deliver handler registered", rn.Transport.ID().ShortString())
 
 	// Register endorsement stream handler
 	rn.Transport.SetEndorsementStreamHandler(rn.HandleEndorsementStream)
+	log.Printf("[%s] ✅ Endorsement handler registered", rn.Transport.ID().ShortString())
+
+	// Register transaction stream handler (from Core Service)
+	rn.Transport.SetTransactionStreamHandler(rn.HandleTransactionStream)
+	log.Printf("[%s] ✅ Transaction handler registered", rn.Transport.ID().ShortString())
+
+	// Register membership stream handler (for Core Service queries)
+	rn.Transport.SetMembershipStreamHandler(rn.HandleMembershipStream)
+	log.Printf("[%s] ✅ Membership handler registered", rn.Transport.ID().ShortString())
 
 	// Start message processor
 	go rn.processMessages()
