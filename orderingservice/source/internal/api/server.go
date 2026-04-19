@@ -238,7 +238,7 @@ func (s *APIServer) handleEndorsement(w http.ResponseWriter, r *http.Request) {
 	if !s.node.IsLeader() {
 		leaderID := s.node.GetLeaderID()
 		log.Printf("[API] 📤 Not leader, forwarding to leader %s\n", leaderID.ShortString())
-		
+
 		if leaderID != "" {
 			// Forward via libp2p
 			if err := s.node.Transport.SendEndorsement(leaderID, tx); err != nil {
@@ -255,7 +255,7 @@ func (s *APIServer) handleEndorsement(w http.ResponseWriter, r *http.Request) {
 	} else {
 		// Leader: add to TxPool
 		log.Printf("[API] 👑 I am leader, adding to TxPool\n")
-		
+
 		if _, err := s.node.SubmitTransaction(tx); err != nil {
 			log.Printf("[API] ❌ Error submitting endorsement: %v\n", err)
 			w.Header().Set("Content-Type", "application/json")

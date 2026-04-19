@@ -65,7 +65,7 @@ func (s *APIServer) HandleSubmitTx(w http.ResponseWriter, r *http.Request) {
 
 	tx.Signature = signature
 	tx.SenderPubKey = s.KeyPair.PublicKey // Endorser's public key
-	tx.ClientPubKey = s.KeyPair.PublicKey  // Client = endorser in this case
+	tx.ClientPubKey = s.KeyPair.PublicKey // Client = endorser in this case
 
 	fmt.Printf("✍️  [API] Đã ký transaction: %s\n", signature[:16]+"...")
 	fmt.Printf("📌 [API] Public Key: %s\n", s.KeyPair.PublicKey[:16]+"...")
@@ -86,7 +86,7 @@ func (s *APIServer) HandleSubmitTx(w http.ResponseWriter, r *http.Request) {
 
 	// Send endorsement to Order Service followers
 	fmt.Printf("🔍 [API] DEBUG: OrderServiceAddr='%s', Transport=%v\n", s.OrderServiceAddr, s.Transport != nil)
-	
+
 	if s.OrderServiceAddr != "" {
 		fmt.Printf("📤 [API] Lấy membership từ Order Service...\n")
 
