@@ -1,5 +1,6 @@
 data/
-
+worldstate/
+worldstate1/
 *.exe
 *.exe~
 *.dll
@@ -11,4 +12,4 @@ data/
 .DS_Store
 .idea/
 .vscode/
-
+log.txt

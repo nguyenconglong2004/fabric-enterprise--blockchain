@@ -1,12 +1,23 @@
 package types
 
-// Transaction is a Bitcoin-like UTXO transaction.
+// Transaction supports both UTXO and Smart Contract transactions
 type Transaction struct {
-	Version  uint32 `json:"version"`
-	Vin      []VIN  `json:"vin"`
-	Vout     []VOUT `json:"vout"`
-	LockTime uint32 `json:"locktime"`
-	Txid     string `json:"txid"`
+	// Common fields
+	Txid         string `json:"txid"`
+	Version      uint32 `json:"version"`
+	LockTime     uint32 `json:"locktime"`
+	Signature    string `json:"signature"`
+	ClientPubKey string `json:"client_pubkey"`
+	SenderPubKey string `json:"sender_pubkey"` // Endorser public key
+
+	// UTXO transaction fields
+	Vin  []VIN  `json:"vin"`
+	Vout []VOUT `json:"vout"`
+
+	// Smart Contract transaction fields
+	ContractName string `json:"contract_name"`
+	FunctionName string `json:"function_name"`
+	Payload      []byte `json:"payload"`
 }
 
 // VIN is a transaction input referencing a previous output.
