@@ -7,8 +7,6 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/libp2p/go-libp2p/core/peer"
-
 	"coreservice/internal/core"
 	"coreservice/internal/crypto"
 	"coreservice/internal/network"
@@ -113,31 +111,26 @@ func (s *APIServer) HandleSubmitTx(w http.ResponseWriter, r *http.Request) {
 	fmt.Printf("📋 [API] Membership: Leader=%s, Members=%d\n", membership.LeaderID[:8], len(membership.Members))
 
 	// Try to find and connect to leader first, then followers
-	nodes := []string{membership.LeaderID}
+	membersToTry := []network.MemberInfo{}
 	for _, member := range membership.Members {
-		if member.ID != membership.LeaderID {
-			nodes = append(nodes, member.ID)
+		if member.ID == membership.LeaderID {
+			membersToTry = append([]network.MemberInfo{member}, membersToTry...) // leader first
+		} else {
+			membersToTry = append(membersToTry, member)
 		}
 	}
 
 	sent := false
-	for _, nodeID := range nodes {
-		fmt.Printf("🔄 [API] Attempting to send transaction to %s via libp2p...\n", nodeID[:8])
+	for _, member := range membersToTry {
+		fmt.Printf("🔄 [API] Attempting to send transaction to %s via libp2p...\n", member.ID[:8])
 
-		// Decode peer ID and connect
-		peerID, err := parsePeerID(nodeID)
-		if err != nil {
-			fmt.Printf("⚠️  [API] Failed to parse peer ID: %v\n", err)
+		// Send transaction via libp2p with member info (includes addresses)
+		if err := s.Transport.SendTransaction(member, tx); err != nil {
+			fmt.Printf("⚠️  [API] Failed to send to %s: %v\n", member.ID[:8], err)
 			continue
 		}
 
-		// Send transaction via libp2p
-		if err := s.Transport.SendTransaction(peerID, tx); err != nil {
-			fmt.Printf("⚠️  [API] Failed to send to %s: %v\n", nodeID[:8], err)
-			continue
-		}
-
-		fmt.Printf("✅ [API] Transaction sent successfully to %s\n", nodeID[:8])
+		fmt.Printf("✅ [API] Transaction sent successfully to %s\n", member.ID[:8])
 		sent = true
 		break
 	}
@@ -231,9 +224,4 @@ func (s *APIServer) HandleGetState(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	w.Write(val)
-}
-
-// parsePeerID converts a peer ID string to peer.ID
-func parsePeerID(peerIDStr string) (peer.ID, error) {
-	return peer.Decode(peerIDStr)
 }

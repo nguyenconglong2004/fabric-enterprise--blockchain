@@ -9,21 +9,17 @@ import (
 	"raft-order-service/internal/raft"
 )
 
-// APIServer handles HTTP requests for the Ordering Service
 type APIServer struct {
 	node *raft.RaftNode
 }
 
-// NewAPIServer creates a new API server
 func NewAPIServer(node *raft.RaftNode) *APIServer {
 	return &APIServer{node: node}
 }
 
-// Start starts the HTTP API server on the given port
 func (s *APIServer) Start(port int) error {
 	mux := http.NewServeMux()
 
-	// Only membership endpoint - used by Core Service to discover Order Service nodes
 	mux.HandleFunc("/api/membership", s.handleGetMembership)
 
 	addr := fmt.Sprintf(":%d", port)

@@ -124,7 +124,34 @@ func (t *Transport) GetMembershipFromOrderService(orderServiceAddr string) (*Mem
 }
 
 // SendTransaction sends a transaction to Order Service via libp2p
-func (t *Transport) SendTransaction(peerID peer.ID, tx interface{}) error {
+// memberInfo includes peer ID and addresses for connection
+func (t *Transport) SendTransaction(memberInfo MemberInfo, tx interface{}) error {
+	peerID, err := peer.Decode(memberInfo.ID)
+	if err != nil {
+		return fmt.Errorf("failed to decode peer ID: %w", err)
+	}
+
+	// Parse addresses and connect
+	if len(memberInfo.Addresses) > 0 {
+		for _, addrStr := range memberInfo.Addresses {
+			maddr, err := multiaddr.NewMultiaddr(addrStr)
+			if err != nil {
+				continue
+			}
+
+			peerInfo, err := peer.AddrInfoFromP2pAddr(maddr)
+			if err != nil {
+				continue
+			}
+
+			// Try to connect to this address
+			if err := t.Host.Connect(t.Ctx, *peerInfo); err == nil {
+				fmt.Printf("[Transport] 📡 Connected to %s via %s\n", peerID.ShortString(), addrStr)
+				break
+			}
+		}
+	}
+
 	// Open stream to transaction protocol
 	s, err := t.Host.NewStream(t.Ctx, peerID, protocol.ID("/raft-order-service/transaction/1.0.0"))
 	if err != nil {
