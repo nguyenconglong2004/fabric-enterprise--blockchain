@@ -7,10 +7,12 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 
 	"coreservice/internal/core"
 	"coreservice/internal/crypto"
 	"coreservice/internal/network"
+	"coreservice/internal/storage"
 	"coreservice/internal/vm"
 )
 
@@ -20,6 +22,75 @@ type APIServer struct {
 	KeyPair          *crypto.KeyPair
 	Transport        *network.Transport
 	OrderServiceAddr string
+	DB               *storage.PostgresDB
+}
+
+// HandleListContracts returns all deployed contracts.
+// GET /api/contracts
+func (s *APIServer) HandleListContracts(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Only GET supported", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var contracts []string
+
+	// Prefer LevelDB (Engine DB) since DeployContract writes there.
+	if s.Engine != nil {
+		if db := s.Engine.GetDB(); db != nil {
+			if names, err := db.ListContracts(); err == nil {
+				contracts = names
+			} else {
+				fmt.Printf("⚠️  [API] ListContracts(LevelDB) error: %v\n", err)
+			}
+		}
+	}
+
+	// If no contracts in DB, use available contracts from schema
+	if len(contracts) == 0 {
+		availableContracts := core.ListAvailableContracts()
+		for _, cs := range availableContracts {
+			contracts = append(contracts, cs.Name)
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":    "success",
+		"contracts": contracts,
+		"count":     len(contracts),
+	})
+}
+
+// HandleGetContractSchema returns the schema for a contract.
+// GET /api/contract/schema?name=example_asset
+func (s *APIServer) HandleGetContractSchema(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Only GET supported", http.StatusMethodNotAllowed)
+		return
+	}
+
+	contractName := r.URL.Query().Get("name")
+	if contractName == "" {
+		http.Error(w, "Missing 'name' parameter", http.StatusBadRequest)
+		return
+	}
+
+	schema := core.GetContractSchema(contractName)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status": "success",
+		"schema": schema,
+	})
+}
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":    "success",
+		"contracts": contracts,
+		"count":     len(contracts),
+	})
 }
 
 func (s *APIServer) HandleSubmitTx(w http.ResponseWriter, r *http.Request) {
@@ -154,10 +225,14 @@ func (s *APIServer) HandleSubmitTx(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{
-		"status":    "success",
-		"tx_id":     tx.TxID,
-		"signature": signature[:32] + "...",
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":        "success",
+		"tx_id":         tx.TxID,
+		"contract_name": tx.ContractName,
+		"function_name": tx.FunctionName,
+		"sender_pubkey": tx.SenderPubKey,
+		"client_pubkey": tx.ClientPubKey,
+		"signature":     signature[:32] + "...",
 	})
 }
 
@@ -199,6 +274,16 @@ func (s *APIServer) HandleDeployContract(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	// Save to PostgreSQL if available
+	if s.DB != nil {
+		if err := s.DB.SaveContract(contractName, wasmBytes); err != nil {
+			fmt.Printf("⚠️  [API] Lỗi lưu contract vào PostgreSQL: %v\n", err)
+			// Continue even if DB save fails
+		} else {
+			fmt.Printf("✅ [API] Contract saved to PostgreSQL\n")
+		}
+	}
+
 	fmt.Printf("📦 [API] Đã deploy Contract mới: '%s' (%d bytes)\n", contractName, len(wasmBytes))
 
 	w.Header().Set("Content-Type", "application/json")
@@ -207,6 +292,54 @@ func (s *APIServer) HandleDeployContract(w http.ResponseWriter, r *http.Request)
 		"status":        "success",
 		"message":       "Deploy Smart Contract thành công!",
 		"contract_name": contractName,
+	})
+}
+
+// HandleDeployExampleAsset deploys the pre-built example_asset contract
+// POST /api/deploy-example
+func (s *APIServer) HandleDeployExampleAsset(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Chỉ hỗ trợ phương thức POST", http.StatusMethodNotAllowed)
+		return
+	}
+
+	contractName := "example_asset"
+	wasmPath := "../../contracts/example_asset/my_contract.wasm"
+
+	// Read the pre-built WASM file
+	wasmBytes, err := os.ReadFile(wasmPath)
+	if err != nil {
+		fmt.Printf("❌ [API] Lỗi đọc file WASM: %v\n", err)
+		http.Error(w, fmt.Sprintf("Không tìm thấy file contract: %s", wasmPath), http.StatusInternalServerError)
+		return
+	}
+
+	// Save to LevelDB
+	err = s.Engine.GetDB().SaveContract(contractName, wasmBytes)
+	if err != nil {
+		http.Error(w, "Lỗi lưu vào LevelDB", http.StatusInternalServerError)
+		return
+	}
+
+	// Save to PostgreSQL if available
+	if s.DB != nil {
+		if err := s.DB.SaveContract(contractName, wasmBytes); err != nil {
+			fmt.Printf("⚠️  [API] Lỗi lưu contract vào PostgreSQL: %v\n", err)
+			// Continue even if DB save fails
+		} else {
+			fmt.Printf("✅ [API] Contract saved to PostgreSQL\n")
+		}
+	}
+
+	fmt.Printf("📦 [API] Đã deploy Contract 'example_asset' (%d bytes)\n", len(wasmBytes))
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":        "success",
+		"message":       "Deploy example_asset contract thành công!",
+		"contract_name": contractName,
+		"size_bytes":    len(wasmBytes),
 	})
 }
 
@@ -232,4 +365,43 @@ func (s *APIServer) HandleGetState(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	w.Write(val)
+}
+
+// HandleGetBlock returns a block by hash
+// GET /api/block?hash=<block_hash>
+func (s *APIServer) HandleGetBlock(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Only GET supported", http.StatusMethodNotAllowed)
+		return
+	}
+
+	blockHash := r.URL.Query().Get("hash")
+	if blockHash == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "missing 'hash' parameter"})
+		return
+	}
+
+	fmt.Printf("📦 [API] Querying block: %s\n", blockHash[:16]+"...")
+
+	// Try to get from database if available
+	if s.DB != nil {
+		block, err := s.DB.GetBlockByHash(blockHash)
+		if err == nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"status": "success",
+				"block":  block,
+			})
+			return
+		}
+		fmt.Printf("⚠️  [API] Block not in DB: %v\n", err)
+	}
+
+	w.WriteHeader(http.StatusNotFound)
+	json.NewEncoder(w).Encode(map[string]string{
+		"status": "error",
+		"error":  "block not found",
+	})
 }

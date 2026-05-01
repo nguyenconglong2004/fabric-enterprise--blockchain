@@ -1,0 +1,115 @@
+// File: internal/core/contract_schema.go
+package core
+
+// ContractSchema định nghĩa cấu trúc của một smart contract
+type ContractSchema struct {
+	Name   string      `json:"name"`
+	Fields []FieldSpec `json:"fields"`
+}
+
+// FieldSpec định nghĩa một field trong contract
+type FieldSpec struct {
+	Name        string `json:"name"`
+	Label       string `json:"label"`
+	Type        string `json:"type"` // "string", "number", "integer", "boolean", "address"
+	Required    bool   `json:"required"`
+	Placeholder string `json:"placeholder,omitempty"`
+}
+
+// GetContractSchema trả về schema cho một contract
+func GetContractSchema(contractName string) *ContractSchema {
+	schemas := map[string]*ContractSchema{
+		"example_asset": {
+			Name: "example_asset",
+			Fields: []FieldSpec{
+				{
+					Name:        "id",
+					Label:       "Asset ID",
+					Type:        "string",
+					Required:    true,
+					Placeholder: "asset_001",
+				},
+				{
+					Name:        "color",
+					Label:       "Color",
+					Type:        "string",
+					Required:    true,
+					Placeholder: "red",
+				},
+				{
+					Name:        "action",
+					Label:       "Action",
+					Type:        "string",
+					Required:    true,
+					Placeholder: "create|update|delete",
+				},
+			},
+		},
+		"token": {
+			Name: "token",
+			Fields: []FieldSpec{
+				{
+					Name:        "symbol",
+					Label:       "Token Symbol",
+					Type:        "string",
+					Required:    true,
+					Placeholder: "ETH",
+				},
+				{
+					Name:        "amount",
+					Label:       "Amount",
+					Type:        "number",
+					Required:    true,
+					Placeholder: "100",
+				},
+			},
+		},
+		"voting": {
+			Name: "voting",
+			Fields: []FieldSpec{
+				{
+					Name:        "proposal_id",
+					Label:       "Proposal ID",
+					Type:        "string",
+					Required:    true,
+					Placeholder: "prop_123",
+				},
+				{
+					Name:        "vote",
+					Label:       "Vote (yes/no)",
+					Type:        "string",
+					Required:    true,
+					Placeholder: "yes",
+				},
+			},
+		},
+	}
+
+	if schema, ok := schemas[contractName]; ok {
+		return schema
+	}
+
+	// Default schema nếu contract không có schema cụ thể
+	return &ContractSchema{
+		Name:   contractName,
+		Fields: []FieldSpec{},
+	}
+}
+
+// ListAvailableContracts trả về list các contract có sẵn
+func ListAvailableContracts() []ContractSchema {
+	return []ContractSchema{
+		{
+			Name:   "example_asset",
+			Fields: GetContractSchema("example_asset").Fields,
+		},
+		{
+			Name:   "token",
+			Fields: GetContractSchema("token").Fields,
+		},
+		{
+			Name:   "voting",
+			Fields: GetContractSchema("voting").Fields,
+		},
+	}
+}

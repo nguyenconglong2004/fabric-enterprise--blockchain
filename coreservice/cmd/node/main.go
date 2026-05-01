@@ -4,11 +4,15 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
 
 	"coreservice/internal/api"
 	"coreservice/internal/crypto"
 	"coreservice/internal/network"
 	"coreservice/internal/state"
+	"coreservice/internal/storage"
 	"coreservice/internal/vm"
 )
 
@@ -36,10 +40,24 @@ func main() {
 
 	fmt.Printf("📡 P2P ID: %s\n", transport.ID().ShortString())
 
-	db := state.InitDB("./data")
-	defer db.Close()
+	// Initialize PostgreSQL connection
+	dbConnStr := "postgres://fabric:fabric123@localhost:5432/blockchain?sslmode=disable"
 
-	engine := vm.NewWasmEngine(db)
+	postgresDB, err := storage.NewPostgresDB(dbConnStr)
+	if err != nil {
+		fmt.Printf("⚠️  Warning: Could not connect to PostgreSQL: %v\n", err)
+		fmt.Println("Continuing without database persistence...")
+		postgresDB = nil
+	} else {
+		defer postgresDB.Close()
+		fmt.Printf("✅ PostgreSQL connected\n")
+	}
+
+	// Initialize LevelDB for state
+	stateDB := state.InitDB("./data")
+	defer stateDB.Close()
+
+	engine := vm.NewWasmEngine(stateDB)
 	defer engine.Close()
 
 	apiServer := &api.APIServer{
@@ -47,17 +65,37 @@ func main() {
 		KeyPair:          keyPair,
 		Transport:        transport,
 		OrderServiceAddr: "http://localhost:8081",
+		DB:               postgresDB,
 	}
 
 	http.HandleFunc("/api/tx/deploy", apiServer.HandleDeployContract)
+	http.HandleFunc("/api/deploy-example", apiServer.HandleDeployExampleAsset)
 	http.HandleFunc("/api/tx/submit", apiServer.HandleSubmitTx)
+	http.HandleFunc("/api/contracts", apiServer.HandleListContracts)
+	http.HandleFunc("/api/contract/schema", apiServer.HandleGetContractSchema)
 	http.HandleFunc("/api/state", apiServer.HandleGetState)
+	http.HandleFunc("/api/block", apiServer.HandleGetBlock)
 
 	port := ":8080"
 	fmt.Printf("🌐 Core Node API Server đang chạy tại http://localhost%s\n", port)
 
-	err = http.ListenAndServe(port, nil)
-	if err != nil {
-		fmt.Printf("❌ Lỗi server: %v\n", err)
+	// Handle graceful shutdown
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+
+	server := &http.Server{
+		Addr: port,
 	}
+
+	go func() {
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			fmt.Printf("❌ Lỗi server: %v\n", err)
+		}
+	}()
+
+	// Wait for shutdown signal
+	<-sigChan
+	fmt.Println("\n🛑 Đang tắt server...")
+	server.Shutdown(context.Background())
+	fmt.Println("✅ Server đã tắt")
 }

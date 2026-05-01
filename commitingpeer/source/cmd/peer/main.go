@@ -49,6 +49,12 @@ func main() {
 		dbPath = "worldstate"
 	}
 
+	// PostgreSQL connection string
+	dbConnStr := in(sc, "Enter PostgreSQL connection string (default: postgres://fabric:fabric123@localhost:5432/blockchain?sslmode=disable): ")
+	if dbConnStr == "" {
+		dbConnStr = "postgres://fabric:fabric123@localhost:5432/blockchain?sslmode=disable"
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -64,6 +70,14 @@ func main() {
 		return
 	}
 
+	// Initialize PostgreSQL connection
+	db, err := storage.NewPostgresDB(dbConnStr)
+	if err != nil {
+		fmt.Printf("Error connecting to PostgreSQL: %v\n", err)
+		return
+	}
+	defer db.Close()
+
 	deliverClient, err := deliver.NewClient(ctx)
 	if err != nil {
 		fmt.Printf("Error creating deliver client: %v\n", err)
@@ -71,7 +85,7 @@ func main() {
 	}
 
 	validator := validation.NewEngine()
-	peer := peerpkg.New(deliverClient, validator, blockStore, worldState)
+	peer := peerpkg.New(deliverClient, validator, blockStore, worldState, db)
 	peer.RegisterSyncHandler()
 
 	if err := peer.Start(ctx, ordererAddr, 1); err != nil {
@@ -89,6 +103,7 @@ func main() {
 	fmt.Printf("Orderer   : %s\n", ordererAddr)
 	fmt.Printf("BlockFile : %s\n", blockFile)
 	fmt.Printf("WorldState: %s\n", dbPath)
+	fmt.Printf("Database  : PostgreSQL connected\n")
 	fmt.Printf("Sync addr : %s\n", syncAddr)
 	fmt.Println("  ^ Share this address with ordering service clients (sync command)")
 	fmt.Println()

@@ -2,8 +2,8 @@ package peer
 
 import (
 	"context"
-	"encoding/json"
 	"encoding/hex"
+	"encoding/json"
 	"log"
 	"sync"
 	"sync/atomic"
@@ -29,12 +29,13 @@ type Stats struct {
 // CommittingPeer wires together all subsystems:
 //
 //	Orderer  →  deliver.Client  →  blockChan
-//	blockChan  →  validation.Engine  →  storage.BlockStorage + storage.WorldState
+//	blockChan  →  validation.Engine  →  storage.BlockStorage + storage.WorldState + PostgresDB
 type CommittingPeer struct {
 	deliverClient *deliver.Client
 	validator     *validation.Engine
 	blockStore    *storage.BlockStorage
 	worldState    *storage.WorldState
+	db            *storage.PostgresDB
 
 	// blockChan is the internal pipeline channel between the deliver goroutine
 	// (producer) and the commit loop (consumer).
@@ -55,12 +56,14 @@ func New(
 	validator *validation.Engine,
 	blockStore *storage.BlockStorage,
 	worldState *storage.WorldState,
+	db *storage.PostgresDB,
 ) *CommittingPeer {
 	return &CommittingPeer{
 		deliverClient: deliverClient,
 		validator:     validator,
 		blockStore:    blockStore,
 		worldState:    worldState,
+		db:            db,
 		blockChan:     make(chan types.Block, 64),
 	}
 }
@@ -121,6 +124,46 @@ func (p *CommittingPeer) handleBlock(block types.Block) {
 	p.mu.Unlock()
 
 	log.Printf("[peer] committed block hash=%s txs=%d", hashHex, len(block.Transactions))
+
+	// Save to PostgreSQL database after successful commit
+	if p.db != nil {
+		go p.saveBlockToDatabase(block, hashHex)
+	}
+}
+
+// saveBlockToDatabase persists the committed block and its transactions to PostgreSQL
+func (p *CommittingPeer) saveBlockToDatabase(block types.Block, hashHex string) {
+	// Get current block count as block number
+	blockNumber := atomic.LoadInt64(&p.blockCount)
+
+	// Save block to ledger
+	blockID, err := p.db.SaveBlockToLedger(hashHex, blockNumber, block, len(block.Transactions))
+	if err != nil {
+		log.Printf("[peer] failed to save block to database hash=%s: %v", hashHex, err)
+		return
+	}
+
+	// Save each transaction to ledger_transactions
+	for i, tx := range block.Transactions {
+		txData := map[string]interface{}{
+			"txid":           tx.Txid,
+			"version":        tx.Version,
+			"lock_time":      tx.LockTime,
+			"signature":      tx.Signature,
+			"client_pub_key": tx.ClientPubKey,
+			"sender_pub_key": tx.SenderPubKey,
+			"contract_name":  tx.ContractName,
+			"function_name":  tx.FunctionName,
+			"payload":        string(tx.Payload),
+		}
+
+		if err := p.db.SaveTransactionToLedger(blockID, tx.Txid, i, txData); err != nil {
+			log.Printf("[peer] failed to save transaction to database txid=%s: %v", tx.Txid, err)
+			continue
+		}
+	}
+
+	log.Printf("[peer] successfully saved block hash=%s with %d transactions to database", hashHex, len(block.Transactions))
 }
 
 // GetStats returns a snapshot of the current peer runtime state.
