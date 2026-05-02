@@ -13,7 +13,6 @@ import (
 
 	"github.com/chzyer/readline"
 
-	"raft-order-service/internal/api"
 	"raft-order-service/internal/raft"
 )
 
@@ -33,16 +32,6 @@ func main() {
 		p2pPort = parsed
 	}
 
-	// Ask for API port
-	fmt.Print("Enter port for API server (e.g., 8081): ")
-	apiPortStr, _ := reader.ReadString('\n')
-	apiPortStr = strings.TrimSpace(apiPortStr)
-
-	apiPort := 8081
-	if parsed, err := strconv.Atoi(apiPortStr); err == nil && parsed > 0 {
-		apiPort = parsed
-	}
-
 	ctx := context.Background()
 	node, err := raft.NewRaftNode(ctx, p2pPort)
 	if err != nil {
@@ -52,15 +41,6 @@ func main() {
 	defer node.Stop()
 
 	node.Start()
-
-	// Start HTTP API server in background
-	apiServer := api.NewAPIServer(node)
-	go func() {
-		fmt.Printf("🌐 Order Service API Server khởi động trên port %d\n", apiPort)
-		if err := apiServer.Start(apiPort); err != nil {
-			fmt.Printf("❌ API Server error: %v\n", err)
-		}
-	}()
 
 	fmt.Printf("\nNode started!\n")
 	fmt.Printf("Node ID: %s\n", node.ID().ShortString())

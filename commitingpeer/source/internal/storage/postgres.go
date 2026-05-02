@@ -8,7 +8,8 @@ import (
 	_ "github.com/lib/pq"
 )
 
-// PostgresDB handles database operations for CommittingPeer
+// PostgresDB persists committed blocks and transactions for explorer / audit.
+// UTXO world state lives in LevelDB (WorldState), not here.
 type PostgresDB struct {
 	db *sql.DB
 }
@@ -77,61 +78,6 @@ func (p *PostgresDB) SaveTransactionToLedger(blockID int64, txid string, txIndex
 	}
 
 	return nil
-}
-
-// SaveWorldState saves or updates world state
-func (p *PostgresDB) SaveWorldState(key string, value []byte) error {
-	query := `
-		INSERT INTO commit_peer.world_state (key, value)
-		VALUES ($1, $2)
-		ON CONFLICT (key) DO UPDATE SET
-			value = $2,
-			updated_at = CURRENT_TIMESTAMP
-	`
-
-	_, err := p.db.Exec(query, key, value)
-	if err != nil {
-		return fmt.Errorf("failed to save world state: %w", err)
-	}
-
-	return nil
-}
-
-// GetWorldState retrieves a value from world state
-func (p *PostgresDB) GetWorldState(key string) ([]byte, error) {
-	query := `SELECT value FROM commit_peer.world_state WHERE key = $1`
-
-	var value []byte
-	err := p.db.QueryRow(query, key).Scan(&value)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("key not found: %s", key)
-		}
-		return nil, fmt.Errorf("failed to get world state: %w", err)
-	}
-
-	return value, nil
-}
-
-// GetBlockByHash retrieves a block from ledger
-func (p *PostgresDB) GetBlockByHash(blockHash string) (map[string]interface{}, error) {
-	query := `SELECT block_data FROM commit_peer.ledger WHERE block_hash = $1`
-
-	var blockData []byte
-	err := p.db.QueryRow(query, blockHash).Scan(&blockData)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("block not found: %s", blockHash)
-		}
-		return nil, fmt.Errorf("failed to get block: %w", err)
-	}
-
-	var block map[string]interface{}
-	if err := json.Unmarshal(blockData, &block); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal block: %w", err)
-	}
-
-	return block, nil
 }
 
 // Close closes the database connection

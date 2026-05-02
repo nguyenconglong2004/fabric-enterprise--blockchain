@@ -182,12 +182,18 @@ func (rn *RaftNode) serializeMembershipView() map[string]interface{} {
 func (rn *RaftNode) handleMembershipRequest(msg types.Message) {
 	log.Printf("[%s] Received membership request from %s", rn.Transport.ID().ShortString(), msg.SenderID)
 
-	// Send membership view back
+	// Send membership view back (include leader id for non-HTTP clients such as core node over libp2p).
+	data := rn.serializeMembershipView()
+	if lid := rn.GetLeaderID(); lid != "" {
+		data["leader_id"] = lid.String()
+	} else {
+		data["leader_id"] = ""
+	}
 	responseMsg := types.Message{
 		Type:      types.MsgMembershipResponse,
 		Term:      rn.currentTerm,
 		SenderID:  rn.Transport.ID().String(),
-		Data:      rn.serializeMembershipView(),
+		Data:      data,
 		Timestamp: time.Now(),
 	}
 

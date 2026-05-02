@@ -1,5 +1,11 @@
 package types
 
+import (
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+)
+
 // Transaction supports both UTXO and Smart Contract transactions
 type Transaction struct {
 	// Common fields
@@ -17,7 +23,82 @@ type Transaction struct {
 	// Smart Contract transaction fields
 	ContractName string `json:"contract_name"`
 	FunctionName string `json:"function_name"`
-	Payload      []byte `json:"payload"`
+	// JSON wire format: hex string (same as order/core), not Go default base64 for []byte.
+	Payload []byte `json:"payload"`
+}
+
+// UnmarshalJSON decodes payload as hex (deliver stream from order service).
+func (t *Transaction) UnmarshalJSON(data []byte) error {
+	type Alias struct {
+		Txid         string `json:"txid"`
+		Version      uint32 `json:"version"`
+		LockTime     uint32 `json:"locktime"`
+		Signature    string `json:"signature"`
+		ClientPubKey string `json:"client_pubkey"`
+		SenderPubKey string `json:"sender_pubkey"`
+		Vin          []VIN  `json:"vin"`
+		Vout         []VOUT `json:"vout"`
+		ContractName string `json:"contract_name"`
+		FunctionName string `json:"function_name"`
+		Payload      string `json:"payload"`
+	}
+	aux := &Alias{}
+	if err := json.Unmarshal(data, aux); err != nil {
+		return err
+	}
+	t.Txid = aux.Txid
+	t.Version = aux.Version
+	t.LockTime = aux.LockTime
+	t.Signature = aux.Signature
+	t.ClientPubKey = aux.ClientPubKey
+	t.SenderPubKey = aux.SenderPubKey
+	t.Vin = aux.Vin
+	t.Vout = aux.Vout
+	t.ContractName = aux.ContractName
+	t.FunctionName = aux.FunctionName
+	if aux.Payload != "" {
+		b, err := hex.DecodeString(aux.Payload)
+		if err != nil {
+			return fmt.Errorf("payload hex: %w", err)
+		}
+		t.Payload = b
+	} else {
+		t.Payload = nil
+	}
+	return nil
+}
+
+// MarshalJSON encodes payload as hex.
+func (t Transaction) MarshalJSON() ([]byte, error) {
+	type Alias struct {
+		Txid         string `json:"txid"`
+		Version      uint32 `json:"version"`
+		LockTime     uint32 `json:"locktime"`
+		Signature    string `json:"signature"`
+		ClientPubKey string `json:"client_pubkey"`
+		SenderPubKey string `json:"sender_pubkey"`
+		Vin          []VIN  `json:"vin"`
+		Vout         []VOUT `json:"vout"`
+		ContractName string `json:"contract_name"`
+		FunctionName string `json:"function_name"`
+		Payload      string `json:"payload"`
+	}
+	aux := Alias{
+		Txid:         t.Txid,
+		Version:      t.Version,
+		LockTime:     t.LockTime,
+		Signature:    t.Signature,
+		ClientPubKey: t.ClientPubKey,
+		SenderPubKey: t.SenderPubKey,
+		Vin:          t.Vin,
+		Vout:         t.Vout,
+		ContractName: t.ContractName,
+		FunctionName: t.FunctionName,
+	}
+	if len(t.Payload) > 0 {
+		aux.Payload = hex.EncodeToString(t.Payload)
+	}
+	return json.Marshal(aux)
 }
 
 // VIN is a transaction input referencing a previous output.

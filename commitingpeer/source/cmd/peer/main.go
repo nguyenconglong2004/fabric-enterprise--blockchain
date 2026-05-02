@@ -49,8 +49,9 @@ func main() {
 		dbPath = "worldstate"
 	}
 
-	// PostgreSQL connection string
-	dbConnStr := in(sc, "Enter PostgreSQL connection string (default: postgres://fabric:fabric123@localhost:5432/blockchain?sslmode=disable): ")
+	// PostgreSQL: fixed default for docker-compose (postgres service in repo root).
+	// Override with POSTGRES_URL if needed.
+	dbConnStr := strings.TrimSpace(os.Getenv("POSTGRES_URL"))
 	if dbConnStr == "" {
 		dbConnStr = "postgres://fabric:fabric123@localhost:5432/blockchain?sslmode=disable"
 	}
@@ -103,7 +104,11 @@ func main() {
 	fmt.Printf("Orderer   : %s\n", ordererAddr)
 	fmt.Printf("BlockFile : %s\n", blockFile)
 	fmt.Printf("WorldState: %s\n", dbPath)
-	fmt.Printf("Database  : PostgreSQL connected\n")
+	if strings.TrimSpace(os.Getenv("POSTGRES_URL")) != "" {
+		fmt.Printf("Database  : PostgreSQL (POSTGRES_URL)\n")
+	} else {
+		fmt.Printf("Database  : PostgreSQL docker-compose default (fabric@localhost:5432/blockchain)\n")
+	}
 	fmt.Printf("Sync addr : %s\n", syncAddr)
 	fmt.Println("  ^ Share this address with ordering service clients (sync command)")
 	fmt.Println()

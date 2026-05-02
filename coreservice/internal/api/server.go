@@ -2,12 +2,14 @@
 package api
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"strings"
+
+	"github.com/libp2p/go-libp2p/core/peer"
 
 	"coreservice/internal/core"
 	"coreservice/internal/crypto"
@@ -21,8 +23,40 @@ type APIServer struct {
 	Engine           *vm.WasmEngine
 	KeyPair          *crypto.KeyPair
 	Transport        *network.Transport
-	OrderServiceAddr string
+	// OrderServicePeer is a libp2p multiaddr of any orderer node (e.g. /ip4/127.0.0.1/tcp/6000/p2p/12D3Koo...).
+	OrderServicePeer string
 	DB               *storage.PostgresDB
+}
+
+// resolveContractSchema: schema saved at deploy (LevelDB / Postgres) overrides builtin map in core/contract_schema.go.
+func (s *APIServer) resolveContractSchema(contractName string) (*core.ContractSchema, string) {
+	if s.Engine != nil {
+		if ldb := s.Engine.GetDB(); ldb != nil {
+			raw, err := ldb.GetContractMetaSchema(contractName)
+			if err == nil && len(raw) > 0 {
+				var sch core.ContractSchema
+				if json.Unmarshal(raw, &sch) == nil {
+					if sch.Name == "" {
+						sch.Name = contractName
+					}
+					return &sch, "deployed"
+				}
+			}
+		}
+	}
+	if s.DB != nil {
+		raw, err := s.DB.GetContractPayloadSchema(contractName)
+		if err == nil && len(raw) > 0 {
+			var sch core.ContractSchema
+			if json.Unmarshal(raw, &sch) == nil {
+				if sch.Name == "" {
+					sch.Name = contractName
+				}
+				return &sch, "deployed"
+			}
+		}
+	}
+	return core.GetContractSchema(contractName), "builtin"
 }
 
 // HandleListContracts returns all deployed contracts.
@@ -77,19 +111,14 @@ func (s *APIServer) HandleGetContractSchema(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	schema := core.GetContractSchema(contractName)
+	schema, source := s.resolveContractSchema(contractName)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"status": "success",
-		"schema": schema,
-	})
-}
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"status":    "success",
-		"contracts": contracts,
-		"count":     len(contracts),
+		"status":        "success",
+		"schema":        schema,
+		"schema_source": source,
 	})
 }
 
@@ -106,7 +135,7 @@ func (s *APIServer) HandleSubmitTx(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fmt.Printf("\n📥 [API] Nhận được giao dịch: %s gọi contract '%s'\n", tx.TxID, tx.ContractName)
+	fmt.Printf("\n📥 [API] Nhận được giao dịch: %s gọi contract '%s'\n", tx.Txid, tx.ContractName)
 
 	// Execute contract
 	err = s.Engine.Execute(r.Context(), tx)
@@ -123,7 +152,7 @@ func (s *APIServer) HandleSubmitTx(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Sign transaction with server's private key
-	signature, err := crypto.SignTransaction(tx.TxID, tx.ContractName, tx.Payload, s.KeyPair.PrivateKey)
+	signature, err := crypto.SignTransaction(tx.Txid, tx.ContractName, tx.Payload, s.KeyPair.PrivateKey)
 	if err != nil {
 		fmt.Printf("❌ [API] Lỗi ký transaction: %v\n", err)
 		w.WriteHeader(http.StatusInternalServerError)
@@ -142,7 +171,7 @@ func (s *APIServer) HandleSubmitTx(w http.ResponseWriter, r *http.Request) {
 	fmt.Printf("📌 [API] Public Key: %s\n", s.KeyPair.PublicKey[:16]+"...")
 
 	// Verify signature
-	isValid := crypto.VerifyTransaction(tx.TxID, tx.ContractName, tx.Payload, signature, s.KeyPair.PublicKey)
+	isValid := crypto.VerifyTransaction(tx.Txid, tx.ContractName, tx.Payload, signature, s.KeyPair.PublicKey)
 	if !isValid {
 		fmt.Printf("❌ [API] Signature verification failed!\n")
 		w.WriteHeader(http.StatusInternalServerError)
@@ -155,79 +184,96 @@ func (s *APIServer) HandleSubmitTx(w http.ResponseWriter, r *http.Request) {
 
 	fmt.Printf("✅ [API] Signature verified successfully\n")
 
-	// Send endorsement to Order Service followers
-	fmt.Printf("🔍 [API] DEBUG: OrderServiceAddr='%s', Transport=%v\n", s.OrderServiceAddr, s.Transport != nil)
+	// Send endorsement to Order Service over libp2p (endorsement protocol).
+	fmt.Printf("🔍 [API] DEBUG: OrderServicePeer='%s', Transport=%v\n", s.OrderServicePeer, s.Transport != nil)
 
-	if s.OrderServiceAddr != "" {
-		fmt.Printf("📤 [API] Lấy membership từ Order Service...\n")
-
+	if s.OrderServicePeer != "" {
 		if s.Transport == nil {
 			fmt.Printf("❌ [API] ERROR: Transport is nil!\n")
 		} else {
-			// Fetch membership to get all followers
-			membership, err := s.Transport.GetMembershipFromOrderService(s.OrderServiceAddr)
+			fmt.Printf("📤 [API] Lấy membership từ Order Service (libp2p)...\n")
+			membership, err := s.Transport.GetMembershipFromBootstrapPeer(s.OrderServicePeer)
 			if err != nil {
-				fmt.Printf("⚠️  [API] Lỗi lấy membership: %v\n", err)
+				fmt.Printf("⚠️  [API] Lỗi lấy membership (libp2p): %v\n", err)
 			} else {
-				fmt.Printf("📋 [API] Membership: Leader=%s, Members=%d\n", membership.LeaderID[:8], len(membership.Members))
-
-				// Collect all follower addresses (not leader)
-				var followers []network.MemberInfo
-				for _, member := range membership.Members {
-					if member.ID != membership.LeaderID {
-						followers = append(followers, member)
-					}
+				leaderPrefix := membership.LeaderID
+				if len(leaderPrefix) > 8 {
+					leaderPrefix = leaderPrefix[:8]
 				}
+				fmt.Printf("📋 [API] Membership: Leader=%s..., Members=%d\n", leaderPrefix, len(membership.Members))
 
-				// If no follower, use leader
-				if len(followers) == 0 && len(membership.Members) > 0 {
-					followers = append(followers, membership.Members[0])
-				}
-
-				// Try to send to each follower
 				sent := false
-				txBytes, _ := json.Marshal(tx)
-
-				for _, follower := range followers {
-					fmt.Printf("🔄 [API] Thử gửi tới node %s (%d addresses)\n", follower.ID[:8], len(follower.Addresses))
-
-					// Use Order Service address as endpoint
-					endpoint := s.OrderServiceAddr + "/api/endorsement"
-
-					if endpoint != "" {
-						resp, err := http.Post(
-							endpoint,
-							"application/json",
-							bytes.NewReader(txBytes),
-						)
-
-						if err == nil && resp.StatusCode == http.StatusOK {
-							resp.Body.Close()
-							fmt.Printf("✅ [API] Gửi endorsement thành công tới %s\n", follower.ID[:8])
+				// Prefer sending endorsement directly to the current leader.
+				if membership.LeaderID != "" {
+					for _, m := range membership.Members {
+						if !m.Alive || m.ID != membership.LeaderID {
+							continue
+						}
+						addrInfo, err := network.AddrInfoFromMember(m)
+						if err != nil {
+							fmt.Printf("⚠️  [API] Không build AddrInfo cho leader: %v\n", err)
+							continue
+						}
+						if err := s.Transport.SendEndorsement(addrInfo, tx); err != nil {
+							fmt.Printf("⚠️  [API] Gửi endorsement tới leader thất bại: %v\n", err)
+						} else {
+							short := m.ID
+							if len(short) > 8 {
+								short = short[:8]
+							}
+							fmt.Printf("✅ [API] Đã gửi endorsement tới leader %s (libp2p)\n", short)
 							sent = true
-							break
 						}
-
-						if resp != nil {
-							resp.Body.Close()
-						}
-						fmt.Printf("⚠️  [API] Thử gửi tới %s thất bại\n", follower.ID[:8])
+						break
 					}
 				}
-
-				if !sent && len(followers) > 0 {
-					fmt.Printf("❌ [API] Không gửi được endorsement tới bất cứ follower nào\n")
+				// Fallback: any alive member (order node forwards to leader if needed).
+				if !sent {
+					for _, m := range membership.Members {
+						if !m.Alive {
+							continue
+						}
+						addrInfo, err := network.AddrInfoFromMember(m)
+						if err != nil {
+							continue
+						}
+						if err := s.Transport.SendEndorsement(addrInfo, tx); err != nil {
+							short := m.ID
+							if len(short) > 8 {
+								short = short[:8]
+							}
+							fmt.Printf("⚠️  [API] Gửi endorsement tới %s thất bại: %v\n", short, err)
+							continue
+						}
+						short := m.ID
+						if len(short) > 8 {
+							short = short[:8]
+						}
+						fmt.Printf("✅ [API] Đã gửi endorsement tới %s (libp2p, có thể forward)\n", short)
+						sent = true
+						break
+					}
+				}
+				if !sent {
+					bootstrap, err := peer.AddrInfoFromString(s.OrderServicePeer)
+					if err != nil {
+						fmt.Printf("⚠️  [API] Bootstrap peer invalid: %v\n", err)
+					} else if err := s.Transport.SendEndorsement(*bootstrap, tx); err != nil {
+						fmt.Printf("⚠️  [API] Gửi endorsement tới bootstrap thất bại: %v\n", err)
+					} else {
+						fmt.Printf("✅ [API] Đã gửi endorsement tới bootstrap peer (libp2p)\n")
+					}
 				}
 			}
 		}
 	} else {
-		fmt.Printf("📤 [API] Không có Order Service để gửi endorsement\n")
+		fmt.Printf("📤 [API] Không có ORDER_SERVICE_PEER — bỏ qua gửi endorsement tới order service\n")
 	}
 
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"status":        "success",
-		"tx_id":         tx.TxID,
+		"tx_id":         tx.Txid,
 		"contract_name": tx.ContractName,
 		"function_name": tx.FunctionName,
 		"sender_pubkey": tx.SenderPubKey,
@@ -268,15 +314,32 @@ func (s *APIServer) HandleDeployContract(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	var schemaBytes []byte
+	schemaStr := strings.TrimSpace(r.FormValue("payload_schema"))
+	if schemaStr != "" {
+		var probe map[string]interface{}
+		if err := json.Unmarshal([]byte(schemaStr), &probe); err != nil {
+			http.Error(w, "payload_schema phải là JSON (gợi ý: {\"name\":\"...\",\"fields\":[{\"name\":\"x\",\"label\":\"X\",\"type\":\"string\",\"required\":true}]})", http.StatusBadRequest)
+			return
+		}
+		schemaBytes = []byte(schemaStr)
+	}
+
 	err = s.Engine.GetDB().SaveContract(contractName, wasmBytes)
 	if err != nil {
 		http.Error(w, "Lỗi lưu vào LevelDB", http.StatusInternalServerError)
 		return
 	}
 
+	if len(schemaBytes) > 0 {
+		if err := s.Engine.GetDB().SaveContractMetaSchema(contractName, schemaBytes); err != nil {
+			fmt.Printf("⚠️  [API] Lỗi lưu payload_schema vào LevelDB: %v\n", err)
+		}
+	}
+
 	// Save to PostgreSQL if available
 	if s.DB != nil {
-		if err := s.DB.SaveContract(contractName, wasmBytes); err != nil {
+		if err := s.DB.SaveContract(contractName, wasmBytes, schemaBytes); err != nil {
 			fmt.Printf("⚠️  [API] Lỗi lưu contract vào PostgreSQL: %v\n", err)
 			// Continue even if DB save fails
 		} else {
@@ -304,7 +367,8 @@ func (s *APIServer) HandleDeployExampleAsset(w http.ResponseWriter, r *http.Requ
 	}
 
 	contractName := "example_asset"
-	wasmPath := "../../contracts/example_asset/my_contract.wasm"
+	// Relative to coreservice/cmd/node when running `go run .` from there.
+	wasmPath := "../contracts/example_asset/my_contract.wasm"
 
 	// Read the pre-built WASM file
 	wasmBytes, err := os.ReadFile(wasmPath)
@@ -323,7 +387,7 @@ func (s *APIServer) HandleDeployExampleAsset(w http.ResponseWriter, r *http.Requ
 
 	// Save to PostgreSQL if available
 	if s.DB != nil {
-		if err := s.DB.SaveContract(contractName, wasmBytes); err != nil {
+		if err := s.DB.SaveContract(contractName, wasmBytes, nil); err != nil {
 			fmt.Printf("⚠️  [API] Lỗi lưu contract vào PostgreSQL: %v\n", err)
 			// Continue even if DB save fails
 		} else {
@@ -382,26 +446,131 @@ func (s *APIServer) HandleGetBlock(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fmt.Printf("📦 [API] Querying block: %s\n", blockHash[:16]+"...")
-
-	// Try to get from database if available
-	if s.DB != nil {
-		block, err := s.DB.GetBlockByHash(blockHash)
-		if err == nil {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusOK)
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"status": "success",
-				"block":  block,
-			})
-			return
-		}
-		fmt.Printf("⚠️  [API] Block not in DB: %v\n", err)
+	preview := blockHash
+	if len(preview) > 16 {
+		preview = preview[:16] + "..."
 	}
+	fmt.Printf("📦 [API] Querying block: %s\n", preview)
+
+	if s.DB == nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		json.NewEncoder(w).Encode(map[string]string{
+			"status": "error",
+			"error":  "PostgreSQL not connected on core node; set POSTGRES_URL or restart after DB is up (same DB as commit peer)",
+		})
+		return
+	}
+
+	block, err := s.DB.GetCommittedBlockByHash(blockHash)
+	if err == nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status": "success",
+			"block":  block,
+		})
+		return
+	}
+	fmt.Printf("⚠️  [API] Block not in DB: %v\n", err)
 
 	w.WriteHeader(http.StatusNotFound)
 	json.NewEncoder(w).Encode(map[string]string{
 		"status": "error",
 		"error":  "block not found",
+	})
+}
+
+// HandleListCommittedBlocks returns latest committed blocks from DB.
+// GET /api/blocks?limit=20
+func (s *APIServer) HandleListCommittedBlocks(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Only GET supported", http.StatusMethodNotAllowed)
+		return
+	}
+
+	limit := 20
+	if raw := r.URL.Query().Get("limit"); raw != "" {
+		var parsed int
+		if _, err := fmt.Sscanf(raw, "%d", &parsed); err == nil && parsed > 0 {
+			limit = parsed
+		}
+	}
+
+	if s.DB == nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status": "success",
+			"blocks": []interface{}{},
+			"count":  0,
+		})
+		return
+	}
+
+	blocks, err := s.DB.ListCommittedBlocks(limit)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{
+			"status": "error",
+			"error":  err.Error(),
+		})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status": "success",
+		"blocks": blocks,
+		"count":  len(blocks),
+	})
+}
+
+// HandleListCommittedTransactions returns latest committed transactions from DB.
+// GET /api/transactions?limit=50
+func (s *APIServer) HandleListCommittedTransactions(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Only GET supported", http.StatusMethodNotAllowed)
+		return
+	}
+
+	limit := 50
+	if raw := r.URL.Query().Get("limit"); raw != "" {
+		var parsed int
+		if _, err := fmt.Sscanf(raw, "%d", &parsed); err == nil && parsed > 0 {
+			limit = parsed
+		}
+	}
+
+	if s.DB == nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":       "success",
+			"transactions": []interface{}{},
+			"count":        0,
+		})
+		return
+	}
+
+	txs, err := s.DB.ListCommittedTransactions(limit)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{
+			"status": "error",
+			"error":  err.Error(),
+		})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":       "success",
+		"transactions": txs,
+		"count":        len(txs),
 	})
 }

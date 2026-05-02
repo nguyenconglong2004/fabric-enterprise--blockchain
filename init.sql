@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS core_service.smart_contracts (
     id SERIAL PRIMARY KEY,
     contract_name VARCHAR(255) NOT NULL UNIQUE,
     contract_code BYTEA NOT NULL,
+    payload_schema JSONB,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -87,12 +88,7 @@ CREATE TABLE IF NOT EXISTS commit_peer.ledger_transactions (
 CREATE INDEX idx_ledger_tx_block ON commit_peer.ledger_transactions(block_id);
 CREATE INDEX idx_ledger_tx_txid ON commit_peer.ledger_transactions(txid);
 
--- Commit Peer: World State
-CREATE TABLE IF NOT EXISTS commit_peer.world_state (
-    id SERIAL PRIMARY KEY,
-    key VARCHAR(255) NOT NULL UNIQUE,
-    value BYTEA NOT NULL,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
+-- UTXO world state for the commit peer is stored on disk (LevelDB), not in PostgreSQL.
 
-CREATE INDEX idx_world_state_key ON commit_peer.world_state(key);
+-- Nếu DB đã tạo trước khi có cột payload_schema:
+-- ALTER TABLE core_service.smart_contracts ADD COLUMN IF NOT EXISTS payload_schema JSONB;

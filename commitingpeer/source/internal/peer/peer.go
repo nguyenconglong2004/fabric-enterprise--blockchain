@@ -29,7 +29,7 @@ type Stats struct {
 // CommittingPeer wires together all subsystems:
 //
 //	Orderer  →  deliver.Client  →  blockChan
-//	blockChan  →  validation.Engine  →  storage.BlockStorage + storage.WorldState + PostgresDB
+//	blockChan  →  validation  →  BlockStorage (file) + WorldState (LevelDB) + PostgresDB (ledger + txs only)
 type CommittingPeer struct {
 	deliverClient *deliver.Client
 	validator     *validation.Engine
@@ -115,8 +115,8 @@ func (p *CommittingPeer) handleBlock(block types.Block) {
 		return
 	}
 
-	// Update stats atomically.
-	atomic.AddInt64(&p.blockCount, 1)
+	// 1-based block height for DB (stable for this block even if async DB write runs later).
+	blockNumber := atomic.AddInt64(&p.blockCount, 1)
 	p.mu.Lock()
 	p.lastBlockHash = block.Hash
 	p.lastBlockTime = time.Unix(block.Timestamp, 0)
@@ -125,36 +125,26 @@ func (p *CommittingPeer) handleBlock(block types.Block) {
 
 	log.Printf("[peer] committed block hash=%s txs=%d", hashHex, len(block.Transactions))
 
-	// Save to PostgreSQL database after successful commit
+	// Mirror block + txs to PostgreSQL (explorer); world state stays in LevelDB only.
 	if p.db != nil {
-		go p.saveBlockToDatabase(block, hashHex)
+		go p.saveBlockToDatabase(block, hashHex, blockNumber)
 	}
 }
 
-// saveBlockToDatabase persists the committed block and its transactions to PostgreSQL
-func (p *CommittingPeer) saveBlockToDatabase(block types.Block, hashHex string) {
-	// Get current block count as block number
-	blockNumber := atomic.LoadInt64(&p.blockCount)
-
-	// Save block to ledger
+// saveBlockToDatabase persists the committed block and its transactions to PostgreSQL.
+func (p *CommittingPeer) saveBlockToDatabase(block types.Block, hashHex string, blockNumber int64) {
 	blockID, err := p.db.SaveBlockToLedger(hashHex, blockNumber, block, len(block.Transactions))
 	if err != nil {
 		log.Printf("[peer] failed to save block to database hash=%s: %v", hashHex, err)
 		return
 	}
 
-	// Save each transaction to ledger_transactions
+	// Save each transaction: full wire-format tx (vin, vout, hex payload, …) + payload_decoded when JSON.
 	for i, tx := range block.Transactions {
-		txData := map[string]interface{}{
-			"txid":           tx.Txid,
-			"version":        tx.Version,
-			"lock_time":      tx.LockTime,
-			"signature":      tx.Signature,
-			"client_pub_key": tx.ClientPubKey,
-			"sender_pub_key": tx.SenderPubKey,
-			"contract_name":  tx.ContractName,
-			"function_name":  tx.FunctionName,
-			"payload":        string(tx.Payload),
+		txData, err := ledgerTransactionRecord(tx)
+		if err != nil {
+			log.Printf("[peer] failed to encode transaction for ledger txid=%s: %v", tx.Txid, err)
+			continue
 		}
 
 		if err := p.db.SaveTransactionToLedger(blockID, tx.Txid, i, txData); err != nil {
@@ -164,6 +154,26 @@ func (p *CommittingPeer) saveBlockToDatabase(block types.Block, hashHex string) 
 	}
 
 	log.Printf("[peer] successfully saved block hash=%s with %d transactions to database", hashHex, len(block.Transactions))
+}
+
+// ledgerTransactionRecord matches order/core JSON (hex payload, locktime, vin, vout, contract fields).
+// If payload bytes are JSON (e.g. example_asset: id, color, action), payload_decoded is added for explorers.
+func ledgerTransactionRecord(tx types.Transaction) (map[string]interface{}, error) {
+	wire, err := json.Marshal(tx)
+	if err != nil {
+		return nil, err
+	}
+	var out map[string]interface{}
+	if err := json.Unmarshal(wire, &out); err != nil {
+		return nil, err
+	}
+	if len(tx.Payload) > 0 {
+		var dec interface{}
+		if err := json.Unmarshal(tx.Payload, &dec); err == nil {
+			out["payload_decoded"] = dec
+		}
+	}
+	return out, nil
 }
 
 // GetStats returns a snapshot of the current peer runtime state.

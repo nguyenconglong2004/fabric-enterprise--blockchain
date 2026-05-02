@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 
 	"coreservice/internal/core"
@@ -105,7 +106,12 @@ func (e *WasmEngine) Execute(ctx context.Context, tx core.Transaction) error {
 		return fmt.Errorf("lỗi nạp contract: %w", err)
 	}
 
-	config := wazero.NewModuleConfig().WithStdout(os.Stdout).WithStderr(os.Stderr)
+	// WASI/TinyGo: mặc định wazero gọi _start → main() thoát → module đóng → allocate lỗi "module closed".
+	// Dùng _initialize (TinyGo WASI) hoặc bỏ start; hàm không tồn tại sẽ bị bỏ qua.
+	config := wazero.NewModuleConfig().
+		WithStdout(os.Stdout).
+		WithStderr(os.Stderr).
+		WithStartFunctions("_initialize")
 	sandbox, err := e.runtime.InstantiateModule(ctx, compiled, config)
 	if err != nil {
 		return fmt.Errorf("lỗi tạo sandbox: %w", err)
@@ -135,9 +141,33 @@ func (e *WasmEngine) Execute(ctx context.Context, tx core.Transaction) error {
 		}
 	}
 
-	targetFunc := sandbox.ExportedFunction(tx.FunctionName)
+	requestedFunc := strings.TrimSpace(tx.FunctionName)
+	if requestedFunc == "" {
+		requestedFunc = "execute"
+	}
+
+	candidateFuncs := []string{requestedFunc}
+	switch requestedFunc {
+	case "execute":
+		candidateFuncs = append(candidateFuncs, "verify_tx")
+	case "verify_tx":
+		candidateFuncs = append(candidateFuncs, "execute")
+	}
+
+	var (
+		targetFunc api.Function
+		actualFunc string
+	)
+	for _, fn := range candidateFuncs {
+		if f := sandbox.ExportedFunction(fn); f != nil {
+			targetFunc = f
+			actualFunc = fn
+			break
+		}
+	}
+
 	if targetFunc == nil {
-		return fmt.Errorf("smart contract không có hàm: '%s'", tx.FunctionName)
+		return fmt.Errorf("smart contract không có hàm: '%s' (fallback đã thử: %v)", requestedFunc, candidateFuncs)
 	}
 
 	results, err := targetFunc.Call(ctx, ptr, payloadLen)
@@ -150,7 +180,7 @@ func (e *WasmEngine) Execute(ctx context.Context, tx core.Transaction) error {
 		return fmt.Errorf("bị Smart Contract từ chối (sai logic hoặc không có quyền)")
 	}
 
-	fmt.Printf("✅ [VM] Giao dịch '%s' đã thực thi thành công!\n", tx.TxID)
+	fmt.Printf("✅ [VM] Giao dịch '%s' đã thực thi thành công qua hàm '%s'!\n", tx.Txid, actualFunc)
 	return nil
 }
 func (e *WasmEngine) GetDB() *state.StateDB {

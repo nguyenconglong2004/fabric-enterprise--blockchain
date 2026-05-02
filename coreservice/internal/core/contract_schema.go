@@ -83,6 +83,32 @@ func GetContractSchema(contractName string) *ContractSchema {
 				},
 			},
 		},
+		"demo_inventory": {
+			Name: "demo_inventory",
+			Fields: []FieldSpec{
+				{
+					Name:        "op",
+					Label:       "Operation",
+					Type:        "string",
+					Required:    true,
+					Placeholder: "register",
+				},
+				{
+					Name:        "sku",
+					Label:       "SKU",
+					Type:        "string",
+					Required:    true,
+					Placeholder: "SKU-001",
+				},
+				{
+					Name:        "qty",
+					Label:       "Quantity",
+					Type:        "integer",
+					Required:    true,
+					Placeholder: "10",
+				},
+			},
+		},
 	}
 
 	if schema, ok := schemas[contractName]; ok {
@@ -110,6 +136,10 @@ func ListAvailableContracts() []ContractSchema {
 		{
 			Name:   "voting",
 			Fields: GetContractSchema("voting").Fields,
+		},
+		{
+			Name:   "demo_inventory",
+			Fields: GetContractSchema("demo_inventory").Fields,
 		},
 	}
 }

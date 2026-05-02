@@ -4,11 +4,15 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/util"
 )
+
+// metaSchemaPrefix stores optional UI schema JSON per contract (not WASM).
+const metaSchemaPrefix = "__meta__/schema/"
 
 type StateDB struct {
 	ContractDB *leveldb.DB
@@ -80,16 +84,30 @@ func (db *StateDB) GetContract(contractName string) ([]byte, error) {
 	return db.ContractDB.Get([]byte(contractName), nil)
 }
 
+// SaveContractMetaSchema stores optional explorer payload schema JSON (ContractSchema shape).
+func (db *StateDB) SaveContractMetaSchema(contractName string, schemaJSON []byte) error {
+	return db.ContractDB.Put([]byte(metaSchemaPrefix+contractName), schemaJSON, nil)
+}
+
+// GetContractMetaSchema returns stored schema JSON or leveldb.ErrNotFound.
+func (db *StateDB) GetContractMetaSchema(contractName string) ([]byte, error) {
+	return db.ContractDB.Get([]byte(metaSchemaPrefix+contractName), nil)
+}
+
 // ListContracts returns all deployed contract names.
 // Current layout stores WASM bytes with key = contractName.
-// This iterates all keys in ContractDB and returns them as names.
+// Keys under __meta__/ are skipped (schema sidecar).
 func (db *StateDB) ListContracts() ([]string, error) {
 	it := db.ContractDB.NewIterator(util.BytesPrefix([]byte("")), nil)
 	defer it.Release()
 
 	var names []string
 	for it.Next() {
-		names = append(names, string(it.Key()))
+		k := string(it.Key())
+		if strings.HasPrefix(k, "__meta__/") {
+			continue
+		}
+		names = append(names, k)
 	}
 	if err := it.Error(); err != nil {
 		return nil, err
