@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/libp2p/go-libp2p/core/peer"
 
@@ -573,4 +574,97 @@ func (s *APIServer) HandleListCommittedTransactions(w http.ResponseWriter, r *ht
 		"transactions": txs,
 		"count":        len(txs),
 	})
+}
+
+// HandleExplorerStream streams explorer updates via SSE.
+// GET /api/explorer/stream
+func (s *APIServer) HandleExplorerStream(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Only GET supported", http.StatusMethodNotAllowed)
+		return
+	}
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "Streaming unsupported", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+
+	sendEvent := func(eventType string, payload map[string]interface{}) {
+		b, _ := json.Marshal(payload)
+		fmt.Fprintf(w, "event: %s\n", eventType)
+		fmt.Fprintf(w, "data: %s\n\n", string(b))
+		flusher.Flush()
+	}
+
+	sendEvent("ready", map[string]interface{}{
+		"status":  "connected",
+		"message": "explorer stream ready",
+	})
+
+	if s.DB == nil {
+		sendEvent("error", map[string]interface{}{
+			"status":  "error",
+			"message": "PostgreSQL is not connected",
+		})
+		<-r.Context().Done()
+		return
+	}
+
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+
+	lastBlockHash := ""
+	lastTxID := ""
+
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case <-ticker.C:
+			changed := false
+			eventPayload := map[string]interface{}{
+				"updated_at": time.Now().UnixMilli(),
+			}
+
+			blocks, err := s.DB.ListCommittedBlocks(1)
+			if err == nil && len(blocks) > 0 {
+				hash := fmt.Sprintf("%v", blocks[0]["hash"])
+				if hash != "" && hash != "<nil>" && hash != lastBlockHash {
+					lastBlockHash = hash
+					eventPayload["block_hash"] = hash
+					eventPayload["latest_block"] = blocks[0]
+					changed = true
+				}
+			}
+
+			txs, err := s.DB.ListCommittedTransactions(1)
+			if err == nil && len(txs) > 0 {
+				txID := fmt.Sprintf("%v", txs[0]["txid"])
+				if txID == "" || txID == "<nil>" {
+					txID = fmt.Sprintf("%v", txs[0]["tx_id"])
+				}
+				if txID != "" && txID != "<nil>" && txID != lastTxID {
+					lastTxID = txID
+					eventPayload["txid"] = txID
+					eventPayload["latest_tx"] = txs[0]
+					changed = true
+				}
+			}
+
+			if changed {
+				sendEvent("ledger_update", eventPayload)
+				continue
+			}
+
+			// Keep connection alive through proxies/load-balancers.
+			fmt.Fprintf(w, ": ping %d\n\n", time.Now().Unix())
+			flusher.Flush()
+		}
+	}
 }

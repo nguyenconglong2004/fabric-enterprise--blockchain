@@ -130,6 +130,7 @@ func main() {
 	http.HandleFunc("/api/transactions", apiServer.HandleListCommittedTransactions)
 	http.HandleFunc("/api/state", apiServer.HandleGetState)
 	http.HandleFunc("/api/block", apiServer.HandleGetBlock)
+	http.HandleFunc("/api/explorer/stream", apiServer.HandleExplorerStream)
 
 	port := ":8080"
 	fmt.Printf("🌐 Core Node API Server đang chạy tại http://localhost%s\n", port)
