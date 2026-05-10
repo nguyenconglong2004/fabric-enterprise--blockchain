@@ -1,231 +1,224 @@
-# Raft-based Order Service with Priority-based Leader Succession
+# Raft Order Service - Hướng dẫn sử dụng
 
-Một order service được xây dựng trên cơ chế Raft consensus sử dụng go-libp2p, với cơ chế leader succession dựa trên độ ưu tiên thay vì bầu cử truyền thống.
+## Giới thiệu
 
-## Đặc điểm chính
+Implementation của Raft consensus protocol với priority-based leader succession. Service nhận transactions từ client (hoặc Core Service), đóng gói thành blocks, và phân phối đến committing peers.
 
-### 1. Đồng thuận về "Bảng danh sách ưu tiên" (Membership View)
-- Mọi node có cùng một danh sách thành viên với thông tin thời gian tham gia
-- Node tham gia càng sớm thì độ ưu tiên càng cao (priority number càng thấp)
-- Membership updates phải được đồng thuận bởi leader và replicate đến tất cả followers
-
-### 2. Cơ chế Phát hiện và Xác nhận Leader chết (Detection Phase)
-- Node phát hiện leader chết khi không nhận được heartbeat trong thời gian timeout
-- Node gửi `Leader_Down_Proposal` kèm chữ ký
-- Chỉ chuyển sang tìm leader mới khi nhận được đủ N/2 + 1 xác nhận (majority)
-
-### 3. Quy trình "Tuyên bố quyền lực" (Claim Phase)
-- Node có độ ưu tiên cao nhất trong các node còn sống gửi `I_AM_LEADER`
-- Kèm theo bằng chứng về độ ưu tiên và Term mới
-- Followers kiểm tra tính hợp lệ và gửi ACK
-- Leader được công nhận khi nhận đủ majority ACKs
-
-## Cấu trúc dự án
+## Cấu trúc Project
 
 ```
-.
-├── main.go           # Entry point và interactive CLI
-├── node.go           # Core node implementation
-├── types.go          # Data structures và types
-├── consensus.go      # Consensus protocol implementation
-├── order_service.go  # Order processing logic
-├── client.go         # Order client (gửi orders từ bên ngoài)
-└── CLIENT_GUIDE.md   # Hướng dẫn sử dụng client
+source/
+├── cmd/
+│   ├── server/main.go        # Server node (interactive CLI)
+│   └── client/main.go        # External UTXO client
+├── internal/
+│   ├── raft/                 # Core Raft logic
+│   ├── network/              # Network layer (libp2p)
+│   └── types/                # Data structures
+├── pkg/
+│   └── client/               # Public client API
+├── docs/                     # Documentation
+└── testingscenarios/         # Test scenario descriptions
 ```
 
-## Cài đặt
-
-### Yêu cầu
-- Go 1.21 hoặc cao hơn
-
-### Cài đặt dependencies
+## Build
 
 ```bash
-go mod tidy
+cd source
+
+# Build server
+go build -o server ./cmd/server
+
+# Build client
+go build -o client ./cmd/client
+
+# Hoặc build cả hai
+go build ./...
 ```
 
-## Sử dụng
-go build -o server.exe ./cmd/server
-### Chạy node đầu tiên (Bootstrap node)
+## Khởi động Cluster
+
+### Bước 1: Khởi động Node đầu tiên (Leader)
 
 ```bash
-go run .
+./server
 ```
 
-Khi được hỏi:
-- Nhập port (ví dụ: 6000)
-- Chọn "y" khi được hỏi "Is this the first node?"
+Nhập thông tin:
+```
+Enter port for P2P network (e.g., 6000): 6000
+Is this the first node? (y/n): y
+```
 
-Node đầu tiên sẽ tự động trở thành leader.
+Node đầu tiên sẽ tự động trở thành **Leader**. Ghi lại địa chỉ hiển thị:
+```
+Address: /ip4/127.0.0.1/tcp/6000/p2p/12D3KooW...
+```
 
-### Chạy các node tiếp theo
+### Bước 2: Khởi động Node thứ hai (Follower)
 
-Mở terminal mới và chạy:
+Mở terminal mới:
+```bash
+./server
+```
+
+Nhập thông tin:
+```
+Enter port for P2P network (e.g., 6000): 6001
+Is this the first node? (y/n): n
+Enter address of existing node to connect to: /ip4/127.0.0.1/tcp/6000/p2p/12D3KooW...
+```
+
+### Bước 3: Khởi động thêm Node (tùy chọn)
+
+Lặp lại bước 2 với port khác (6002, 6003, ...).
+
+## Sử dụng Server Commands
+
+Sau khi server khởi động, bạn có thể sử dụng các lệnh sau:
+
+| Command | Mô tả |
+|---------|-------|
+| `status` | Hiển thị trạng thái node (ID, State, Term, Leader, Members, TxPool, Raft log, Ordering blocks) |
+| `propose [n]` | Propose block với tối đa n transactions từ pool (chỉ Leader; mặc định n=3) |
+| `autoblock start` | Bật tự động propose block khi pool đủ tx (chỉ Leader) |
+| `autoblock stop` | Tắt auto-propose |
+| `delay <secs> <p1> [p2]...` | Delay heartbeat đến các node có priority chỉ định X giây (chỉ Leader; dùng để test) |
+| `connect <addr>` | Kết nối đến node khác |
+| `help` | Hiển thị danh sách commands |
+| `quit` | Thoát |
+
+### Ví dụ workflow trên Leader:
 
 ```bash
-go run .
+> status                    # Kiểm tra trạng thái
+> propose 5                 # Propose block với tối đa 5 tx từ pool
+> autoblock start           # Bật auto-propose (tự động propose khi pool đủ tx)
+> autoblock stop            # Tắt auto-propose
+> delay 10 1 2              # Delay heartbeat 10s đến node priority 1 và 2 (test isolation)
 ```
 
-Khi được hỏi:
-- Nhập port khác (ví dụ: 6001, 6002, ...)
-- Chọn "n" khi được hỏi "Is this the first node?"
-- Nhập địa chỉ của node đầu tiên (copy từ output của node đầu tiên)
+## Sử dụng Client
 
-### Commands
+Client cho phép submit UTXO transactions từ bên ngoài cluster với Ed25519 keypair.
 
-Trong interactive mode, bạn có thể sử dụng các lệnh sau:
-
-- `status` - Hiển thị trạng thái hiện tại của node (state, term, leader, membership, orders)
-- `order <data>` - Submit một order mới (ví dụ: `order Buy 100 BTC`)
-- `orders` - Liệt kê tất cả orders đã commit
-- `connect <address>` - Kết nối đến một node khác
-- `quit` - Thoát chương trình
-
-### Sử dụng Order Client (Khuyến nghị)
-
-Thay vì submit orders từ các nodes, bạn có thể sử dụng Order Client riêng biệt:
+### Khởi động Client
 
 ```bash
-# Terminal riêng - Start client
-go run client.go
+./client
 ```
 
-Client sẽ kết nối đến một node trong cluster và gửi orders. Xem chi tiết trong [CLIENT_GUIDE.md](CLIENT_GUIDE.md).
+Nhập địa chỉ của một node trong cluster:
+```
+Enter address of a node in the cluster (e.g., /ip4/127.0.0.1/tcp/6000/p2p/...): /ip4/127.0.0.1/tcp/6000/p2p/12D3KooW...
+```
 
-## Demo kịch bản
+### Client Commands
 
-### Kịch bản 1: Khởi tạo cluster và submit orders
+| Command | Mô tả |
+|---------|-------|
+| `keygen` | Tạo Ed25519 keypair mới |
+| `wallet <seed_hex>` | Load keypair từ seed hex có sẵn |
+| `addr` | Hiển thị địa chỉ ví hiện tại |
+| `fund <amount>` | Tạo genesis UTXO (coinbase) cho địa chỉ hiện tại (local only, không submit lên mạng) |
+| `utxos` | Liệt kê UTXOs có sẵn (auto-sync từ peer nếu đã đăng ký) |
+| `sync <peer_addr>` | Đăng ký committing peer để auto-sync UTXOs; đồng bộ ngay lần đầu |
+| `tx <to_addr> <amt>` | Tạo và submit signed Ed25519 transaction (auto-sync trước khi gửi) |
+| `start [tps]` | Bật auto-send signed transactions (mặc định 1 TPS) |
+| `stop` | Tắt auto-send |
+| `speed <tps>` | Thay đổi TPS trong khi auto-send đang chạy |
+| `status` | Hiển thị thống kê auto-send (state, wallet, sent, acked) |
+| `help` | Hiển thị danh sách commands |
+| `quit` | Thoát |
 
-1. **Terminal 1** - Start node đầu tiên:
+### Ví dụ workflow Client:
+
 ```bash
-go run .
-# Port: 6000
-# First node: y
-```
+# Tạo ví mới
+> keygen
+New keypair generated.
+  Seed (hex): a1b2c3...
+  Address:    deadbeef...
 
-2. **Terminal 2** - Start node thứ hai:
-```bash
-go run .
-# Port: 6001
-# First node: n
-# Connect to: /ip4/127.0.0.1/tcp/6000/p2p/<NODE1_ID>
-```
+# Nạp tiền vào ví (genesis UTXO, chỉ local)
+> fund 100000
+Genesis UTXO created (not submitted to network).
 
-3. **Terminal 3** - Start node thứ ba:
-```bash
-go run .
-# Port: 6002
-# First node: n
-# Connect to: /ip4/127.0.0.1/tcp/6000/p2p/<NODE1_ID>
-```
+# Gửi transaction thủ công
+> tx deadbeef... 500
+Transaction submitted: <txid>
+  Inputs: 1  Outputs: 2
 
-4. Kiểm tra status ở mọi node:
-```
+# Bật auto-send 10 TPS
+> start 10
+Auto-send started at 10.00 TPS (signed Ed25519 transactions).
+
+# Xem thống kê
 > status
+Auto-send: RUNNING | Wallet: deadbeef... | TX counter: 120 | Sent: 118 | Acked: 115
+
+# Đổi tốc độ
+> speed 50
+
+# Dừng
+> stop
+Auto-send stopped. Sent: 300  Acked: 298
 ```
 
-5. Submit orders từ bất kỳ node nào:
-```
-> order Buy 100 BTC
-> order Sell 50 ETH
-> order Buy 200 ADA
-```
+### Sync UTXOs từ Committing Peer:
 
-6. Kiểm tra orders đã được replicate:
-```
-> orders
-```
-
-### Kịch bản 2: Test Leader Failure Recovery
-
-1. Với cluster 3 nodes đang chạy, kiểm tra ai là leader:
-```
-> status
-```
-
-2. Kill leader node (Ctrl+C tại terminal của leader)
-
-3. Quan sát các follower nodes:
-   - Sau 5 giây (heartbeat timeout), các node sẽ phát hiện leader chết
-   - Gửi `Leader_Down_Proposal`
-   - Đợi consensus (majority votes)
-   - Node có priority cao nhất sẽ claim leadership
-   - Các follower acknowledge leader mới
-
-4. Kiểm tra status tại các node còn lại:
-```
-> status
-```
-
-5. Submit order mới để verify leader mới hoạt động:
-```
-> order Test order after leader change
-```
-
-### Kịch bản 3: Membership Priority
-
-1. Start nodes theo thứ tự với delays:
 ```bash
-# Terminal 1 (Priority 0 - highest)
-go run .  # Port 6000, first node
-
-# Đợi 2 giây
-
-# Terminal 2 (Priority 1)
-go run .  # Port 6001, connect to node 1
-
-# Đợi 2 giây
-
-# Terminal 3 (Priority 2)
-go run .  # Port 6002, connect to node 1
+> sync /ip4/127.0.0.1/tcp/7000/p2p/12D3KooW...
+Syncing UTXOs for address deadbeef......
+Sync complete: +3 new UTXO(s) from blockchain, wallet total = 3 UTXO(s), balance = 299999
+Peer registered — utxos/tx will auto-sync from now on.
 ```
 
-2. Kiểm tra membership view:
-```
-> status
-```
+## Test Leader Failover
 
-3. Kill node priority 0 (leader), observe priority 1 becomes leader
-4. Kill node priority 1, observe priority 2 becomes leader
+1. Khởi động 3 nodes (port 6000, 6001, 6002)
+2. Node 6000 là Leader (priority 0)
+3. Tắt node 6000 (Ctrl+C)
+4. Sau 5 giây (`HeartbeatTimeout`), node 6001 (priority 1) phát hiện timeout, gửi `MsgIAmNewLeader`
+5. Node 6002 gửi `MsgLeaderClaimAck`; node 6001 trở thành Leader mới
+6. Kiểm tra bằng lệnh `status` trên các node còn lại
 
-## Chi tiết kỹ thuật
+## Cấu hình Timeout
 
-### Message Types
+Các timeout mặc định trong `internal/network/protocol.go`:
 
-- `MsgHeartbeat` - Leader gửi định kỳ để báo hiệu còn sống
-- `MsgLeaderDownProposal` - Đề xuất leader đã chết
-- `MsgLeaderDownAck` - Xác nhận đồng ý leader đã chết
-- `MsgIAmLeader` - Tuyên bố làm leader mới
-- `MsgLeaderAck` - Xác nhận chấp nhận leader mới
-- `MsgMembershipUpdate` - Cập nhật membership view
-- `MsgMembershipAck` - Xác nhận membership update
-- `MsgOrderRequest` - Request xử lý order
-- `MsgOrderResponse` - Response cho order request
-
-### Timeouts
-
-- `HeartbeatInterval`: 2 giây - Khoảng thời gian giữa các heartbeat
-- `HeartbeatTimeout`: 5 giây - Thời gian chờ heartbeat trước khi nghi ngờ leader chết
-- `DetectionTimeout`: 3 giây - Thời gian chờ consensus về leader failure
-
-### Node States
-
-- `Follower` - Trạng thái bình thường, nhận lệnh từ leader
-- `Leader` - Node đang là leader, gửi heartbeat và xử lý orders
-- `DetectingLeaderFailure` - Đang trong quá trình phát hiện và đồng thuận về leader failure
+| Parameter | Giá trị | Mô tả |
+|-----------|---------|-------|
+| `HeartbeatInterval` | 2s | Khoảng thời gian giữa các heartbeat |
+| `HeartbeatTimeout` | 5s | Timeout để phát hiện leader failure |
+| `DetectionTimeout` | 3s | Timeout chờ expected leader gửi `MsgIAmNewLeader` |
 
 ## Lưu ý
 
-- Đây là implementation đơn giản cho mục đích học tập và demo
-- Trong production, cần thêm:
-  - Persistent storage cho log
-  - Proper log replication với acknowledgments
-  - Snapshot và log compaction
-  - Security (authentication, encryption)
-  - Network partition handling
-  - More robust error handling
+- **Priority-based succession**: Node join trước có priority thấp hơn (ưu tiên cao hơn) và được chọn làm leader khi leader hiện tại fail
+- **TxPool**: Transactions từ client được lưu với status `pending`; cần Leader `propose` block để đưa vào Raft log rồi commit
+- **Block proposal**: Chỉ Leader mới có thể propose block; cần majority ACKs từ followers để commit
+- **Auto-propose**: Leader có thể bật `autoblock start` để tự động propose block theo chu kỳ
+- **Deliver**: Committing peer kết nối qua protocol `/raft-order-service/deliver/1.0.0` để nhận blocks đã commit
+- **Endorsement**: Core Service gửi endorsed transactions qua protocol `/raft-order-service/endorsement/1.0.0`
 
-## Tài liệu tham khảo
+## Troubleshooting
 
-- [Raft Consensus Algorithm](https://raft.github.io/)
-- [go-libp2p Documentation](https://docs.libp2p.io/)
+### Lỗi "no leader available"
+- Đảm bảo có ít nhất một node đang chạy
+- Chờ `HeartbeatTimeout` (5s) để cluster bầu leader mới
+- Kiểm tra `status` để xem membership view và ai đang là leader
+
+### Lỗi "failed to connect to peer"
+- Kiểm tra địa chỉ node có đúng không (copy nguyên từ output của server)
+- Đảm bảo node đích đang chạy
+- Kiểm tra firewall không chặn port
+
+### Transactions không được commit
+- Đảm bảo tất cả nodes đã join cluster (kiểm tra bằng `status`)
+- Cần Leader chạy `propose [n]` hoặc bật `autoblock start` để đưa transactions vào block
+- Kiểm tra TxPool trên leader (hiển thị trong `status`)
+
+### Leader không commit block
+- Kiểm tra cluster còn đủ majority nodes không (cần ít nhất N/2 + 1 nodes alive)
+- Kiểm tra kết nối giữa các nodes bằng `status` → Members list
