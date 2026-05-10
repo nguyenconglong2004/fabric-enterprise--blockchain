@@ -221,6 +221,10 @@ func (rn *RaftNode) handleHeartbeatResponse(msg types.Message) {
 	// The leader's membership view has us marked dead, so it won't send heartbeats
 	// to us. This re-join causes the leader to MarkAlive us and resume heartbeats.
 	go rn.requestMembershipJoin(leaderID)
+
+	// Sau khi nhận diện stale-leader và step down, trigger sync để bắt kịp blocks/log
+	// đã được cluster commit trong khoảng ta là stale leader.
+	go rn.StartSync("stepped-down-after-stale-heartbeat")
 }
 
 // updateLastHeartbeat resets the heartbeat timer (called when any leader message acts as heartbeat)
@@ -235,24 +239,29 @@ func (rn *RaftNode) updateLastHeartbeat() {
 // Heartbeat từ term thấp hơn bị bỏ qua hoàn toàn — không reset timer.
 func (rn *RaftNode) handleHeartbeat(msg types.Message) {
 	rn.mu.Lock()
-	defer rn.mu.Unlock()
 
 	// Heartbeat từ term cũ — báo lại cho sender biết để step down
 	if msg.Term < rn.currentTerm {
 		log.Printf("[%s] Received stale heartbeat from %s (term %d < current %d), sending response",
 			rn.Transport.ID().ShortString(), msg.SenderID, msg.Term, rn.currentTerm)
 		senderID, err := peer.Decode(msg.SenderID)
+		rn.mu.Unlock()
 		if err == nil {
 			go rn.sendHeartbeatResponse(senderID)
 		}
 		return
 	}
 
+	// Phát hiện gap dài kể từ lần heartbeat trước → khả năng vừa rejoin sau disconnect.
+	gap := time.Since(rn.lastHeartbeat)
+	rejoinDetected := !rn.lastHeartbeat.IsZero() && gap > 2*network.HeartbeatTimeout
+
 	// Term hợp lệ → reset timer và cập nhật thông tin leader
 	rn.lastHeartbeat = time.Now()
 
 	leaderID, err := peer.Decode(msg.SenderID)
 	if err != nil {
+		rn.mu.Unlock()
 		return
 	}
 
@@ -269,4 +278,13 @@ func (rn *RaftNode) handleHeartbeat(msg types.Message) {
 	// Đã có leader thật (heartbeat) -> bỏ chờ expected leader
 	rn.expectedLeaderID = ""
 	rn.expectedLeaderDeadline = time.Time{}
+	state := rn.state
+	rn.mu.Unlock()
+
+	// Trigger sync nếu vừa rejoin sau gap dài. Bỏ qua nếu là leader hoặc đang sync.
+	if rejoinDetected && state == types.Follower {
+		log.Printf("[%s] Detected rejoin after %v gap, triggering sync",
+			rn.Transport.ID().ShortString(), gap)
+		go rn.StartSync("rejoin-after-disconnect")
+	}
 }

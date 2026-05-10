@@ -20,6 +20,16 @@ func (rn *RaftNode) processMessages() {
 
 // handleMessage handles different types of messages
 func (rn *RaftNode) handleMessage(msg types.Message) {
+	// Trong khi đang sync, bỏ qua block proposal/commit để tránh dồn duplicate work.
+	// Sau khi sync xong, propagation tự nhiên qua heartbeat sẽ cuốn theo block kế tiếp.
+	if rn.IsSyncing() {
+		switch msg.Type {
+		case types.MsgBlockProposal, types.MsgBlockCommit:
+			log.Printf("[%s] sync: deferring %s during sync", rn.Transport.ID().ShortString(), msg.Type)
+			return
+		}
+	}
+
 	switch msg.Type {
 	case types.MsgHeartbeat:
 		rn.handleHeartbeat(msg)
@@ -45,6 +55,14 @@ func (rn *RaftNode) handleMessage(msg types.Message) {
 		rn.HandleBlockProposalAck(msg)
 	case types.MsgBlockCommit:
 		rn.HandleBlockCommit(msg)
+	case types.MsgSyncStatusRequest:
+		rn.handleSyncStatusRequest(msg)
+	case types.MsgSyncStatusResponse:
+		select {
+		case rn.SyncStatusChan <- msg:
+		default:
+			log.Printf("[%s] sync: status response channel full, dropping", rn.Transport.ID().ShortString())
+		}
 	default:
 		log.Printf("[%s] Unknown message type: %v", rn.Transport.ID().ShortString(), msg.Type)
 	}

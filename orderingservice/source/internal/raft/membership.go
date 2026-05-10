@@ -123,6 +123,12 @@ func (rn *RaftNode) handleMembershipAck(msg types.Message) {
 
 	log.Printf("[%s] Updated membership view, current leader: %s",
 		rn.Transport.ID().ShortString(), leaderID.ShortString())
+
+	// First-join sync: nếu local đang rỗng và cluster có ≥ 2 alive member,
+	// chủ động fetch toàn bộ committed blocks + RaftLog từ peers.
+	if rn.OrderingBlock.GetLastIndex() == 0 && len(rn.Membership.GetAliveMembers()) >= 2 {
+		go rn.StartSync("first-join")
+	}
 }
 
 // broadcastMembershipView broadcasts the current membership view to all members

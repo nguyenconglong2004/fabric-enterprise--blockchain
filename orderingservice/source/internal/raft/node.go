@@ -76,6 +76,11 @@ type RaftNode struct {
 	delayMu              sync.Mutex
 	delayedPriorities    map[int]bool
 	heartbeatPausedUntil time.Time // leader will not send any heartbeat before this time
+
+	// Sync coordinator state (block/log catch-up khi first-join hoặc rejoin).
+	syncMu         sync.Mutex
+	syncing        bool
+	SyncStatusChan chan types.Message // buffered: chứa MsgSyncStatusResponse trong cửa sổ discovery
 }
 
 // NewRaftNode creates a new Raft node
@@ -102,6 +107,7 @@ func NewRaftNode(ctx context.Context, port int) (*RaftNode, error) {
 		blockCommittedNotify: make(chan struct{}, 1),
 		DeliverMgr:           NewDeliverManager(),
 		delayedPriorities:    make(map[int]bool),
+		SyncStatusChan:       make(chan types.Message, 100),
 	}
 
 	// Add self to membership
@@ -124,6 +130,9 @@ func (rn *RaftNode) Start() {
 
 	// Register endorsement stream handler
 	rn.Transport.SetEndorsementStreamHandler(rn.HandleEndorsementStream)
+
+	// Register inter-node sync stream handler (block/log catch-up)
+	rn.Transport.SetSyncStreamHandler(rn.HandleSyncStream)
 
 	// Start message processor
 	go rn.processMessages()

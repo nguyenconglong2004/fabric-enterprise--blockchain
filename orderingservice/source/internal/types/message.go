@@ -19,6 +19,8 @@ const (
 	MsgBlockProposal
 	MsgBlockProposalAck
 	MsgBlockCommit
+	MsgSyncStatusRequest
+	MsgSyncStatusResponse
 )
 
 func (mt MessageType) String() string {
@@ -49,6 +51,10 @@ func (mt MessageType) String() string {
 		return "BlockProposalAck"
 	case MsgBlockCommit:
 		return "BlockCommit"
+	case MsgSyncStatusRequest:
+		return "SyncStatusRequest"
+	case MsgSyncStatusResponse:
+		return "SyncStatusResponse"
 	default:
 		return "Unknown"
 	}

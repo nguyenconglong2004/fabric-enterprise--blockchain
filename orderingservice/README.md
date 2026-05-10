@@ -4,6 +4,13 @@
 
 Implementation của Raft consensus protocol với priority-based leader succession. Service nhận transactions từ client (hoặc Core Service), đóng gói thành blocks, và phân phối đến committing peers.
 
+Đặc điểm chính:
+- **Priority-based leader succession**: thay vì bỏ phiếu ngẫu nhiên, leader mới được xác định theo `JoinTime` (ai vào cluster sớm hơn → priority thấp hơn → ưu tiên cao hơn).
+- **Block proposal / commit pipeline**: leader gom tx → tạo `Block` (Merkle root + hash chain) → broadcast `MsgBlockProposal` → chờ majority `MsgBlockProposalAck` → broadcast `MsgBlockCommit`.
+- **Transaction**: UTXO model bitcoin-like, ký Ed25519, scriptPubKey P2PKH.
+- **Deliver service**: committing peer subscribe long-lived stream để nhận block đã commit.
+- **Data sync**: node mới join hoặc rejoin sau disconnect tự động fetch song song blocks + RaftLog từ peers, verify hash chain trước khi install.
+
 ## Cấu trúc Project
 
 ```
@@ -12,12 +19,24 @@ source/
 │   ├── server/main.go        # Server node (interactive CLI)
 │   └── client/main.go        # External UTXO client
 ├── internal/
+│   ├── api/                  # HTTP API server (leader, membership, submit-tx, endorsement)
 │   ├── raft/                 # Core Raft logic
-│   ├── network/              # Network layer (libp2p)
-│   └── types/                # Data structures
+│   │   ├── node.go           # RaftNode struct + lifecycle
+│   │   ├── consensus.go      # Message dispatcher
+│   │   ├── heartbeat.go      # Heartbeat send/check + rejoin detection
+│   │   ├── leader.go         # selectNewLeader, IAmNewLeader, claim ACK
+│   │   ├── membership.go     # Membership update broadcast / handle
+│   │   ├── transaction.go    # TxPool + propose/commit block + auto-propose
+│   │   ├── deliver.go        # DeliverManager + HandleDeliverStream
+│   │   ├── endorsement.go    # HandleEndorsementStream
+│   │   ├── sync.go           # Sync coordinator (client side)
+│   │   └── sync_server.go    # Sync handler (server side)
+│   ├── network/              # libp2p transport + protocol IDs
+│   └── types/                # Data structures (Block, Transaction, Message, Sync...)
 ├── pkg/
-│   └── client/               # Public client API
-├── docs/                     # Documentation
+│   └── client/               # Public client API (OrderClient)
+├── examples/                 # Ví dụ build/sign/verify transaction
+├── docs/                     # MEMBERSHIP_VIEW.md, TRANSACTION.md, CLIENT_CLI.md
 └── testingscenarios/         # Test scenario descriptions
 ```
 
@@ -183,15 +202,86 @@ Peer registered — utxos/tx will auto-sync from now on.
 5. Node 6002 gửi `MsgLeaderClaimAck`; node 6001 trở thành Leader mới
 6. Kiểm tra bằng lệnh `status` trên các node còn lại
 
+## Đồng bộ dữ liệu khi Rejoin / First-Join
+
+Khi một node mới tham gia cluster lần đầu, hoặc một node bị mất kết nối rồi quay lại, nó cần lấy lại đầy đủ committed blocks và uncommitted RaftLog entries. Cơ chế **pull-based parallel sync** chạy trong state mới `Syncing`.
+
+### Trigger
+
+Sync được tự động kích hoạt ở 4 điểm:
+
+| Trigger | Điều kiện |
+|---|---|
+| `first-join` | Sau khi nhận `MsgMembershipAck`, nếu `OrderingBlock` rỗng và cluster có ≥ 2 alive member. |
+| `rejoin-after-disconnect` | Trong `handleHeartbeat()`, nếu `time.Since(lastHeartbeat) > 2 × HeartbeatTimeout` (vừa có gap dài). |
+| `stepped-down-after-stale-heartbeat` | Stale leader nhận `MsgHeartbeatResponse` cho thấy có term mới hơn → step down rồi sync. |
+| `missing-log-entry` | Nhận `MsgBlockCommit` mà `RaftLog.FindEntryByIndex` trả `nil` → self-heal. |
+
+### Quy trình sync (3 phase)
+
+1. **Discovery** — node sync broadcast `MsgSyncStatusRequest` tới mọi alive peer; thu `MsgSyncStatusResponse` chứa `(term, commitIndex, commitHash, logLastIndex, membershipVersion, leaderID)` trong cửa sổ `SyncDiscoveryWindow` (2 s).
+2. **Target selection** — gom response theo `(commitIndex, hex(commitHash))`; chọn nhóm có nhiều phiếu nhất, tie-break bằng `commitIndex` cao nhất, làm sync target.
+3. **Parallel fetch + verify** — chia range `[localCommit+1 .. target.CommitIndex]` thành các shard kích thước `SyncShardSize` (64 block). Mỗi shard mở libp2p stream qua `SyncProtocolID` tới một source khác (round-robin trên danh sách alive peer). Khi shard fail, thử source kế. Verify hash chain liên tục: mỗi `block.PrevHash` phải khớp hash trước, `block.BlockHash()` recompute phải khớp `block.Hash`, và hash của block cuối phải khớp `target.CommitHash`. Nếu verify fail → abort, không install. Sau khi block xong, fetch RaftLog entries `[target.CommitIndex+1 .. target.LogLastIndex]`.
+
+Trong khi đang `Syncing`:
+- Node bỏ qua `MsgBlockProposal` / `MsgBlockCommit` đến (sẽ catch-up qua sync target).
+- Không tham gia leader election.
+- Server-side sync handler từ chối phục vụ nếu chính nó cũng đang `Syncing` (tránh propagate dữ liệu chưa verify).
+
+### Test sync — kịch bản gợi ý
+
+**First-join**:
+1. Cluster 2 node F0 + F1 đang `autoblock start`. Submit ~30 tx → ~10 block committed.
+2. Khởi động F2, connect tới F0.
+3. Gõ `status` tại F2: `OrderingBlock` phải khớp F0/F1. Log F2 có dòng `sync: fetching shard [..] from <peerID>`.
+
+**Rejoin sau disconnect**:
+1. Cluster 3 node F0 (leader), F1, F2 đang `autoblock start`.
+2. Tại F0: `delay 30 1` (chặn heartbeat tới F1 trong 30 s, mô phỏng F1 isolated).
+3. Submit tiếp tx trong 30 s → F0 + F2 có thêm block, F1 không có.
+4. Sau 30 s, F0 resume heartbeat → F1 phát hiện gap → tự sync.
+
 ## Cấu hình Timeout
 
 Các timeout mặc định trong `internal/network/protocol.go`:
 
 | Parameter | Giá trị | Mô tả |
 |-----------|---------|-------|
-| `HeartbeatInterval` | 2s | Khoảng thời gian giữa các heartbeat |
-| `HeartbeatTimeout` | 5s | Timeout để phát hiện leader failure |
-| `DetectionTimeout` | 3s | Timeout chờ expected leader gửi `MsgIAmNewLeader` |
+| `HeartbeatInterval` | 2 s | Khoảng thời gian giữa các heartbeat |
+| `HeartbeatTimeout` | 5 s | Timeout để phát hiện leader failure |
+| `DetectionTimeout` | 3 s | Timeout chờ expected leader gửi `MsgIAmNewLeader` |
+| `SyncDiscoveryWindow` | 2 s | Cửa sổ thu `SyncStatusResponse` ở phase discovery |
+| `SyncFetchTimeout` | 30 s | Deadline cho mỗi sync stream |
+| `SyncShardSize` | 64 | Số block / log entry trên mỗi shard fetch song song |
+
+## Protocol IDs
+
+| Protocol ID | Mục đích |
+|---|---|
+| `/raft-order-service/1.0.0` | Stream chính cho `Message` (heartbeat, block, membership, sync status…) |
+| `/raft-order-service/deliver/1.0.0` | Stream phát block tới committing peer |
+| `/raft-order-service/endorsement/1.0.0` | Stream nhận endorsement transaction từ Core Service |
+| `/raft-order-service/sync/1.0.0` | Stream catch-up block / RaftLog giữa các ordering node |
+
+## Node states
+
+| State | Mô tả |
+|---|---|
+| `Follower` | Bình thường: nhận block từ leader, gửi ack |
+| `Leader` | Gửi heartbeat, gom tx, propose / commit block |
+| `ClaimingLeader` | Đang gửi `MsgIAmNewLeader`, chờ majority `MsgLeaderClaimAck` |
+| `Syncing` | Đang catch-up dữ liệu; tạm bỏ qua `BlockProposal/Commit` đến |
+
+## Message types
+
+```
+MsgHeartbeat / MsgHeartbeatResponse
+MsgIAmNewLeader / MsgLeaderClaimAck
+MsgMembershipUpdate / MsgMembershipAck / MsgMembershipRequest / MsgMembershipResponse
+MsgTxRequest / MsgTxResponse
+MsgBlockProposal / MsgBlockProposalAck / MsgBlockCommit
+MsgSyncStatusRequest / MsgSyncStatusResponse
+```
 
 ## Lưu ý
 
@@ -201,6 +291,15 @@ Các timeout mặc định trong `internal/network/protocol.go`:
 - **Auto-propose**: Leader có thể bật `autoblock start` để tự động propose block theo chu kỳ
 - **Deliver**: Committing peer kết nối qua protocol `/raft-order-service/deliver/1.0.0` để nhận blocks đã commit
 - **Endorsement**: Core Service gửi endorsed transactions qua protocol `/raft-order-service/endorsement/1.0.0`
+- **Data sync**: Node mới hoặc node rejoin sau disconnect tự động fetch song song blocks + RaftLog từ peers, verify hash chain trước khi install (xem mục "Đồng bộ dữ liệu" ở trên)
+
+## Hạn chế hiện tại
+
+- **Không có persistence**: `RaftLog` và `OrderingBlock` đều in-memory. Node restart = state rỗng (sync mechanism sẽ tự fetch lại từ cluster); nhưng nếu cả cluster restart cùng lúc thì state mất hoàn toàn.
+- **Không có log compaction / snapshot**: `RaftLog.Entries` chỉ append, chưa có cơ chế trim cho cluster chạy lâu.
+- **Sync không có signature**: hash-chain verification + majority quorum đủ chống một số dạng tampering ở mức demo, nhưng production cần ký dữ liệu.
+- **Không có per-follower progress (nextIndex/matchIndex)**: catch-up hoàn toàn pull-based từ phía follower, leader không chủ động push cho follower lag.
+- **Auth tầng app**: libp2p tự encrypt transport (Noise/TLS), nhưng chưa có authorization — bất kỳ peer nào cũng có thể gửi membership join.
 
 ## Troubleshooting
 

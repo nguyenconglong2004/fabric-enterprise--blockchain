@@ -77,6 +77,22 @@ func (t *Transport) SetEndorsementStreamHandler(handler network.StreamHandler) {
 	t.Host.SetStreamHandler(protocol.ID(EndorsementProtocolID), handler)
 }
 
+// SetSyncStreamHandler sets the handler for inter-node data sync streams
+// (block / log catch-up trên SyncProtocolID).
+func (t *Transport) SetSyncStreamHandler(handler network.StreamHandler) {
+	t.Host.SetStreamHandler(protocol.ID(SyncProtocolID), handler)
+}
+
+// OpenSyncStream mở một stream tới peer trên SyncProtocolID.
+// Caller chịu trách nhiệm Close stream sau khi xong.
+func (t *Transport) OpenSyncStream(peerID peer.ID) (network.Stream, error) {
+	s, err := t.Host.NewStream(t.Ctx, peerID, protocol.ID(SyncProtocolID))
+	if err != nil {
+		return nil, fmt.Errorf("failed to open sync stream: %w", err)
+	}
+	return s, nil
+}
+
 // SendMessage sends a message to a peer
 func (t *Transport) SendMessage(peerID peer.ID, msg types.Message) error {
 	s, err := t.Host.NewStream(t.Ctx, peerID, protocol.ID(ProtocolID))

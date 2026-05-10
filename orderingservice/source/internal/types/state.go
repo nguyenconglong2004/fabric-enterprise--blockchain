@@ -7,6 +7,7 @@ const (
 	Follower NodeState = iota
 	Leader
 	ClaimingLeader // đang gửi I AM NEW LEADER và chờ đủ majority YES
+	Syncing        // đang đồng bộ blocks/log từ các peer khác (first-join hoặc rejoin)
 )
 
 func (s NodeState) String() string {
@@ -17,6 +18,8 @@ func (s NodeState) String() string {
 		return "Leader"
 	case ClaimingLeader:
 		return "ClaimingLeader"
+	case Syncing:
+		return "Syncing"
 	default:
 		return "Unknown"
 	}

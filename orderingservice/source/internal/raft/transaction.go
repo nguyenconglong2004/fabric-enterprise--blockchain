@@ -539,8 +539,9 @@ func (rn *RaftNode) HandleBlockCommit(msg types.Message) {
 	// Find the log entry to commit
 	entry := rn.RaftLog.FindEntryByIndex(commit.LogIndex)
 	if entry == nil {
-		log.Printf("[%s] Warning: log entry %d for block %s not found in RaftLog",
+		log.Printf("[%s] Warning: log entry %d for block %s not found in RaftLog — triggering sync",
 			rn.Transport.ID().ShortString(), commit.LogIndex, commit.BlockID)
+		go rn.StartSync("missing-log-entry")
 		return
 	}
 
