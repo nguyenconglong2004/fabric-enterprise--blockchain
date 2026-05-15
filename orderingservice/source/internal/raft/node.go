@@ -16,8 +16,10 @@ import (
 	"raft-order-service/internal/types"
 )
 
-// AutoProposeBlockSize is the fixed number of transactions per auto-proposed block
-const AutoProposeBlockSize = 3
+const (
+	AutoProposeBlockSize = 20                       // max tx per auto-proposed block
+	AutoProposeInterval  = 500 * time.Millisecond   // tick interval for auto-propose loop
+)
 
 // RaftNode represents a node in the Raft-based order service
 type RaftNode struct {

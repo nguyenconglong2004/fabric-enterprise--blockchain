@@ -142,6 +142,7 @@ func (rn *RaftNode) finishClaim(claimTerm int64, yesCount, majority int) {
 		log.Printf("[%s] *** I AM NOW THE LEADER (term %d) *** YES=%d >= majority=%d",
 			rn.Transport.ID().ShortString(), claimTerm, yesCount, majority)
 		go rn.sendHeartbeat()
+		go func() { _ = rn.StartAutoProposeBlock(AutoProposeBlockSize) }()
 	} else {
 		rn.state = types.Follower
 		log.Printf("[%s] Leader claim failed: YES=%d < majority=%d",
@@ -292,4 +293,5 @@ func (rn *RaftNode) becomeLeader() {
 	log.Printf("[%s] *** I AM NOW THE LEADER (term %d) ***",
 		rn.Transport.ID().ShortString(), rn.currentTerm)
 	go rn.sendHeartbeat()
+	go func() { _ = rn.StartAutoProposeBlock(AutoProposeBlockSize) }()
 }

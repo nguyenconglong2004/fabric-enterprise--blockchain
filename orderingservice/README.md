@@ -99,9 +99,6 @@ Sau khi server khởi động, bạn có thể sử dụng các lệnh sau:
 | Command | Mô tả |
 |---------|-------|
 | `status` | Hiển thị trạng thái node (ID, State, Term, Leader, Members, TxPool, Raft log, Ordering blocks) |
-| `propose [n]` | Propose block với tối đa n transactions từ pool (chỉ Leader; mặc định n=3) |
-| `autoblock start` | Bật tự động propose block khi pool đủ tx (chỉ Leader) |
-| `autoblock stop` | Tắt auto-propose |
 | `delay <secs> <p1> [p2]...` | Delay heartbeat đến các node có priority chỉ định X giây (chỉ Leader; dùng để test) |
 | `connect <addr>` | Kết nối đến node khác |
 | `help` | Hiển thị danh sách commands |
@@ -111,9 +108,6 @@ Sau khi server khởi động, bạn có thể sử dụng các lệnh sau:
 
 ```bash
 > status                    # Kiểm tra trạng thái
-> propose 5                 # Propose block với tối đa 5 tx từ pool
-> autoblock start           # Bật auto-propose (tự động propose khi pool đủ tx)
-> autoblock stop            # Tắt auto-propose
 > delay 10 1 2              # Delay heartbeat 10s đến node priority 1 và 2 (test isolation)
 ```
 
@@ -231,12 +225,12 @@ Trong khi đang `Syncing`:
 ### Test sync — kịch bản gợi ý
 
 **First-join**:
-1. Cluster 2 node F0 + F1 đang `autoblock start`. Submit ~30 tx → ~10 block committed.
+1. Cluster 2 node F0 + F1 đang chạy. Submit ~30 tx → ~10 block committed (leader tự động propose).
 2. Khởi động F2, connect tới F0.
 3. Gõ `status` tại F2: `OrderingBlock` phải khớp F0/F1. Log F2 có dòng `sync: fetching shard [..] from <peerID>`.
 
 **Rejoin sau disconnect**:
-1. Cluster 3 node F0 (leader), F1, F2 đang `autoblock start`.
+1. Cluster 3 node F0 (leader), F1, F2 đang chạy.
 2. Tại F0: `delay 30 1` (chặn heartbeat tới F1 trong 30 s, mô phỏng F1 isolated).
 3. Submit tiếp tx trong 30 s → F0 + F2 có thêm block, F1 không có.
 4. Sau 30 s, F0 resume heartbeat → F1 phát hiện gap → tự sync.
@@ -286,9 +280,8 @@ MsgSyncStatusRequest / MsgSyncStatusResponse
 ## Lưu ý
 
 - **Priority-based succession**: Node join trước có priority thấp hơn (ưu tiên cao hơn) và được chọn làm leader khi leader hiện tại fail
-- **TxPool**: Transactions từ client được lưu với status `pending`; cần Leader `propose` block để đưa vào Raft log rồi commit
-- **Block proposal**: Chỉ Leader mới có thể propose block; cần majority ACKs từ followers để commit
-- **Auto-propose**: Leader có thể bật `autoblock start` để tự động propose block theo chu kỳ
+- **TxPool**: Transactions từ client được lưu với status `pending`; Leader tự động propose block mỗi 0.5 s với tối đa 20 tx/block
+- **Block proposal**: Chỉ Leader mới có thể propose block; cần majority ACKs từ followers để commit; auto-propose luôn chạy khi node lên leader, không cần thao tác CLI
 - **Deliver**: Committing peer kết nối qua protocol `/raft-order-service/deliver/1.0.0` để nhận blocks đã commit
 - **Endorsement**: Core Service gửi endorsed transactions qua protocol `/raft-order-service/endorsement/1.0.0`
 - **Data sync**: Node mới hoặc node rejoin sau disconnect tự động fetch song song blocks + RaftLog từ peers, verify hash chain trước khi install (xem mục "Đồng bộ dữ liệu" ở trên)
@@ -315,7 +308,7 @@ MsgSyncStatusRequest / MsgSyncStatusResponse
 
 ### Transactions không được commit
 - Đảm bảo tất cả nodes đã join cluster (kiểm tra bằng `status`)
-- Cần Leader chạy `propose [n]` hoặc bật `autoblock start` để đưa transactions vào block
+- Leader tự động propose block mỗi 0.5 s; kiểm tra log leader có dòng `Auto-propose: proposing block` không
 - Kiểm tra TxPool trên leader (hiển thị trong `status`)
 
 ### Leader không commit block

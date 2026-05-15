@@ -587,11 +587,14 @@ func (rn *RaftNode) StartAutoProposeBlock(batchSize int) error {
 			log.Printf("[%s] Auto-propose goroutine exited", rn.Transport.ID().ShortString())
 		}()
 
+		ticker := time.NewTicker(AutoProposeInterval)
+		defer ticker.Stop()
+
 		for {
 			select {
 			case <-stopChan:
 				return
-			default:
+			case <-ticker.C:
 			}
 
 			if !rn.IsLeader() {
@@ -605,11 +608,6 @@ func (rn *RaftNode) StartAutoProposeBlock(batchSize int) error {
 			rn.TxPoolMu.Unlock()
 
 			if poolSize == 0 {
-				select {
-				case <-stopChan:
-					return
-				case <-time.After(200 * time.Millisecond):
-				}
 				continue
 			}
 
@@ -619,11 +617,6 @@ func (rn *RaftNode) StartAutoProposeBlock(batchSize int) error {
 			if err := rn.ProposeBlock(batchSize); err != nil {
 				log.Printf("[%s] Auto-propose: ProposeBlock error: %v",
 					rn.Transport.ID().ShortString(), err)
-				select {
-				case <-stopChan:
-					return
-				case <-time.After(500 * time.Millisecond):
-				}
 				continue
 			}
 
@@ -634,7 +627,7 @@ func (rn *RaftNode) StartAutoProposeBlock(batchSize int) error {
 				log.Printf("[%s] Auto-propose: block committed, checking next batch",
 					rn.Transport.ID().ShortString())
 			case <-time.After(10 * time.Second):
-				log.Printf("[%s] Auto-propose: timeout waiting for block commit, retrying",
+				log.Printf("[%s] Auto-propose: commit timeout, continuing",
 					rn.Transport.ID().ShortString())
 			}
 		}
