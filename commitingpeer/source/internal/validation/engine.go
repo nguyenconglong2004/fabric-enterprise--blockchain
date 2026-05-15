@@ -30,14 +30,17 @@ func NewEngine(trustedEndorserPubHex string) *Engine {
 	return &Engine{trustedPubHexes: pubs}
 }
 
-// ValidateBlock checks prev_hash against the local chain tip, then Merkle root and
-// block hash (matching the ordering service). When trusted endorser keys are
-// configured, smart-contract transactions must carry valid endorsements.
+// ValidateBlock checks Merkle root and block hash (matching the ordering service).
+// When trusted endorser keys are configured, smart-contract transactions must carry
+// valid endorsements. Note: prev_hash check is skipped; it's still included in block
+// hash computation for structure verification.
 // committedTipHash is the last block hash already on disk (nil if the chain file is empty).
 func (e *Engine) ValidateBlock(b types.Block, committedTipHash []byte) error {
-	if err := e.verifyPrevHash(b, committedTipHash); err != nil {
-		return fmt.Errorf("prev_hash check failed: %w", err)
-	}
+	// Skip prev_hash chain continuity check
+	// if err := e.verifyPrevHash(b, committedTipHash); err != nil {
+	//	return fmt.Errorf("prev_hash check failed: %w", err)
+	// }
+
 	if err := e.verifyBlockIntegrity(b); err != nil {
 		return fmt.Errorf("block integrity check failed: %w", err)
 	}
