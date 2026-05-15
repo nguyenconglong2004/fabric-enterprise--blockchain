@@ -74,6 +74,15 @@ func New(
 func (p *CommittingPeer) Start(ctx context.Context, ordererAddr string, fromIndex int64) error {
 	p.mu.Lock()
 	p.ordererAddr = ordererAddr
+	// Align counters with chain file so new blocks get correct heights / stats after restart.
+	if p.blockStore != nil {
+		if n := p.blockStore.CommittedBlockCount(); n > 0 {
+			atomic.StoreInt64(&p.blockCount, n)
+			if tip := p.blockStore.CommittedTipHash(); len(tip) > 0 {
+				p.lastBlockHash = append([]byte(nil), tip...)
+			}
+		}
+	}
 	p.mu.Unlock()
 
 	if err := p.deliverClient.Subscribe(ctx, ordererAddr, fromIndex, p.blockChan); err != nil {
@@ -100,7 +109,7 @@ func (p *CommittingPeer) commitLoop(ctx context.Context) {
 func (p *CommittingPeer) handleBlock(block types.Block) {
 	hashHex := hex.EncodeToString(block.Hash)
 
-	if err := p.validator.ValidateBlock(block); err != nil {
+	if err := p.validator.ValidateBlock(block, p.blockStore.CommittedTipHash()); err != nil {
 		log.Printf("[peer] block rejected hash=%s: %v", hashHex, err)
 		return
 	}

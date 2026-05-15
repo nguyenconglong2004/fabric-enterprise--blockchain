@@ -13,7 +13,6 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 
 	"coreservice/internal/core"
-	"coreservice/internal/crypto"
 	"coreservice/internal/network"
 	"coreservice/internal/storage"
 	"coreservice/internal/vm"
@@ -21,12 +20,16 @@ import (
 
 // APIServer bọc lấy WasmEngine để xử lý request
 type APIServer struct {
-	Engine           *vm.WasmEngine
-	KeyPair          *crypto.KeyPair
-	Transport        *network.Transport
+	Engine    *vm.WasmEngine
+	Transport *network.Transport
 	// OrderServicePeer is a libp2p multiaddr of any orderer node (e.g. /ip4/127.0.0.1/tcp/6000/p2p/12D3Koo...).
 	OrderServicePeer string
 	DB               *storage.PostgresDB
+	// CommitPeerMultiaddrs is comma-separated list of commit peer libp2p multiaddrs
+	// (fallback: try each in order if one fails).
+	// Format: addr1,addr2,addr3
+	// Env: COMMIT_PEER_P2P.
+	CommitPeerMultiaddrs string
 }
 
 // resolveContractSchema: schema saved at deploy (LevelDB / Postgres) overrides builtin map in core/contract_schema.go.
@@ -152,38 +155,27 @@ func (s *APIServer) HandleSubmitTx(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Sign transaction with server's private key
-	signature, err := crypto.SignTransaction(tx.Txid, tx.ContractName, tx.Payload, s.KeyPair.PrivateKey)
-	if err != nil {
-		fmt.Printf("❌ [API] Lỗi ký transaction: %v\n", err)
-		w.WriteHeader(http.StatusInternalServerError)
+	if err := s.signTxViaCommitPeer(&tx); err != nil {
+		fmt.Printf("❌ [API] Commit peer signing failed: %v\n", err)
+		w.WriteHeader(http.StatusBadGateway)
 		json.NewEncoder(w).Encode(map[string]string{
 			"status":  "error",
-			"message": "Failed to sign transaction",
+			"message": err.Error(),
 		})
 		return
 	}
 
-	tx.Signature = signature
-	tx.SenderPubKey = s.KeyPair.PublicKey // Endorser's public key
-	tx.ClientPubKey = s.KeyPair.PublicKey // Client = endorser in this case
-
-	fmt.Printf("✍️  [API] Đã ký transaction: %s\n", signature[:16]+"...")
-	fmt.Printf("📌 [API] Public Key: %s\n", s.KeyPair.PublicKey[:16]+"...")
-
-	// Verify signature
-	isValid := crypto.VerifyTransaction(tx.Txid, tx.ContractName, tx.Payload, signature, s.KeyPair.PublicKey)
-	if !isValid {
-		fmt.Printf("❌ [API] Signature verification failed!\n")
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{
-			"status":  "error",
-			"message": "Signature verification failed",
-		})
-		return
+	sigPreview := tx.Signature
+	if len(tx.Endorsements) > 0 {
+		sigPreview = tx.Endorsements[len(tx.Endorsements)-1].Signature
 	}
-
-	fmt.Printf("✅ [API] Signature verified successfully\n")
+	if len(sigPreview) > 32 {
+		sigPreview = sigPreview[:32] + "..."
+	}
+	fmt.Printf("✍️  [API] Đã ký qua commit peer: %s (endorsements=%d)\n", sigPreview, len(tx.Endorsements))
+	if len(tx.SenderPubKey) > 16 {
+		fmt.Printf("📌 [API] Endorser pubkey (legacy / last): %s...\n", tx.SenderPubKey[:16])
+	}
 
 	// Send endorsement to Order Service over libp2p (endorsement protocol).
 	fmt.Printf("🔍 [API] DEBUG: OrderServicePeer='%s', Transport=%v\n", s.OrderServicePeer, s.Transport != nil)
@@ -273,14 +265,61 @@ func (s *APIServer) HandleSubmitTx(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"status":        "success",
-		"tx_id":         tx.Txid,
-		"contract_name": tx.ContractName,
-		"function_name": tx.FunctionName,
-		"sender_pubkey": tx.SenderPubKey,
-		"client_pubkey": tx.ClientPubKey,
-		"signature":     signature[:32] + "...",
+		"status":            "success",
+		"tx_id":             tx.Txid,
+		"contract_name":     tx.ContractName,
+		"function_name":     tx.FunctionName,
+		"sender_pubkey":     tx.SenderPubKey,
+		"client_pubkey":     tx.ClientPubKey,
+		"signature":         sigPreview,
+		"endorsements":      tx.Endorsements,
+		"endorsement_count": len(tx.Endorsements),
 	})
+}
+
+func (s *APIServer) signTxViaCommitPeer(tx *core.Transaction) error {
+	addrsStr := strings.TrimSpace(s.CommitPeerMultiaddrs)
+	if addrsStr == "" {
+		return fmt.Errorf("COMMIT_PEER_P2P is not set (use comma-separated commit peer multiaddrs, e.g., addr1,addr2)")
+	}
+
+	// Parse comma-separated addresses
+	addrs := strings.Split(addrsStr, ",")
+	var lastErr error
+
+	// Try each commit peer in order (fallback strategy)
+	for i, addr := range addrs {
+		addr = strings.TrimSpace(addr)
+		if addr == "" {
+			continue
+		}
+
+		if s.Transport == nil {
+			return fmt.Errorf("libp2p transport not available")
+		}
+
+		fmt.Printf("📞 [API] Trying commit peer %d/%d: %s\n", i+1, len(addrs), addr[:min(32, len(addr))]+"...")
+		err := s.Transport.SignTransactionViaCommitPeer(addr, tx)
+		if err == nil {
+			fmt.Printf("✅ [API] Commit peer %d signed successfully\n", i+1)
+			return nil
+		}
+
+		lastErr = err
+		fmt.Printf("⚠️  [API] Commit peer %d failed: %v, trying next...\n", i+1, err)
+	}
+
+	if lastErr != nil {
+		return fmt.Errorf("all commit peers failed (last error: %w)", lastErr)
+	}
+	return fmt.Errorf("no valid commit peer addresses found")
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 func (s *APIServer) HandleDeployContract(w http.ResponseWriter, r *http.Request) {

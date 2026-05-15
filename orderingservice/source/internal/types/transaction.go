@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 )
 
 // Transaction supports both UTXO and smart contract transaction types.
@@ -73,6 +74,18 @@ func (t *Transaction) UnmarshalJSON(data []byte) error {
 	} else {
 		t.Payload = nil
 	}
+	if len(t.Endorsements) == 0 && t.Signature != "" && t.SenderPubKey != "" {
+		t.Endorsements = []Endorsement{{PublicKey: t.SenderPubKey, Signature: t.Signature}}
+	}
+	if len(t.Endorsements) > 0 {
+		last := t.Endorsements[len(t.Endorsements)-1]
+		if strings.TrimSpace(t.SenderPubKey) == "" {
+			t.SenderPubKey = last.PublicKey
+		}
+		if strings.TrimSpace(t.Signature) == "" {
+			t.Signature = last.Signature
+		}
+	}
 	return nil
 }
 
@@ -108,6 +121,15 @@ func (t Transaction) MarshalJSON() ([]byte, error) {
 	if len(t.Payload) > 0 {
 		aux.Payload = hex.EncodeToString(t.Payload)
 	}
+	if len(aux.Endorsements) > 0 {
+		last := aux.Endorsements[len(aux.Endorsements)-1]
+		if last.PublicKey != "" {
+			aux.SenderPubKey = last.PublicKey
+		}
+		if last.Signature != "" {
+			aux.Signature = last.Signature
+		}
+	}
 	return json.Marshal(aux)
 }
 
@@ -126,9 +148,10 @@ type ScriptSig struct {
 
 // Endorsement represents a signature from a peer who endorsed this transaction.
 type Endorsement struct {
-	EndorserID string `json:"endorser_id"` // ID of the endorsing peer
-	Signature  string `json:"signature"`   // Signature from the endorser
-	Status     string `json:"status"`      // "SUCCESS" or error message
+	EndorserID string `json:"endorser_id,omitempty"` // Optional peer label
+	PublicKey  string `json:"public_key,omitempty"`  // Ed25519 public key (hex), from core / commit peer
+	Signature  string `json:"signature"`             // Signature from the endorser
+	Status     string `json:"status,omitempty"`      // "SUCCESS" or error message
 }
 
 // VOUT is a transaction output.

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/libp2p/go-libp2p"
@@ -12,6 +13,8 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/protocol"
 	"github.com/multiformats/go-multiaddr"
+
+	"coreservice/internal/core"
 )
 
 // Protocol IDs must match orderingservice/internal/network/protocol.go
@@ -19,6 +22,9 @@ const (
 	orderProtocolMain        = "/raft-order-service/1.0.0"
 	orderProtocolEndorsement = "/raft-order-service/endorsement/1.0.0"
 )
+
+// CommitPeerTxSignProtocolID must match commiting-peer/internal/deliver.TxSignProtocolID.
+const CommitPeerTxSignProtocolID = "/fabric-enterprise/commit-peer/tx-sign/1.0.0"
 
 // Message type constants must match orderingservice/internal/types/message.go (iota order).
 const (
@@ -179,6 +185,61 @@ func (t *Transport) SendEndorsement(leaderAddr peer.AddrInfo, tx interface{}) er
 
 	if err := json.NewEncoder(stream).Encode(tx); err != nil {
 		return fmt.Errorf("failed to encode endorsement: %w", err)
+	}
+	return nil
+}
+
+// SignTransactionViaCommitPeer opens a libp2p stream to the committing peer,
+// sends the transaction JSON, and merges the signed transaction from the response.
+func (t *Transport) SignTransactionViaCommitPeer(commitPeerMultiaddr string, tx *core.Transaction) error {
+	commitPeerMultiaddr = strings.TrimSpace(commitPeerMultiaddr)
+	if commitPeerMultiaddr == "" {
+		return fmt.Errorf("empty commit peer multiaddr")
+	}
+	addrInfo, err := peer.AddrInfoFromString(commitPeerMultiaddr)
+	if err != nil {
+		return fmt.Errorf("parse commit peer multiaddr: %w", err)
+	}
+	if err := t.Host.Connect(t.Ctx, *addrInfo); err != nil {
+		return fmt.Errorf("connect commit peer: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(t.Ctx, 15*time.Second)
+	defer cancel()
+
+	stream, err := t.Host.NewStream(ctx, addrInfo.ID, protocol.ID(CommitPeerTxSignProtocolID))
+	if err != nil {
+		return fmt.Errorf("open tx-sign stream: %w", err)
+	}
+	defer stream.Close()
+
+	if err := json.NewEncoder(stream).Encode(tx); err != nil {
+		return fmt.Errorf("send tx for signing: %w", err)
+	}
+
+	var resp struct {
+		OK    bool           `json:"ok"`
+		Error string         `json:"error"`
+		Tx    json.RawMessage `json:"tx"`
+	}
+	if err := json.NewDecoder(stream).Decode(&resp); err != nil {
+		return fmt.Errorf("read sign response: %w", err)
+	}
+	if !resp.OK {
+		if resp.Error != "" {
+			return fmt.Errorf("commit peer: %s", resp.Error)
+		}
+		return fmt.Errorf("commit peer signing failed")
+	}
+	if len(resp.Tx) == 0 {
+		return fmt.Errorf("commit peer returned no tx")
+	}
+	if err := json.Unmarshal(resp.Tx, tx); err != nil {
+		return fmt.Errorf("decode signed tx: %w", err)
+	}
+	hasMulti := len(tx.Endorsements) > 0
+	if !hasMulti && (tx.Signature == "" || tx.SenderPubKey == "") {
+		return fmt.Errorf("signed tx missing endorsements or legacy signature fields")
 	}
 	return nil
 }

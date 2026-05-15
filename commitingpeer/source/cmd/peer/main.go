@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"commiting-peer/internal/crypto"
 	"commiting-peer/internal/deliver"
 	peerpkg "commiting-peer/internal/peer"
 	"commiting-peer/internal/storage"
@@ -25,6 +26,52 @@ func in(scanner *bufio.Scanner, prompt string) string {
 		return strings.TrimSpace(scanner.Text())
 	}
 	return ""
+}
+
+func loadOrGenerateEndorsementKey() (privHex, pubHex string, err error) {
+	// Try to load from environment variable
+	priv := strings.TrimSpace(os.Getenv("COMMIT_PEER_PRIVATE_KEY"))
+
+	// Try to load from file if env var not set
+	if priv == "" {
+		path := strings.TrimSpace(os.Getenv("COMMIT_PEER_KEY_FILE"))
+		if path == "" {
+			path = "endorsement.key"
+		}
+		b, readErr := os.ReadFile(path)
+		if readErr == nil {
+			priv = strings.TrimSpace(string(b))
+		}
+	}
+
+	// Generate new key if not found
+	if priv == "" {
+		fmt.Println("🔑 Generating new Ed25519 endorsement key...")
+		kp, genErr := crypto.GenerateKeyPair()
+		if genErr != nil {
+			return "", "", fmt.Errorf("failed to generate key pair: %w", genErr)
+		}
+		priv = kp.PrivateKey
+
+		// Save to default file for future use
+		path := strings.TrimSpace(os.Getenv("COMMIT_PEER_KEY_FILE"))
+		if path == "" {
+			path = "endorsement.key"
+		}
+		if saveErr := os.WriteFile(path, []byte(priv), 0600); saveErr != nil {
+			fmt.Printf("⚠️  Warning: could not save key to %s: %v\n", path, saveErr)
+		} else {
+			fmt.Printf("✅ Saved private key to %s\n", path)
+		}
+	}
+
+	// Get public key
+	pub := strings.TrimSpace(os.Getenv("COMMIT_PEER_PUBLIC_KEY"))
+	if pub != "" {
+		return priv, pub, nil
+	}
+	pub, err = crypto.PublicKeyFromPrivateHex(priv)
+	return priv, pub, err
 }
 
 func main() {
@@ -59,6 +106,13 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	privHex, pubHex, err := loadOrGenerateEndorsementKey()
+	if err != nil {
+		fmt.Printf("Error: endorsement key: %v\n", err)
+		return
+	}
+	fmt.Printf("🔐 Endorser public key: %s...\n", short(pubHex, 24))
+
 	blockStore, err := storage.NewBlockStorage(blockFile)
 	if err != nil {
 		fmt.Printf("Error opening block storage: %v\n", err)
@@ -84,12 +138,27 @@ func main() {
 		fmt.Printf("Error creating deliver client: %v\n", err)
 		return
 	}
+	deliverClient.RegisterTxSignHandler(privHex, pubHex)
 
-	validator := validation.NewEngine()
+	// Comma-separated trusted endorser pubkeys (hex). If unset, defaults to this peer's key.
+	trusted := strings.TrimSpace(os.Getenv("TRUSTED_ENDORSER_PUBLIC_KEYS"))
+	if trusted == "" {
+		trusted = pubHex
+	}
+	validator := validation.NewEngine(trusted)
 	peer := peerpkg.New(deliverClient, validator, blockStore, worldState, db)
 	peer.RegisterSyncHandler()
 
-	if err := peer.Start(ctx, ordererAddr, 1); err != nil {
+	// Deliver is 1-based: avoid replaying blocks already in chain.block (would
+	// reject genesis again because local tip is non-zero).
+	deliverFrom := int64(1)
+	nLocal := blockStore.CommittedBlockCount()
+	if nLocal > 0 {
+		deliverFrom = nLocal + 1
+	}
+	fmt.Printf("Local chain: %d block(s) on disk → deliver from_index=%d\n", nLocal, deliverFrom)
+
+	if err := peer.Start(ctx, ordererAddr, deliverFrom); err != nil {
 		fmt.Printf("Error starting peer: %v\n", err)
 		return
 	}
@@ -109,8 +178,9 @@ func main() {
 	} else {
 		fmt.Printf("Database  : PostgreSQL docker-compose default (fabric@localhost:5432/blockchain)\n")
 	}
-	fmt.Printf("Sync addr : %s\n", syncAddr)
-	fmt.Println("  ^ Share this address with ordering service clients (sync command)")
+	fmt.Printf("Tx-sign   : libp2p %s\n", deliver.TxSignProtocolID)
+	fmt.Printf("P2P Addr  : %s\n", syncAddr)
+	fmt.Printf("👉 Set CoreService env: export COMMIT_PEER_P2P=%s\n", syncAddr)
 	fmt.Println()
 
 	printHelp(os.Stdout)

@@ -65,7 +65,7 @@ CREATE INDEX idx_block_tx_txid ON order_service.block_transactions(txid);
 CREATE TABLE IF NOT EXISTS commit_peer.ledger (
     id SERIAL PRIMARY KEY,
     block_hash VARCHAR(255) NOT NULL UNIQUE,
-    block_number BIGINT NOT NULL UNIQUE,
+    block_number BIGINT NOT NULL,
     block_data JSONB NOT NULL,
     num_transactions INT,
     committed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP

@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"coreservice/internal/api"
-	"coreservice/internal/crypto"
 	"coreservice/internal/network"
 	"coreservice/internal/state"
 	"coreservice/internal/storage"
@@ -33,16 +32,6 @@ func redactPostgresURL(conn string) string {
 
 func main() {
 	fmt.Println("🚀 Đang khởi động Core Node...")
-
-	// Generate or load key pair
-	keyPair, err := crypto.GenerateKeyPair()
-	if err != nil {
-		fmt.Printf("❌ Lỗi tạo key pair: %v\n", err)
-		return
-	}
-
-	fmt.Printf("📝 Public Key: %s\n", keyPair.PublicKey[:16]+"...")
-	fmt.Printf("🔐 Private Key: %s\n", keyPair.PrivateKey[:16]+"...")
 
 	// Create libp2p transport
 	ctx := context.Background()
@@ -113,12 +102,36 @@ func main() {
 		fmt.Println("ℹ️  Chưa cấu OrderServicePeer — endorsements sẽ không gửi tới orderers.")
 	}
 
+	// Commit Peer P2P address for transaction signing
+	envCommitPeer := strings.TrimSpace(os.Getenv("COMMIT_PEER_P2P"))
+	fmt.Println()
+	fmt.Println("🔏 Commit Peer (tx-sign) — nhập multiaddr của committing peer để ký ghi chứng (endorsement).")
+	fmt.Println("   Ví dụ: /ip4/127.0.0.1/tcp/12345/p2p/12D3Koo...")
+	if envCommitPeer != "" {
+		fmt.Printf("   (Biến COMMIT_PEER_P2P=%s — Enter trống sẽ dùng giá trị này)\n", envCommitPeer)
+	} else {
+		fmt.Println("   (Enter trống = không ký ghi chứng, /api/tx/submit sẽ thất bại)")
+	}
+	fmt.Print("CommitPeerP2P > ")
+	commitPeerP2P := ""
+	if sc.Scan() {
+		commitPeerP2P = strings.TrimSpace(sc.Text())
+	}
+	if commitPeerP2P == "" {
+		commitPeerP2P = envCommitPeer
+	}
+	if commitPeerP2P != "" {
+		fmt.Printf("✅ Đã cấu hình CommitPeerP2P: %s\n", commitPeerP2P)
+	} else {
+		fmt.Println("⚠️  Chưa cấu CommitPeerP2P — /api/tx/submit sẽ thất bại khi sign transaction.")
+	}
+
 	apiServer := &api.APIServer{
-		Engine:             engine,
-		KeyPair:            keyPair,
-		Transport:          transport,
-		OrderServicePeer:   orderServicePeer,
-		DB:                 postgresDB,
+		Engine:               engine,
+		Transport:            transport,
+		OrderServicePeer:     orderServicePeer,
+		DB:                   postgresDB,
+		CommitPeerMultiaddrs: commitPeerP2P,
 	}
 
 	http.HandleFunc("/api/tx/deploy", apiServer.HandleDeployContract)

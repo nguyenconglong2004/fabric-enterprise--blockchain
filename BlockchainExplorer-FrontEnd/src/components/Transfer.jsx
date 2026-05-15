@@ -157,10 +157,8 @@ const Transfer = ({ addNewTransaction }) => {
                 schemaForPayload
             );
 
-            // Add mock signatures
-            tx.signature = '0x' + '0'.repeat(130);
-            tx.client_pubkey = '0x' + '0'.repeat(130);
-            tx.sender_pubkey = '0x' + '0'.repeat(130);
+            // Don't add mock signatures - CommitPeer will sign the transaction
+            // tx.signature, tx.client_pubkey, tx.sender_pubkey will be set by CommitPeer
             tx.version = 1;
             tx.locktime = 0;
             tx.vin = [];
