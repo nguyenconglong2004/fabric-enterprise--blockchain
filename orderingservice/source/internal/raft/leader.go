@@ -53,8 +53,7 @@ func (rn *RaftNode) selectNewLeader() {
 			highestPriority.PeerID.ShortString(),
 			highestPriority.Priority)
 		rn.mu.Lock()
-		rn.currentTerm++ // term mới khi chuyển sang expected leader
-		rn.currentLeaderID = highestPriority.PeerID
+		rn.currentLeaderID = "" // [FIX] không tuyên bố leader chưa xác nhận; tránh lan truyền thông tin sai qua HeartbeatResponse
 		rn.expectedLeaderID = highestPriority.PeerID
 		rn.expectedLeaderDeadline = time.Now().Add(3 * network.HeartbeatTimeout)
 		rn.lastHeartbeat = time.Now() // tránh gọi selectNewLeader lại ngay
@@ -145,8 +144,12 @@ func (rn *RaftNode) finishClaim(claimTerm int64, yesCount, majority int) {
 		go func() { _ = rn.StartAutoProposeBlock(AutoProposeBlockSize) }()
 	} else {
 		rn.state = types.Follower
-		log.Printf("[%s] Leader claim failed: YES=%d < majority=%d",
-			rn.Transport.ID().ShortString(), yesCount, majority)
+		rn.currentTerm--        // hoàn lại phần tăng từ sendIAmNewLeaderAndWaitForAcks
+		rn.currentLeaderID = "" // xóa tham chiếu leader cũ; ngăn re-election vì checkHeartbeat yêu cầu leaderID != ""
+		// lastHeartbeat KHÔNG reset: gap lớn sẽ kích hoạt rejoinDetected trong handleHeartbeat,
+		// cho phép sync bù lại các block đã bỏ lỡ trong suốt thời gian ClaimingLeader.
+		log.Printf("[%s] Leader claim failed: YES=%d < majority=%d, reverted to term %d",
+			rn.Transport.ID().ShortString(), yesCount, majority, rn.currentTerm)
 	}
 }
 

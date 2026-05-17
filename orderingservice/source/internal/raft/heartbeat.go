@@ -281,6 +281,21 @@ func (rn *RaftNode) handleHeartbeat(msg types.Message) {
 	state := rn.state
 	rn.mu.Unlock()
 
+	// Đảm bảo leader được đánh dấu alive trong membership cục bộ.
+	// Cần thiết khi leader đã bị mark dead trong selectNewLeader() do bầu chọn sai,
+	// nhưng thực tế vẫn đang sống và gửi heartbeat.
+	if leaderID != rn.Transport.ID() {
+		rn.Membership.Mu.RLock()
+		info, exists := rn.Membership.Members[leaderID]
+		isDead := exists && !info.IsAlive
+		rn.Membership.Mu.RUnlock()
+		if isDead {
+			rn.Membership.MarkAlive(leaderID)
+			log.Printf("[%s] Restored leader %s to alive in membership",
+				rn.Transport.ID().ShortString(), leaderID.ShortString())
+		}
+	}
+
 	// Trigger sync nếu vừa rejoin sau gap dài. Bỏ qua nếu là leader hoặc đang sync.
 	if rejoinDetected && state == types.Follower {
 		log.Printf("[%s] Detected rejoin after %v gap, triggering sync",
