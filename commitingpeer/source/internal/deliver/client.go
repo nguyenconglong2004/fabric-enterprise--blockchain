@@ -23,7 +23,8 @@ const SyncProtocolID = "/commiting-peer/sync/1.0.0"
 
 // Client holds a libp2p host used to connect to ordering service nodes.
 type Client struct {
-	host host.Host
+	host         host.Host
+	membershipCh chan *MembershipView
 }
 
 // NewClient creates a new deliver client that listens on a random port.
@@ -34,7 +35,34 @@ func NewClient(ctx context.Context) (*Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("deliver client: create libp2p host: %w", err)
 	}
-	return &Client{host: h}, nil
+	c := &Client{
+		host:         h,
+		membershipCh: make(chan *MembershipView, 1),
+	}
+	h.SetStreamHandler(protocol.ID(orderProtocolMain), c.handleOrderProtocolStream)
+	return c, nil
+}
+
+func (c *Client) handleOrderProtocolStream(s network.Stream) {
+	defer s.Close()
+	var msg struct {
+		Type int                    `json:"Type"`
+		Data map[string]interface{} `json:"Data"`
+	}
+	if err := json.NewDecoder(s).Decode(&msg); err != nil {
+		return
+	}
+	if msg.Type != orderMsgMembershipResponse {
+		return
+	}
+	mv, err := parseMembershipData(msg.Data)
+	if err != nil {
+		return
+	}
+	select {
+	case c.membershipCh <- mv:
+	default:
+	}
 }
 
 // Subscribe connects to an ordering service node at ordererAddr, sends a
@@ -42,40 +70,43 @@ func NewClient(ctx context.Context) (*Client, error) {
 // that continuously reads incoming blocks from the stream and pushes each one
 // into blockChan.
 //
-// The goroutine exits when ctx is cancelled or the stream is closed by the
-// remote end. Callers should drain blockChan after cancellation.
+// The returned channel is closed when the stream goroutine exits (disconnect or
+// ctx cancel). Callers can wait on it to trigger reconnect.
 func (c *Client) Subscribe(
 	ctx context.Context,
 	ordererAddr string,
 	fromIndex int64,
 	blockChan chan<- types.Block,
-) error {
+) (<-chan struct{}, error) {
 	addrInfo, err := peer.AddrInfoFromString(ordererAddr)
 	if err != nil {
-		return fmt.Errorf("deliver client: parse orderer address: %w", err)
+		return nil, fmt.Errorf("deliver client: parse orderer address: %w", err)
 	}
 
 	if err := c.host.Connect(ctx, *addrInfo); err != nil {
-		return fmt.Errorf("deliver client: connect to orderer: %w", err)
+		return nil, fmt.Errorf("deliver client: connect to orderer: %w", err)
 	}
 
 	s, err := c.host.NewStream(ctx, addrInfo.ID, protocol.ID(DeliverProtocolID))
 	if err != nil {
-		return fmt.Errorf("deliver client: open deliver stream: %w", err)
+		return nil, fmt.Errorf("deliver client: open deliver stream: %w", err)
 	}
 
 	// Send the deliver request to tell the orderer where to start.
 	req := types.DeliverRequest{FromIndex: fromIndex}
 	if err := json.NewEncoder(s).Encode(req); err != nil {
 		s.Close()
-		return fmt.Errorf("deliver client: send deliver request: %w", err)
+		return nil, fmt.Errorf("deliver client: send deliver request: %w", err)
 	}
 
 	log.Printf("[deliver] subscribed to %s from block index %d", addrInfo.ID.ShortString(), fromIndex)
 
+	done := make(chan struct{})
+
 	// Background goroutine: reads blocks off the stream and pushes them into
 	// blockChan so the validation / commit pipeline can pick them up.
 	go func() {
+		defer close(done)
 		defer s.Close()
 
 		// Close the stream when the context is cancelled so that the blocking
@@ -105,7 +136,7 @@ func (c *Client) Subscribe(
 		}
 	}()
 
-	return nil
+	return done, nil
 }
 
 // SetStreamHandler registers a handler for the given protocol ID on the host.

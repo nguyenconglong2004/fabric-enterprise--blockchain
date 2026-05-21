@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"log"
 	"sync"
 	"sync/atomic"
@@ -12,6 +13,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/network"
 
 	"commiting-peer/internal/deliver"
+	"commiting-peer/internal/discovery"
 	"commiting-peer/internal/storage"
 	"commiting-peer/internal/types"
 	"commiting-peer/internal/validation"
@@ -48,6 +50,9 @@ type CommittingPeer struct {
 	lastBlockTime time.Time
 	lastBlockTxs  int
 	ordererAddr   string
+
+	// OrderDiscovery resolves alive orderers after leader failover (optional).
+	OrderDiscovery *discovery.Client
 }
 
 // New creates a CommittingPeer. Call Start to begin streaming.
@@ -70,6 +75,7 @@ func New(
 
 // Start subscribes to the ordering service at ordererAddr, beginning from
 // fromIndex (1-based, inclusive), and starts the background commit loop.
+// When OrderDiscovery is set, deliver reconnects across alive orderers after disconnect.
 // Returns immediately after launching the goroutines.
 func (p *CommittingPeer) Start(ctx context.Context, ordererAddr string, fromIndex int64) error {
 	p.mu.Lock()
@@ -85,11 +91,144 @@ func (p *CommittingPeer) Start(ctx context.Context, ordererAddr string, fromInde
 	}
 	p.mu.Unlock()
 
-	if err := p.deliverClient.Subscribe(ctx, ordererAddr, fromIndex, p.blockChan); err != nil {
+	go p.commitLoop(ctx)
+
+	if p.OrderDiscovery != nil {
+		go p.deliverReconnectLoop(ctx, ordererAddr, fromIndex)
+		return nil
+	}
+
+	if _, err := p.deliverClient.Subscribe(ctx, ordererAddr, fromIndex, p.blockChan); err != nil {
 		return err
 	}
-	go p.commitLoop(ctx)
 	return nil
+}
+
+// deliverFromIndex returns the next block index to request (1-based).
+func (p *CommittingPeer) deliverFromIndex(fallback int64) int64 {
+	if p.blockStore == nil {
+		return fallback
+	}
+	n := p.blockStore.CommittedBlockCount()
+	if n > 0 {
+		return n + 1
+	}
+	return fallback
+}
+
+// deliverReconnectLoop keeps a deliver subscription alive, picking alive orderers via discovery.
+func (p *CommittingPeer) deliverReconnectLoop(ctx context.Context, fallbackOrderer string, initialFrom int64) {
+	backoff := time.Second
+	const maxBackoff = 30 * time.Second
+	attempt := 0
+
+	for {
+		select {
+		case <-ctx.Done():
+			log.Println("[peer] deliver reconnect loop stopped")
+			return
+		default:
+		}
+
+		fromIndex := p.deliverFromIndex(initialFrom)
+		orderer, err := p.pickOrdererForDeliver(ctx, fallbackOrderer, attempt)
+		if err != nil {
+			log.Printf("[peer] deliver: no orderer available: %v (retry in %s)", err, backoff)
+			if !sleepCtx(ctx, backoff) {
+				return
+			}
+			backoff = minDuration(backoff*2, maxBackoff)
+			attempt++
+			continue
+		}
+
+		p.mu.Lock()
+		p.ordererAddr = orderer
+		p.mu.Unlock()
+
+		done, err := p.deliverClient.Subscribe(ctx, orderer, fromIndex, p.blockChan)
+		if err != nil {
+			log.Printf("[peer] deliver: subscribe to %s failed: %v (retry in %s)", shortOrderer(orderer), err, backoff)
+			if p.OrderDiscovery != nil {
+				p.OrderDiscovery.Invalidate()
+			}
+			if !sleepCtx(ctx, backoff) {
+				return
+			}
+			backoff = minDuration(backoff*2, maxBackoff)
+			attempt++
+			continue
+		}
+
+		log.Printf("[peer] deliver: connected to %s from_index=%d", shortOrderer(orderer), fromIndex)
+		backoff = time.Second
+
+		select {
+		case <-ctx.Done():
+			return
+		case <-done:
+			log.Printf("[peer] deliver: stream ended from %s, reconnecting...", shortOrderer(orderer))
+			if p.OrderDiscovery != nil {
+				p.OrderDiscovery.Invalidate()
+			}
+			attempt++
+			if !sleepCtx(ctx, time.Second) {
+				return
+			}
+		}
+	}
+}
+
+func (p *CommittingPeer) pickOrdererForDeliver(ctx context.Context, fallback string, attempt int) (string, error) {
+	if p.OrderDiscovery == nil {
+		if fallback == "" {
+			return "", fmt.Errorf("no fallback orderer address")
+		}
+		return fallback, nil
+	}
+
+	mv, err := p.OrderDiscovery.Snapshot(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	addrs, err := discovery.PickAllAliveOrdererAddrs(mv)
+	if err != nil {
+		// Last resort: configured fallback if still dialable.
+		if fallback != "" {
+			return fallback, nil
+		}
+		return "", err
+	}
+	if len(addrs) == 0 && fallback != "" {
+		return fallback, nil
+	}
+	return addrs[attempt%len(addrs)], nil
+}
+
+func sleepCtx(ctx context.Context, d time.Duration) bool {
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-t.C:
+		return true
+	}
+}
+
+func minDuration(a, b time.Duration) time.Duration {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func shortOrderer(addr string) string {
+	if len(addr) <= 56 {
+		return addr
+	}
+	return addr[:28] + "..." + addr[len(addr)-20:]
 }
 
 // commitLoop reads blocks from blockChan, validates them, then persists to

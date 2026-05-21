@@ -14,6 +14,7 @@ import (
 
 	"commiting-peer/internal/crypto"
 	"commiting-peer/internal/deliver"
+	"commiting-peer/internal/discovery"
 	peerpkg "commiting-peer/internal/peer"
 	"commiting-peer/internal/storage"
 	"commiting-peer/internal/validation"
@@ -80,7 +81,7 @@ func main() {
 
 	sc := bufio.NewScanner(os.Stdin)
 
-	ordererAddr := in(sc, "Enter orderer address (e.g. /ip4/127.0.0.1/tcp/6000/p2p/<PeerID>): ")
+	ordererAddr := in(sc, "Enter orderer address — any cluster member (e.g. /ip4/127.0.0.1/tcp/6000/p2p/<PeerID>): ")
 	if ordererAddr == "" {
 		fmt.Println("Error: orderer address is required")
 		return
@@ -148,6 +149,14 @@ func main() {
 	validator := validation.NewEngine(trusted)
 	peer := peerpkg.New(deliverClient, validator, blockStore, worldState, db)
 	peer.RegisterSyncHandler()
+
+	if orderDisc, discErr := discovery.NewClient(deliverClient, []string{ordererAddr}); discErr != nil {
+		fmt.Printf("⚠️  Order discovery: %v\n", discErr)
+	} else {
+		peer.OrderDiscovery = orderDisc
+		orderDisc.StartRefreshLoop(ctx, 5*time.Second)
+		fmt.Println("✅ Order discovery enabled (deliver reconnect + membership refresh)")
+	}
 
 	// Deliver is 1-based: avoid replaying blocks already in chain.block (would
 	// reject genesis again because local tip is non-zero).

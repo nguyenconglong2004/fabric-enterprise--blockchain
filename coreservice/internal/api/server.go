@@ -10,9 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/libp2p/go-libp2p/core/peer"
-
 	"coreservice/internal/core"
+	"coreservice/internal/discovery"
 	"coreservice/internal/network"
 	"coreservice/internal/storage"
 	"coreservice/internal/vm"
@@ -24,6 +23,8 @@ type APIServer struct {
 	Transport *network.Transport
 	// OrderServicePeer is a libp2p multiaddr of any orderer node (e.g. /ip4/127.0.0.1/tcp/6000/p2p/12D3Koo...).
 	OrderServicePeer string
+	// OrderDiscovery resolves alive orderers (multi-bootstrap, cached membership).
+	OrderDiscovery *discovery.Client
 	DB               *storage.PostgresDB
 	// CommitPeerMultiaddrs is comma-separated list of commit peer libp2p multiaddrs
 	// (fallback: try each in order if one fails).
@@ -178,87 +179,15 @@ func (s *APIServer) HandleSubmitTx(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Send endorsement to Order Service over libp2p (endorsement protocol).
-	fmt.Printf("🔍 [API] DEBUG: OrderServicePeer='%s', Transport=%v\n", s.OrderServicePeer, s.Transport != nil)
-
-	if s.OrderServicePeer != "" {
-		if s.Transport == nil {
-			fmt.Printf("❌ [API] ERROR: Transport is nil!\n")
+	if s.OrderDiscovery != nil && s.Transport != nil {
+		fmt.Printf("📤 [API] Gửi endorsement qua order discovery...\n")
+		if err := discovery.SendEndorsement(r.Context(), s.OrderDiscovery, s.Transport, tx); err != nil {
+			fmt.Printf("⚠️  [API] Gửi endorsement thất bại: %v\n", err)
 		} else {
-			fmt.Printf("📤 [API] Lấy membership từ Order Service (libp2p)...\n")
-			membership, err := s.Transport.GetMembershipFromBootstrapPeer(s.OrderServicePeer)
-			if err != nil {
-				fmt.Printf("⚠️  [API] Lỗi lấy membership (libp2p): %v\n", err)
-			} else {
-				leaderPrefix := membership.LeaderID
-				if len(leaderPrefix) > 8 {
-					leaderPrefix = leaderPrefix[:8]
-				}
-				fmt.Printf("📋 [API] Membership: Leader=%s..., Members=%d\n", leaderPrefix, len(membership.Members))
-
-				sent := false
-				// Prefer sending endorsement directly to the current leader.
-				if membership.LeaderID != "" {
-					for _, m := range membership.Members {
-						if !m.Alive || m.ID != membership.LeaderID {
-							continue
-						}
-						addrInfo, err := network.AddrInfoFromMember(m)
-						if err != nil {
-							fmt.Printf("⚠️  [API] Không build AddrInfo cho leader: %v\n", err)
-							continue
-						}
-						if err := s.Transport.SendEndorsement(addrInfo, tx); err != nil {
-							fmt.Printf("⚠️  [API] Gửi endorsement tới leader thất bại: %v\n", err)
-						} else {
-							short := m.ID
-							if len(short) > 8 {
-								short = short[:8]
-							}
-							fmt.Printf("✅ [API] Đã gửi endorsement tới leader %s (libp2p)\n", short)
-							sent = true
-						}
-						break
-					}
-				}
-				// Fallback: any alive member (order node forwards to leader if needed).
-				if !sent {
-					for _, m := range membership.Members {
-						if !m.Alive {
-							continue
-						}
-						addrInfo, err := network.AddrInfoFromMember(m)
-						if err != nil {
-							continue
-						}
-						if err := s.Transport.SendEndorsement(addrInfo, tx); err != nil {
-							short := m.ID
-							if len(short) > 8 {
-								short = short[:8]
-							}
-							fmt.Printf("⚠️  [API] Gửi endorsement tới %s thất bại: %v\n", short, err)
-							continue
-						}
-						short := m.ID
-						if len(short) > 8 {
-							short = short[:8]
-						}
-						fmt.Printf("✅ [API] Đã gửi endorsement tới %s (libp2p, có thể forward)\n", short)
-						sent = true
-						break
-					}
-				}
-				if !sent {
-					bootstrap, err := peer.AddrInfoFromString(s.OrderServicePeer)
-					if err != nil {
-						fmt.Printf("⚠️  [API] Bootstrap peer invalid: %v\n", err)
-					} else if err := s.Transport.SendEndorsement(*bootstrap, tx); err != nil {
-						fmt.Printf("⚠️  [API] Gửi endorsement tới bootstrap thất bại: %v\n", err)
-					} else {
-						fmt.Printf("✅ [API] Đã gửi endorsement tới bootstrap peer (libp2p)\n")
-					}
-				}
-			}
+			fmt.Printf("✅ [API] Đã gửi endorsement tới order service (libp2p)\n")
 		}
+	} else if s.OrderServicePeer != "" {
+		fmt.Printf("⚠️  [API] Order discovery chưa cấu hình — bỏ qua gửi endorsement\n")
 	} else {
 		fmt.Printf("📤 [API] Không có ORDER_SERVICE_PEER — bỏ qua gửi endorsement tới order service\n")
 	}

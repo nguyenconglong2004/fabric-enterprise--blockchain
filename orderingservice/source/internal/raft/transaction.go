@@ -309,6 +309,9 @@ func (rn *RaftNode) commitBlock(entry types.LogEntry) {
 	// Update the hash chain pointer
 	rn.setLastCommittedHash(block.Hash)
 
+	// Fan-out to committing peers subscribed on this node (leader path).
+	rn.DeliverMgr.NotifyNewBlock(block)
+
 	// Remove committed transactions from TxPool by Txid
 	committedIDs := make(map[string]bool, len(block.Transactions))
 	for _, tx := range block.Transactions {

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"coreservice/internal/api"
+	"coreservice/internal/discovery"
 	"coreservice/internal/network"
 	"coreservice/internal/state"
 	"coreservice/internal/storage"
@@ -81,6 +82,7 @@ func main() {
 	envPeer := strings.TrimSpace(os.Getenv("ORDER_SERVICE_PEER"))
 	fmt.Println()
 	fmt.Println("📮 Order Service (libp2p) — nhập multiaddr của một orderer trong cluster.")
+	fmt.Println("   (Bất kỳ node nào cũng được; discovery sẽ lấy leader/members alive qua membership.)")
 	fmt.Println("   Ví dụ: /ip4/127.0.0.1/tcp/6000/p2p/12D3Koo...")
 	if envPeer != "" {
 		fmt.Printf("   (Biến ORDER_SERVICE_PEER=%s — Enter trống sẽ dùng giá trị này)\n", envPeer)
@@ -100,6 +102,18 @@ func main() {
 		fmt.Printf("✅ Đã cấu hình OrderServicePeer: %s\n", orderServicePeer)
 	} else {
 		fmt.Println("ℹ️  Chưa cấu OrderServicePeer — endorsements sẽ không gửi tới orderers.")
+	}
+
+	var orderDiscovery *discovery.Client
+	if orderServicePeer != "" {
+		var discErr error
+		orderDiscovery, discErr = discovery.NewClient(transport, []string{orderServicePeer})
+		if discErr != nil {
+			fmt.Printf("⚠️  Không tạo order discovery: %v\n", discErr)
+		} else {
+			orderDiscovery.StartRefreshLoop(ctx, 5*time.Second)
+			fmt.Println("✅ Order discovery bật (refresh membership mỗi 5s)")
+		}
 	}
 
 	// Commit Peer P2P address for transaction signing
@@ -130,6 +144,7 @@ func main() {
 		Engine:               engine,
 		Transport:            transport,
 		OrderServicePeer:     orderServicePeer,
+		OrderDiscovery:       orderDiscovery,
 		DB:                   postgresDB,
 		CommitPeerMultiaddrs: commitPeerP2P,
 	}
