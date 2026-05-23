@@ -2,7 +2,6 @@ package raft
 
 import (
 	"encoding/json"
-	"log"
 
 	"github.com/libp2p/go-libp2p/core/network"
 
@@ -18,27 +17,27 @@ func (rn *RaftNode) HandleEndorsementStream(s network.Stream) {
 	var tx types.Transaction
 
 	if err := decoder.Decode(&tx); err != nil {
-		log.Printf("[%s] Error decoding endorsement: %v", rn.Transport.ID().ShortString(), err)
+		rn.Logger.Printf("[%s] Error decoding endorsement: %v", rn.Transport.ID().ShortString(), err)
 		return
 	}
 
-	log.Printf("[%s] Received endorsement for tx %s with %d endorsers",
+	rn.Logger.Printf("[%s] Received endorsement for tx %s with %d endorsers",
 		rn.Transport.ID().ShortString(), tx.Txid, len(tx.Endorsements))
 
 	// Forward to leader if not leader
 	if !rn.IsLeader() {
 		leaderID := rn.GetLeaderID()
 		if leaderID == "" {
-			log.Printf("[%s] Received endorsement but no leader known, dropping",
+			rn.Logger.Printf("[%s] Received endorsement but no leader known, dropping",
 				rn.Transport.ID().ShortString())
 			return
 		}
 
-		log.Printf("[%s] Forwarding endorsement to leader %s",
+		rn.Logger.Printf("[%s] Forwarding endorsement to leader %s",
 			rn.Transport.ID().ShortString(), leaderID.ShortString())
 
 		if err := rn.Transport.SendEndorsement(leaderID, tx); err != nil {
-			log.Printf("[%s] Failed to forward endorsement to leader: %v",
+			rn.Logger.Printf("[%s] Failed to forward endorsement to leader: %v",
 				rn.Transport.ID().ShortString(), err)
 		}
 		return
@@ -46,11 +45,11 @@ func (rn *RaftNode) HandleEndorsementStream(s network.Stream) {
 
 	// Leader: add directly to TxPool
 	if _, err := rn.SubmitTransaction(tx); err != nil {
-		log.Printf("[%s] Error submitting endorsement tx: %v",
+		rn.Logger.Printf("[%s] Error submitting endorsement tx: %v",
 			rn.Transport.ID().ShortString(), err)
 		return
 	}
 
-	log.Printf("[%s] Endorsement tx %s added to TxPool",
+	rn.Logger.Printf("[%s] Endorsement tx %s added to TxPool",
 		rn.Transport.ID().ShortString(), tx.Txid)
 }

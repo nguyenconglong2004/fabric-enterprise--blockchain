@@ -2,18 +2,14 @@ package raft
 
 import (
 	"encoding/json"
-	"log"
 	"time"
 
 	"github.com/libp2p/go-libp2p/core/peer"
 
-	"raft-order-service/internal/network"
 	"raft-order-service/internal/types"
 )
 
-// selectNewLeader chọn leader mới khi phát hiện heartbeat timeout.
-// - Nếu là follower có priority cao nhất: gửi I AM NEW LEADER, chờ majority YES rồi mới lên leader.
-// - Nếu không: chọn node priority cao nhất là leader mới (expectedLeader), chờ nó gửi I AM NEW LEADER; nếu sau HeartbeatTimeout không thấy thì đánh dấu chết và gọi lại (node priority kế tiếp sẽ gửi).
+// selectNewLeader selects a new leader when heartbeat timeout is detected.
 func (rn *RaftNode) selectNewLeader() {
 	rn.mu.Lock()
 	if rn.state != types.Follower && rn.state != types.ClaimingLeader {
@@ -25,43 +21,41 @@ func (rn *RaftNode) selectNewLeader() {
 
 	if oldLeaderID != "" {
 		rn.Membership.MarkDead(oldLeaderID)
-		log.Printf("[%s] Marked old leader %s as dead (heartbeat timeout)",
+		rn.Logger.Printf("[%s] Marked old leader %s as dead (heartbeat timeout)",
 			rn.Transport.ID().ShortString(), oldLeaderID.ShortString())
 	}
 
 	highestPriority := rn.Membership.GetHighestPriorityAliveNode()
 	if highestPriority == nil {
-		log.Printf("[%s] No alive nodes found", rn.Transport.ID().ShortString())
+		rn.Logger.Printf("[%s] No alive nodes found", rn.Transport.ID().ShortString())
 		return
 	}
 
 	aliveMembers := rn.Membership.GetAliveMembers()
-	log.Printf("[%s] Current alive members after leader death:", rn.Transport.ID().ShortString())
+	rn.Logger.Printf("[%s] Current alive members after leader death:", rn.Transport.ID().ShortString())
 	for _, member := range aliveMembers {
-		log.Printf("  - %s (priority: %d)", member.PeerID.ShortString(), member.Priority)
+		rn.Logger.Printf("  - %s (priority: %d)", member.PeerID.ShortString(), member.Priority)
 	}
 
 	if highestPriority.PeerID == rn.Transport.ID() {
-		// Tôi là follower có priority cao nhất -> gửi I AM NEW LEADER, chờ majority YES
-		log.Printf("[%s] I have highest priority (%d), sending I AM NEW LEADER",
+		rn.Logger.Printf("[%s] I have highest priority (%d), sending I AM NEW LEADER",
 			rn.Transport.ID().ShortString(), highestPriority.Priority)
 		rn.sendIAmNewLeaderAndWaitForAcks()
 	} else {
-		// Chọn node priority cao nhất là leader mới; chờ nó gửi I AM NEW LEADER
-		log.Printf("[%s] Highest priority follower is %s (priority: %d), expecting I AM NEW LEADER from it",
+		rn.Logger.Printf("[%s] Highest priority follower is %s (priority: %d), expecting I AM NEW LEADER from it",
 			rn.Transport.ID().ShortString(),
 			highestPriority.PeerID.ShortString(),
 			highestPriority.Priority)
 		rn.mu.Lock()
-		rn.currentLeaderID = "" // [FIX] không tuyên bố leader chưa xác nhận; tránh lan truyền thông tin sai qua HeartbeatResponse
+		rn.currentLeaderID = ""
 		rn.expectedLeaderID = highestPriority.PeerID
-		rn.expectedLeaderDeadline = time.Now().Add(3 * network.HeartbeatTimeout)
-		rn.lastHeartbeat = time.Now() // tránh gọi selectNewLeader lại ngay
+		rn.expectedLeaderDeadline = time.Now().Add(3 * rn.Config.GetHeartbeatTimeout())
+		rn.lastHeartbeat = time.Now()
 		rn.mu.Unlock()
 	}
 }
 
-// sendIAmNewLeaderAndWaitForAcks gửi I AM NEW LEADER tới tất cả, chờ phản hồi YES/NO; nếu > nửa YES thì lên leader.
+// sendIAmNewLeaderAndWaitForAcks sends I AM NEW LEADER to all, waits for ACKs.
 func (rn *RaftNode) sendIAmNewLeaderAndWaitForAcks() {
 	highestPriority := rn.Membership.GetHighestPriorityAliveNode()
 	if highestPriority == nil || highestPriority.PeerID != rn.Transport.ID() {
@@ -69,10 +63,16 @@ func (rn *RaftNode) sendIAmNewLeaderAndWaitForAcks() {
 	}
 
 	rn.mu.Lock()
+	oldState := rn.state
 	rn.state = types.ClaimingLeader
 	rn.currentTerm++
 	newTerm := rn.currentTerm
 	rn.mu.Unlock()
+
+	if oldState != types.ClaimingLeader {
+		rn.Emitter.StateChanged(rn.Transport.ID(), oldState, types.ClaimingLeader)
+	}
+	rn.Emitter.LeaderClaimStarted(rn.Transport.ID(), newTerm)
 
 	claim := types.IAmNewLeaderClaim{
 		NewLeaderID: rn.Transport.ID().String(),
@@ -86,22 +86,18 @@ func (rn *RaftNode) sendIAmNewLeaderAndWaitForAcks() {
 		Data:      claim,
 		Timestamp: time.Now(),
 	}
-	// Broadcast to ALL members (including those marked dead) so a stale-but-alive
-	// leader that was incorrectly MarkDead'd can still receive and step down.
 	rn.BroadcastToAllMembers(msg)
 
 	go rn.waitForLeaderClaimAcks(newTerm)
 }
 
-// waitForLeaderClaimAcks chờ tối đa HeartbeatTimeout; đếm YES; nếu >= majority thì becomeLeader, không thì về Follower.
-// majority được tính trên tổng số node (alive + dead) để tránh split-brain khi partition:
-// nếu cluster bị chia đôi 2/2, không nhóm nào đủ majority và leader cũ được giữ nguyên.
+// waitForLeaderClaimAcks waits for ACKs; if majority YES → become leader, else → Follower.
 func (rn *RaftNode) waitForLeaderClaimAcks(claimTerm int64) {
-	yesCount := 1 // bản thân coi như YES
+	yesCount := 1 // self = YES
 	totalCount := rn.Membership.GetTotalCount()
 	majority := totalCount/2 + 1
 
-	timeout := time.After(2 * network.HeartbeatTimeout)
+	timeout := time.After(2 * rn.Config.GetHeartbeatTimeout())
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 
@@ -117,7 +113,7 @@ func (rn *RaftNode) waitForLeaderClaimAcks(claimTerm int64) {
 			data, err := rn.parseLeaderClaimAckData(m.Data)
 			if err == nil && data.Accept {
 				yesCount++
-				log.Printf("[%s] Leader claim ack YES from %s (total YES: %d/%d, need: %d)",
+				rn.Logger.Printf("[%s] Leader claim ack YES from %s (total YES: %d/%d, need: %d)",
 					rn.Transport.ID().ShortString(), m.SenderID, yesCount, totalCount, majority)
 			}
 		case <-ticker.C:
@@ -138,24 +134,25 @@ func (rn *RaftNode) finishClaim(claimTerm int64, yesCount, majority int) {
 	if yesCount >= majority {
 		rn.state = types.Leader
 		rn.currentLeaderID = rn.Transport.ID()
-		log.Printf("[%s] *** I AM NOW THE LEADER (term %d) *** YES=%d >= majority=%d",
+		rn.Logger.Printf("[%s] *** I AM NOW THE LEADER (term %d) *** YES=%d >= majority=%d",
 			rn.Transport.ID().ShortString(), claimTerm, yesCount, majority)
 		go rn.sendHeartbeat()
-		go func() { _ = rn.StartAutoProposeBlock(AutoProposeBlockSize) }()
+		go func() { _ = rn.StartAutoProposeBlock(rn.Config.GetAutoProposalBlockSize()) }()
+		go func() {
+			rn.Emitter.StateChanged(rn.Transport.ID(), types.ClaimingLeader, types.Leader)
+			rn.Emitter.BecameLeader(rn.Transport.ID(), claimTerm)
+		}()
 	} else {
 		rn.state = types.Follower
-		rn.currentTerm--        // hoàn lại phần tăng từ sendIAmNewLeaderAndWaitForAcks
-		rn.currentLeaderID = "" // xóa tham chiếu leader cũ; ngăn re-election vì checkHeartbeat yêu cầu leaderID != ""
-		// lastHeartbeat KHÔNG reset: gap lớn sẽ kích hoạt rejoinDetected trong handleHeartbeat,
-		// cho phép sync bù lại các block đã bỏ lỡ trong suốt thời gian ClaimingLeader.
-		log.Printf("[%s] Leader claim failed: YES=%d < majority=%d, reverted to term %d",
+		rn.currentTerm--
+		rn.currentLeaderID = ""
+		rn.Logger.Printf("[%s] Leader claim failed: YES=%d < majority=%d, reverted to term %d",
 			rn.Transport.ID().ShortString(), yesCount, majority, rn.currentTerm)
+		go rn.Emitter.StateChanged(rn.Transport.ID(), types.ClaimingLeader, types.Follower)
 	}
 }
 
-// handleIAmNewLeader xử lý message I AM NEW LEADER.
-// Trả lời YES nếu công nhận sender là leader mới (đúng là expected leader hoặc đúng là highest priority); NO nếu không.
-// Nếu claimer không phải highest priority nhưng leader hiện tại sắp timeout, chờ đến lúc timeout rồi kiểm tra lại.
+// handleIAmNewLeader handles I AM NEW LEADER message.
 func (rn *RaftNode) handleIAmNewLeader(msg types.Message) {
 	data, err := rn.parseIAmNewLeaderData(msg.Data)
 	if err != nil {
@@ -171,7 +168,6 @@ func (rn *RaftNode) handleIAmNewLeader(msg types.Message) {
 	rn.mu.RUnlock()
 
 	if expectedID != "" {
-		// Đang chờ I AM NEW LEADER từ expected leader
 		accept := claimerID == expectedID
 		if accept {
 			rn.mu.Lock()
@@ -186,13 +182,10 @@ func (rn *RaftNode) handleIAmNewLeader(msg types.Message) {
 		return
 	}
 
-	// Không có expected leader: kiểm tra claimer có phải highest priority không.
-	// Nếu không phải, có thể do leader cũ chưa bị timeout ở node này — chờ đến
-	// lúc timeout rồi kiểm tra lại thay vì reject ngay.
 	go rn.evaluateAndAckLeaderClaim(claimerID, data)
 }
 
-// evaluateAndAckLeaderClaim kiểm tra claim sau khi chờ timeout leader cũ nếu cần.
+// evaluateAndAckLeaderClaim evaluates the claim after waiting for current leader timeout if needed.
 func (rn *RaftNode) evaluateAndAckLeaderClaim(claimerID peer.ID, data types.IAmNewLeaderClaim) {
 	hp := rn.Membership.GetHighestPriorityAliveNode()
 	rn.mu.RLock()
@@ -201,15 +194,26 @@ func (rn *RaftNode) evaluateAndAckLeaderClaim(claimerID peer.ID, data types.IAmN
 	rn.mu.RUnlock()
 
 	if hp != nil && hp.PeerID != claimerID {
-		// Claimer không phải highest priority — tính thời gian còn lại đến timeout leader hiện tại
-		timeoutAt := lastHB.Add(network.HeartbeatTimeout)
+		timeoutAt := lastHB.Add(rn.Config.GetHeartbeatTimeout())
 		remaining := time.Until(timeoutAt)
 		if remaining > 0 {
-			log.Printf("[%s] Waiting %v for current leader to timeout before evaluating claim from %s",
+			rn.Logger.Printf("[%s] Waiting %v for current leader to timeout before evaluating claim from %s",
 				rn.Transport.ID().ShortString(), remaining.Round(time.Millisecond), claimerID.ShortString())
 			time.Sleep(remaining)
 		}
-		// Kiểm tra lại sau khi chờ
+		// After waiting, if the known leader has not produced a fresh heartbeat,
+		// treat it as dead locally so hp recomputes correctly. Without this, a
+		// follower whose own timeout hasn't fired yet keeps the old leader as hp
+		// and votes NO on a valid claim from the next-priority node.
+		rn.mu.RLock()
+		curLeader := rn.currentLeaderID
+		curLastHB := rn.lastHeartbeat
+		rn.mu.RUnlock()
+		if curLeader != "" && time.Since(curLastHB) > rn.Config.GetHeartbeatTimeout() {
+			rn.Membership.MarkDead(curLeader)
+			rn.Logger.Printf("[%s] Current leader %s timed out during claim evaluation, marking dead",
+				rn.Transport.ID().ShortString(), curLeader.ShortString())
+		}
 		hp = rn.Membership.GetHighestPriorityAliveNode()
 		rn.mu.RLock()
 		curTerm = rn.currentTerm
@@ -228,7 +232,7 @@ func (rn *RaftNode) evaluateAndAckLeaderClaim(claimerID peer.ID, data types.IAmN
 	rn.sendLeaderClaimAck(claimerID, data.NewTerm, accept)
 }
 
-// sendLeaderClaimAck gửi ACK (YES/NO) tới claimer.
+// sendLeaderClaimAck sends ACK (YES/NO) to claimer.
 func (rn *RaftNode) sendLeaderClaimAck(claimerID peer.ID, term int64, accept bool) {
 	ackData := types.LeaderClaimAckData{Accept: accept, Term: term}
 	ackMsg := types.Message{
@@ -239,10 +243,11 @@ func (rn *RaftNode) sendLeaderClaimAck(claimerID peer.ID, term int64, accept boo
 		Timestamp: time.Now(),
 	}
 	if err := rn.Transport.SendMessage(claimerID, ackMsg); err != nil {
-		log.Printf("[%s] Error sending leader claim ack: %v", rn.Transport.ID().ShortString(), err)
+		rn.Logger.Printf("[%s] Error sending leader claim ack: %v", rn.Transport.ID().ShortString(), err)
 	}
-	log.Printf("[%s] Responded %v to I AM NEW LEADER from %s",
+	rn.Logger.Printf("[%s] Responded %v to I AM NEW LEADER from %s",
 		rn.Transport.ID().ShortString(), accept, claimerID.ShortString())
+	rn.Emitter.LeaderClaimAck(rn.Transport.ID(), claimerID, accept)
 }
 
 func (rn *RaftNode) parseIAmNewLeaderData(data interface{}) (types.IAmNewLeaderClaim, error) {
@@ -265,36 +270,44 @@ func (rn *RaftNode) parseLeaderClaimAckData(data interface{}) (types.LeaderClaim
 	return c, err
 }
 
-// handleLeaderClaimAck chuyển ack vào channel cho waitForLeaderClaimAcks xử lý
+// handleLeaderClaimAck routes ack to waitForLeaderClaimAcks
 func (rn *RaftNode) handleLeaderClaimAck(msg types.Message) {
 	select {
 	case rn.LeaderClaimAckChan <- msg:
 	default:
-		log.Printf("[%s] Leader claim ack channel full, dropping ack from %s",
+		rn.Logger.Printf("[%s] Leader claim ack channel full, dropping ack from %s",
 			rn.Transport.ID().ShortString(), msg.SenderID)
 	}
 }
 
-// leaderOnSendFailure được gọi khi leader gửi message (heartbeat) tới một peer thất bại.
-// Leader đánh dấu peer đó chết và broadcast membership view tới các node còn lại để đồng bộ.
+// leaderOnSendFailure is called when leader fails to send a message to a peer.
 func (rn *RaftNode) leaderOnSendFailure(peerID peer.ID) {
 	if !rn.IsLeader() {
 		return
 	}
 	rn.Membership.MarkDead(peerID)
-	log.Printf("[%s] Follower %s unreachable, marking dead and broadcasting updated membership",
+	rn.Logger.Printf("[%s] Follower %s unreachable, marking dead and broadcasting updated membership",
 		rn.Transport.ID().ShortString(), peerID.ShortString())
 	rn.broadcastMembershipView()
 }
 
-// becomeLeader chuyển node sang Leader và bắt đầu gửi heartbeat (dùng khi chỉ có 1 node)
+// becomeLeader transitions the node to Leader state (used when there's only 1 node).
 func (rn *RaftNode) becomeLeader() {
 	rn.mu.Lock()
+	oldState := rn.state
 	rn.state = types.Leader
 	rn.currentLeaderID = rn.Transport.ID()
+	term := rn.currentTerm
 	rn.mu.Unlock()
-	log.Printf("[%s] *** I AM NOW THE LEADER (term %d) ***",
-		rn.Transport.ID().ShortString(), rn.currentTerm)
+
+	rn.Logger.Printf("[%s] *** I AM NOW THE LEADER (term %d) ***",
+		rn.Transport.ID().ShortString(), term)
+
+	if oldState != types.Leader {
+		rn.Emitter.StateChanged(rn.Transport.ID(), oldState, types.Leader)
+		rn.Emitter.BecameLeader(rn.Transport.ID(), term)
+	}
+
 	go rn.sendHeartbeat()
-	go func() { _ = rn.StartAutoProposeBlock(AutoProposeBlockSize) }()
+	go func() { _ = rn.StartAutoProposeBlock(rn.Config.GetAutoProposalBlockSize()) }()
 }

@@ -241,6 +241,14 @@ Expected leader chờ ACK:      10 giây  ← kết thúc sớm hơn 5 giây
 
 ---
 
+#### [Q2-fixed] Không mark dead leader sau sleep trong `evaluateAndAckLeaderClaim`
+
+> ✅ **Đã xử lý** (2026-05-23). Sau `time.Sleep(remaining)`, code không mark dead leader cũ → `hp` recompute vẫn ra leader cũ → follower vote NO cho claim hợp lệ trong cluster nhỏ (3 node). Chi tiết: [TC03](scenarios/tc03-leader-crash-small-cluster.md).
+
+**Vị trí đã fix:** [leader.go:196–215](../source/internal/raft/leader.go#L196)
+
+---
+
 #### [Q2] Race condition trong `evaluateAndAckLeaderClaim` — `time.Sleep` blocking
 
 **Vấn đề:** Hàm này có thể sleep tới 5 giây (`time.Sleep(remaining)`). Trong khoảng thời gian đó, state của node có thể thay đổi hoàn toàn — leader mới đã được bầu, term mới đã tăng. Khi goroutine thức dậy, nó đọc lại state nhưng không kiểm tra `expectedLeaderID`:
@@ -370,6 +378,7 @@ Channel có capacity 100 nhưng vẫn có thể đầy nếu nhiều ACK đến 
 | T3 | Auto-propose trước khi sync hoàn tất | 🔴 Nghiêm trọng | leader.go, transaction.go | Chưa xử lý |
 | T4 | Priority không nhất quán khi join đồng thời | 🔴 Nghiêm trọng | types/membership.go | Chưa xử lý |
 | Q1 | Khoảng chờ expected leader (15s) vs ACK window (10s) lệch nhau | 🟡 Quan trọng | leader.go | Chưa xử lý |
+| Q2-fixed | Không mark dead leader sau sleep trong `evaluateAndAckLeaderClaim` | 🟡 Quan trọng | leader.go | ✅ Đã xử lý ([TC03](scenarios/tc03-leader-crash-small-cluster.md)) |
 | Q2 | Race condition sau `time.Sleep` trong `evaluateAndAckLeaderClaim` | 🟡 Quan trọng | leader.go | Chưa xử lý |
 | Q3 | `currentLeaderID` set sớm trước khi bầu chọn xong | 🟡 Quan trọng | leader.go, heartbeat.go | ✅ Đã xử lý ([TC02](scenarios/tc02-f2-timeout.md#7-lịch-sử-fix)) |
 | Q4 | Không có retry cho join request khi đang bầu chọn | 🟡 Quan trọng | membership.go | Chưa xử lý |

@@ -1,80 +1,18 @@
-2026/05/17 22:05:50 [<peer.ID 12*aP8qhX>] Connected to peer: <peer.ID 12*nWnnNs>
-2026/05/17 22:05:50 [<peer.ID 12*aP8qhX>] Received membership update from 12D3KooWQhYCGdeq8nXqfmAyCTJKun6HPi4sigCHZXHwsQnWnnNs
-2026/05/17 22:05:50 [<peer.ID 12*aP8qhX>] Applying membership update from leader
-2026/05/17 22:05:50 [<peer.ID 12*aP8qhX>] Updating membership with 2 members
-2026/05/17 22:05:50 [<peer.ID 12*aP8qhX>] Updated member: <peer.ID 12*nWnnNs> (priority: 0, alive: true, addresses: 2)
-2026/05/17 22:05:50 [<peer.ID 12*aP8qhX>] Updated member: <peer.ID 12*aP8qhX> (priority: 1, alive: true, addresses: 2)
-2026/05/17 22:05:50 [<peer.ID 12*aP8qhX>] Membership update complete, total members: 2
-2026/05/17 22:05:50 [<peer.ID 12*aP8qhX>] Received membership ack from 12D3KooWQhYCGdeq8nXqfmAyCTJKun6HPi4sigCHZXHwsQnWnnNs
-2026/05/17 22:05:50 [<peer.ID 12*aP8qhX>] Updating membership with 2 members
-2026/05/17 22:05:50 [<peer.ID 12*aP8qhX>] Updated member: <peer.ID 12*nWnnNs> (priority: 0, alive: true, addresses: 2)
-2026/05/17 22:05:50 [<peer.ID 12*aP8qhX>] Connected to peer <peer.ID 12*nWnnNs> for membership sync
-2026/05/17 22:05:50 [<peer.ID 12*aP8qhX>] Updated member: <peer.ID 12*aP8qhX> (priority: 1, alive: true, addresses: 2)
-2026/05/17 22:05:50 [<peer.ID 12*aP8qhX>] Membership update complete, total members: 2
-2026/05/17 22:05:50 [<peer.ID 12*aP8qhX>] Stepping down, discovered higher priority leader: <peer.ID 12*nWnnNs>
-2026/05/17 22:05:50 [<peer.ID 12*aP8qhX>] Connected to peer <peer.ID 12*nWnnNs> for membership sync
-2026/05/17 22:05:50 [<peer.ID 12*aP8qhX>] Updated membership view, current leader: <peer.ID 12*nWnnNs>
-2026/05/17 22:05:50 [<peer.ID 12*aP8qhX>] sync: starting (reason=first-join, localCommit=0)
-2026/05/17 22:05:50 [<peer.ID 12*aP8qhX>] Auto-propose: stepped down from leader, stopping
-2026/05/17 22:05:50 [<peer.ID 12*aP8qhX>] Auto-propose goroutine exited
-
-=== Commands ===
-  status              - Show node status (membership, raft log, ordering blocks)
-  connect <addr>      - Connect to another node
-  delay <seconds> <p1> [p2]...  - Delay heartbeat to nodes with given priorities for X seconds (leader only)
-  quit                - Exit
-
-2026/05/17 22:05:52 [<peer.ID 12*aP8qhX>] sync: target commitIndex=0, hash=, sources=1, localCommit=0
-2026/05/17 22:05:52 [<peer.ID 12*aP8qhX>] sync: already up-to-date with target, skip block fetch
-2026/05/17 22:05:52 [<peer.ID 12*aP8qhX>] sync: completed successfully
-2026/05/17 22:06:00 [<peer.ID 12*aP8qhX>] Received membership update from 12D3KooWQhYCGdeq8nXqfmAyCTJKun6HPi4sigCHZXHwsQnWnnNs
-2026/05/17 22:06:00 [<peer.ID 12*aP8qhX>] Applying membership update from leader
-2026/05/17 22:06:00 [<peer.ID 12*aP8qhX>] Updating membership with 3 members
-2026/05/17 22:06:00 [<peer.ID 12*aP8qhX>] Updated member: <peer.ID 12*jbonFV> (priority: 2, alive: true, addresses: 2)
-2026/05/17 22:06:00 [<peer.ID 12*aP8qhX>] Updated member: <peer.ID 12*nWnnNs> (priority: 0, alive: true, addresses: 2)
-2026/05/17 22:06:00 [<peer.ID 12*aP8qhX>] Updated member: <peer.ID 12*aP8qhX> (priority: 1, alive: true, addresses: 2)
-2026/05/17 22:06:00 [<peer.ID 12*aP8qhX>] Membership update complete, total members: 3
-2026/05/17 22:06:00 [<peer.ID 12*aP8qhX>] Connected to peer <peer.ID 12*jbonFV> for membership sync
-2026/05/17 22:06:00 [<peer.ID 12*aP8qhX>] Connected to peer <peer.ID 12*nWnnNs> for membership sync
-2026/05/17 22:06:14 [<peer.ID 12*aP8qhX>] Received membership update from 12D3KooWQhYCGdeq8nXqfmAyCTJKun6HPi4sigCHZXHwsQnWnnNs
-2026/05/17 22:06:14 [<peer.ID 12*aP8qhX>] Applying membership update from leader
-2026/05/17 22:06:14 [<peer.ID 12*aP8qhX>] Updating membership with 4 members
-2026/05/17 22:06:14 [<peer.ID 12*aP8qhX>] Updated member: <peer.ID 12*nWnnNs> (priority: 0, alive: true, addresses: 2)
-2026/05/17 22:06:14 [<peer.ID 12*aP8qhX>] Updated member: <peer.ID 12*aP8qhX> (priority: 1, alive: true, addresses: 2)
-2026/05/17 22:06:14 [<peer.ID 12*aP8qhX>] Updated member: <peer.ID 12*jbonFV> (priority: 2, alive: true, addresses: 2)
-2026/05/17 22:06:14 [<peer.ID 12*aP8qhX>] Updated member: <peer.ID 12*xgr6Z2> (priority: 3, alive: true, addresses: 2)
-2026/05/17 22:06:14 [<peer.ID 12*aP8qhX>] Membership update complete, total members: 4
-2026/05/17 22:06:14 [<peer.ID 12*aP8qhX>] Connected to peer <peer.ID 12*nWnnNs> for membership sync
-2026/05/17 22:06:14 [<peer.ID 12*aP8qhX>] Connected to peer <peer.ID 12*jbonFV> for membership sync
-2026/05/17 22:06:14 [<peer.ID 12*aP8qhX>] Connected to peer <peer.ID 12*xgr6Z2> for membership sync
-2026/05/17 22:06:38 [<peer.ID 12*aP8qhX>] Received membership update from 12D3KooWQhYCGdeq8nXqfmAyCTJKun6HPi4sigCHZXHwsQnWnnNs
-2026/05/17 22:06:38 [<peer.ID 12*aP8qhX>] Not leader, ignoring join request
-2026/05/17 22:06:41 [<peer.ID 12*aP8qhX>] Waiting 1.267s for current leader to timeout before evaluating claim from <peer.ID 12*jbonFV>
-2026/05/17 22:06:43 [<peer.ID 12*aP8qhX>] Responded false to I AM NEW LEADER from <peer.ID 12*jbonFV>
-2026/05/17 22:06:44 [<peer.ID 12*aP8qhX>] Heartbeat timeout! Last heartbeat: 5.8634751s ago
-2026/05/17 22:06:44 [<peer.ID 12*aP8qhX>] Marked old leader <peer.ID 12*nWnnNs> as dead (heartbeat timeout)
-2026/05/17 22:06:44 [<peer.ID 12*aP8qhX>] Current alive members after leader death:
-2026/05/17 22:06:44   - <peer.ID 12*xgr6Z2> (priority: 3)
-2026/05/17 22:06:44   - <peer.ID 12*aP8qhX> (priority: 1)
-2026/05/17 22:06:44   - <peer.ID 12*jbonFV> (priority: 2)
-2026/05/17 22:06:44 [<peer.ID 12*aP8qhX>] I have highest priority (1), sending I AM NEW LEADER
-2026/05/17 22:06:44 [<peer.ID 12*aP8qhX>] Leader claim ack YES from 12D3KooWQi1Y7iazZ4sg5gfwRFwtTrejGBGBFznKZT3Ak9xgr6Z2 (total YES: 2/4, need: 3)
-2026/05/17 22:06:44 [<peer.ID 12*aP8qhX>] Leader claim ack YES from 12D3KooWJaph1nY61rQA5Y5F7S1duML3xZmgRUXEBWaFXHjbonFV (total YES: 3/4, need: 3)
-2026/05/17 22:06:44 [<peer.ID 12*aP8qhX>] *** I AM NOW THE LEADER (term 1) *** YES=3 >= majority=3
-2026/05/17 22:06:44 [<peer.ID 12*aP8qhX>] Auto-propose started (batch size: 20 tx/block)
-2026/05/17 22:06:46 [<peer.ID 12*aP8qhX>] Responded false to I AM NEW LEADER from <peer.ID 12*nWnnNs>
-> status
-
-=== Node Status ===
-Node ID:    <peer.ID 12*aP8qhX>
-State:      Leader
-Term:       1
-Leader:     <peer.ID 12*aP8qhX>
-Address:    /ip4/127.0.0.1/tcp/601/p2p/12D3KooWJqDGV4b1TV3vapzKfBvxxvrjHU4rsi1CaTG6MqaP8qhX
-Last hash:  (none)
-
-=== Membership ===
-Alive members: 3
-  - Priority 1: <peer.ID 12*aP8qhX> (LEADER) (SELF)
-  - Priority 2: <peer.ID 12*jbonFV>
-  - Priority 3: <peer.ID 12*xgr6Z2>
+2026/05/23 18:01:49 [<peer.ID 12*YPZCY4>] Updating membership with 3 members                                              
+2026/05/23 18:01:49 [<peer.ID 12*YPZCY4>] Updated member: <peer.ID 12*tTSCc9> (priority: 0, alive: true, addresses: 2)    
+2026/05/23 18:01:49 [<peer.ID 12*YPZCY4>] Updated member: <peer.ID 12*YPZCY4> (priority: 1, alive: true, addresses: 1)    
+2026/05/23 18:01:49 [<peer.ID 12*YPZCY4>] Updated member: <peer.ID 12*uwjaNt> (priority: 2, alive: true, addresses: 1)    
+2026/05/23 18:01:49 [<peer.ID 12*YPZCY4>] Membership update complete, total members: 3                                    
+2026/05/23 18:01:49 [<peer.ID 12*YPZCY4>] Connected to peer <peer.ID 12*tTSCc9> for membership sync                       
+2026/05/23 18:01:49 [<peer.ID 12*YPZCY4>] Connected to peer <peer.ID 12*uwjaNt> for membership sync                       
+2026/05/23 18:02:01 [<peer.ID 12*YPZCY4>] Heartbeat timeout! Last heartbeat: 5.3747841s ago                               
+2026/05/23 18:02:01 [<peer.ID 12*YPZCY4>] Marked old leader <peer.ID 12*tTSCc9> as dead (heartbeat timeout)               
+2026/05/23 18:02:01 [<peer.ID 12*YPZCY4>] Current alive members after leader death:                                       
+2026/05/23 18:02:01   - <peer.ID 12*YPZCY4> (priority: 1)                                                                 
+2026/05/23 18:02:01   - <peer.ID 12*uwjaNt> (priority: 2)                                                                 
+2026/05/23 18:02:01 [<peer.ID 12*YPZCY4>] I have highest priority (1), sending I AM NEW LEADER                            
+> 2026/05/23 18:02:06 [<peer.ID 12*YPZCY4>] Error sending to <peer.ID 12*tTSCc9>: failed to create stream: failed to dial: failed to dial 12D3KooWCyyjfkjJUFhvFmJaRjgPDWQBaFGQft6AnZcuJftTSCc9: all dials failed
+  * [/ip4/127.0.0.1/tcp/600] dial tcp4 127.0.0.1:600: connectex: No connection could be made because the target machine actively refused it.
+  * [/ip4/10.40.104.121/tcp/600] dial tcp4 10.40.104.121:600: connectex: No connection could be made because the target machine actively refused it.
+2026/05/23 18:02:11 [<peer.ID 12*YPZCY4>] Leader claim failed: YES=1 < majority=2, reverted to term 0                     
+2026/05/23 18:02:18 [<peer.ID 12*YPZCY4>] Responded false to I AM NEW LEADER from <peer.ID 12*uwjaNt>  

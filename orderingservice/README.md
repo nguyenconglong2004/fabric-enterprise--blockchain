@@ -16,12 +16,16 @@ Implementation của Raft consensus protocol với priority-based leader success
 ```
 source/
 ├── cmd/
-│   ├── server/main.go        # Server node (interactive CLI)
+│   ├── orchestrator/main.go  # Web UI orchestrator (khuyến nghị)
+│   ├── server/main.go        # Server node (interactive CLI, dùng riêng)
 │   └── client/main.go        # External UTXO client
 ├── internal/
+│   ├── orchestrator/         # NodeManager, EventBus, REST API, WebSocket
 │   ├── api/                  # HTTP API server (leader, membership, submit-tx, endorsement)
 │   ├── raft/                 # Core Raft logic
 │   │   ├── node.go           # RaftNode struct + lifecycle
+│   │   ├── config.go         # Runtime-tunable Config struct
+│   │   ├── events.go         # EventEmitter interface + NoopEmitter
 │   │   ├── consensus.go      # Message dispatcher
 │   │   ├── heartbeat.go      # Heartbeat send/check + rejoin detection
 │   │   ├── leader.go         # selectNewLeader, IAmNewLeader, claim ACK
@@ -33,29 +37,77 @@ source/
 │   │   └── sync_server.go    # Sync handler (server side)
 │   ├── network/              # libp2p transport + protocol IDs
 │   └── types/                # Data structures (Block, Transaction, Message, Sync...)
+├── web/                      # React + TypeScript frontend (Vite)
+│   ├── src/                  # Components, store, API hooks
+│   ├── embed.go              # Go embed entry point (//go:embed all:dist)
+│   └── dist/                 # Build output (generated, not committed)
 ├── pkg/
 │   └── client/               # Public client API (OrderClient)
 ├── examples/                 # Ví dụ build/sign/verify transaction
-├── docs/                     # MEMBERSHIP_VIEW.md, TRANSACTION.md, CLIENT_CLI.md
+├── docs/                     # WEB_UI.md, MEMBERSHIP_VIEW.md, TRANSACTION.md, CLIENT_CLI.md
 └── testingscenarios/         # Test scenario descriptions
 ```
 
-## Build
+---
+
+## Web UI Orchestrator (khuyến nghị)
+
+Chạy toàn bộ cluster từ một binary duy nhất với giao diện đồ họa.
+
+### Build
+
+```bash
+# Bước 1: Build React frontend
+cd source/web
+npm install
+npm run build      # output → source/web/dist/
+
+# Bước 2: Build orchestrator (embed dist/ vào binary)
+cd ..
+go build -o orchestrator.exe ./cmd/orchestrator
+```
+
+### Chạy
+
+```bash
+./orchestrator.exe
+# Mở trình duyệt: http://localhost:8080
+```
+
+Trên giao diện:
+1. Nhấn **+ Create Network** → nhập port (mặc định 6000) → tạo node Leader
+2. Nhấn **+ Add Node** → nhập port tiếp theo → node tự join cluster
+3. Click vào node để mở Sidebar: xem trạng thái, terminal CLI, chỉnh config runtime
+4. Nút **Stop** trên sidebar để dừng node
+
+### Dev mode (HMR)
+
+```bash
+# Terminal 1 — Go backend
+cd source
+go run ./cmd/orchestrator --dev
+
+# Terminal 2 — Vite dev server
+cd source/web
+npm run dev
+# Mở http://localhost:5173
+```
+
+---
+
+## Build CLI Server (độc lập)
 
 ```bash
 cd source
 
-# Build server
-go build -o server ./cmd/server
+# Build server CLI
+go build -o server.exe ./cmd/server
 
 # Build client
-go build -o client ./cmd/client
-
-# Hoặc build cả hai
-go build ./...
+go build -o client.exe ./cmd/client
 ```
 
-## Khởi động Cluster
+## Khởi động Cluster (CLI)
 
 ### Bước 1: Khởi động Node đầu tiên (Leader)
 

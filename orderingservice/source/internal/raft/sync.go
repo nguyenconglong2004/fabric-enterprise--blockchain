@@ -6,28 +6,18 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"sort"
 	"sync"
 	"time"
 
 	"github.com/libp2p/go-libp2p/core/peer"
 
-	netpkg "raft-order-service/internal/network"
 	"raft-order-service/internal/types"
 )
 
-// StartSync khởi động một chu trình sync để bắt kịp committed blocks và RaftLog
-// từ phần còn lại của cluster. Hàm idempotent: nhiều trigger đồng thời chỉ chạy 1.
-//
-// Flow:
-//  1. Discovery — broadcast SyncStatusRequest, thu majority response.
-//  2. Pick target — chọn (commitIndex, commitHash) được majority đồng thuận.
-//  3. Parallel fetch — chia range thành shard, fetch song song qua SyncProtocolID stream.
-//  4. Verify hash chain — mỗi block.PrevHash phải khớp; final hash phải khớp target.
-//  5. Install — append vào OrderingBlock, cập nhật lastCommittedHash, fetch RaftLog.
+// StartSync starts a sync cycle to catch up committed blocks and RaftLog from the cluster.
+// Idempotent: multiple concurrent triggers run only one.
 func (rn *RaftNode) StartSync(reason string) {
-	// Không sync nếu đang là leader (leader là source of truth).
 	rn.mu.RLock()
 	isLeader := rn.state == types.Leader
 	rn.mu.RUnlock()
@@ -35,7 +25,6 @@ func (rn *RaftNode) StartSync(reason string) {
 		return
 	}
 
-	// Idempotency
 	rn.syncMu.Lock()
 	if rn.syncing {
 		rn.syncMu.Unlock()
@@ -45,51 +34,55 @@ func (rn *RaftNode) StartSync(reason string) {
 	rn.syncMu.Unlock()
 
 	rn.mu.Lock()
+	oldState := rn.state
 	rn.state = types.Syncing
 	rn.mu.Unlock()
 
-	log.Printf("[%s] sync: starting (reason=%s, localCommit=%d)",
+	if oldState != types.Syncing {
+		rn.Emitter.StateChanged(rn.Transport.ID(), oldState, types.Syncing)
+	}
+
+	rn.Logger.Printf("[%s] sync: starting (reason=%s, localCommit=%d)",
 		rn.Transport.ID().ShortString(), reason, rn.OrderingBlock.GetLastIndex())
 
 	defer rn.exitSync()
 
-	// Drain bất kỳ response cũ nào còn sót lại trong channel
 	rn.drainSyncStatusChan()
 
 	// Phase 1: discovery
-	responses := rn.collectSyncStatus(netpkg.SyncDiscoveryWindow)
+	responses := rn.collectSyncStatus(rn.Config.GetSyncDiscoveryWindow())
 	if len(responses) == 0 {
-		log.Printf("[%s] sync: no peers responded, abort", rn.Transport.ID().ShortString())
+		rn.Logger.Printf("[%s] sync: no peers responded, abort", rn.Transport.ID().ShortString())
 		return
 	}
 
 	// Phase 2: target selection
 	target, sources, ok := pickSyncTarget(responses)
 	if !ok {
-		log.Printf("[%s] sync: no consensus target (have %d responses), abort",
+		rn.Logger.Printf("[%s] sync: no consensus target (have %d responses), abort",
 			rn.Transport.ID().ShortString(), len(responses))
 		return
 	}
 
 	localCommit := rn.OrderingBlock.GetLastIndex()
-	log.Printf("[%s] sync: target commitIndex=%d, hash=%s, sources=%d, localCommit=%d",
+	rn.Logger.Printf("[%s] sync: target commitIndex=%d, hash=%s, sources=%d, localCommit=%d",
 		rn.Transport.ID().ShortString(), target.CommitIndex,
 		hex.EncodeToString(safeHashPrefix(target.CommitHash)), len(sources), localCommit)
 
 	if localCommit >= target.CommitIndex {
-		log.Printf("[%s] sync: already up-to-date with target, skip block fetch",
+		rn.Logger.Printf("[%s] sync: already up-to-date with target, skip block fetch",
 			rn.Transport.ID().ShortString())
 	} else {
 		// Phase 3: parallel fetch blocks
 		blocks, err := rn.fetchBlocksParallel(localCommit+1, target.CommitIndex, sources)
 		if err != nil {
-			log.Printf("[%s] sync: block fetch failed: %v", rn.Transport.ID().ShortString(), err)
+			rn.Logger.Printf("[%s] sync: block fetch failed: %v", rn.Transport.ID().ShortString(), err)
 			return
 		}
 
 		// Phase 4: verify hash chain
 		if err := verifyHashChain(rn.getLastCommittedHash(), blocks, target.CommitHash); err != nil {
-			log.Printf("[%s] sync: hash-chain verification FAILED: %v",
+			rn.Logger.Printf("[%s] sync: hash-chain verification FAILED: %v",
 				rn.Transport.ID().ShortString(), err)
 			return
 		}
@@ -101,55 +94,59 @@ func (rn *RaftNode) StartSync(reason string) {
 		}
 		rn.setLastCommittedHash(target.CommitHash)
 
-		log.Printf("[%s] sync: installed %d blocks (now commitIndex=%d)",
+		rn.Logger.Printf("[%s] sync: installed %d blocks (now commitIndex=%d)",
 			rn.Transport.ID().ShortString(), len(blocks), rn.OrderingBlock.GetLastIndex())
 	}
 
-	// Sync RaftLog entries (phần đã được propose nhưng chưa commit ở target).
+	// Sync RaftLog entries
 	if target.LogLastIndex > target.CommitIndex {
 		entries, err := rn.fetchLogEntriesParallel(target.CommitIndex+1, target.LogLastIndex, sources)
 		if err != nil {
-			log.Printf("[%s] sync: log entries fetch failed: %v",
+			rn.Logger.Printf("[%s] sync: log entries fetch failed: %v",
 				rn.Transport.ID().ShortString(), err)
 		} else {
 			rn.installLogEntries(entries)
-			log.Printf("[%s] sync: installed %d uncommitted log entries",
+			rn.Logger.Printf("[%s] sync: installed %d uncommitted log entries",
 				rn.Transport.ID().ShortString(), len(entries))
 		}
 	}
 
-	// Bump membership version (membership broadcasts vẫn chạy độc lập, đây chỉ là ghi nhận).
 	rn.Membership.Mu.Lock()
 	if target.MembershipVersion > rn.Membership.Version {
 		rn.Membership.Version = target.MembershipVersion
 	}
 	rn.Membership.Mu.Unlock()
 
-	log.Printf("[%s] sync: completed successfully", rn.Transport.ID().ShortString())
+	rn.Logger.Printf("[%s] sync: completed successfully", rn.Transport.ID().ShortString())
 }
 
-// exitSync trả node về Follower và clear flag.
+// exitSync transitions node back to Follower and clears syncing flag.
 func (rn *RaftNode) exitSync() {
 	rn.mu.Lock()
+	oldState := rn.state
 	if rn.state == types.Syncing {
 		rn.state = types.Follower
 	}
-	rn.lastHeartbeat = time.Now() // tránh trigger leader election ngay sau sync
+	rn.lastHeartbeat = time.Now()
 	rn.mu.Unlock()
+
+	if oldState == types.Syncing {
+		rn.Emitter.StateChanged(rn.Transport.ID(), types.Syncing, types.Follower)
+	}
 
 	rn.syncMu.Lock()
 	rn.syncing = false
 	rn.syncMu.Unlock()
 }
 
-// IsSyncing trả về true nếu node đang trong quá trình sync.
+// IsSyncing returns true if the node is currently syncing.
 func (rn *RaftNode) IsSyncing() bool {
 	rn.syncMu.Lock()
 	defer rn.syncMu.Unlock()
 	return rn.syncing
 }
 
-// drainSyncStatusChan xả mọi message cũ còn trong channel.
+// drainSyncStatusChan drains stale messages from the channel.
 func (rn *RaftNode) drainSyncStatusChan() {
 	for {
 		select {
@@ -160,7 +157,7 @@ func (rn *RaftNode) drainSyncStatusChan() {
 	}
 }
 
-// collectSyncStatus broadcast SyncStatusRequest và gom response trong cửa sổ window.
+// collectSyncStatus broadcasts SyncStatusRequest and collects responses within the window.
 func (rn *RaftNode) collectSyncStatus(window time.Duration) []types.SyncStatusResponse {
 	rn.mu.RLock()
 	currentTerm := rn.currentTerm
@@ -201,15 +198,7 @@ func (rn *RaftNode) collectSyncStatus(window time.Duration) []types.SyncStatusRe
 	}
 }
 
-// pickSyncTarget chọn (commitIndex, commitHash) có nhiều phiếu nhất.
-// Ưu tiên: commitIndex cao nhất trong các nhóm có ≥ 1 phiếu.
-// Trả về thêm danh sách peerID source là LeaderID + tất cả peer cùng nhóm.
-//
-// NOTE: Hiện chỉ track LeaderID làm source; muốn parallel fetch từ
-// nhiều source, chúng ta cần peer.ID gắn với mỗi response.
-// Để giữ scope đơn giản và đúng tinh thần "any alive node",
-// hàm này coi tất cả alive members (trừ self) đều là source khả dụng,
-// và assigner sẽ thử lần lượt nếu có lỗi.
+// pickSyncTarget selects the (commitIndex, commitHash) with the most votes.
 func pickSyncTarget(responses []types.SyncStatusResponse) (types.SyncStatusResponse, []peer.ID, bool) {
 	if len(responses) == 0 {
 		return types.SyncStatusResponse{}, nil, false
@@ -225,7 +214,6 @@ func pickSyncTarget(responses []types.SyncStatusResponse) (types.SyncStatusRespo
 		groups[k] = append(groups[k], r)
 	}
 
-	// Pick group with highest count; tie-break by highest commitIndex.
 	var bestKey key
 	bestCount := 0
 	for k, g := range groups {
@@ -240,7 +228,6 @@ func pickSyncTarget(responses []types.SyncStatusResponse) (types.SyncStatusRespo
 
 	winner := groups[bestKey][0]
 
-	// Collect peer IDs from leader + responders that we can decode.
 	sources := make([]peer.ID, 0)
 	if winner.LeaderID != "" {
 		if pid, err := peer.Decode(winner.LeaderID); err == nil {
@@ -250,7 +237,7 @@ func pickSyncTarget(responses []types.SyncStatusResponse) (types.SyncStatusRespo
 	return winner, sources, true
 }
 
-// resolveSources mở rộng danh sách source bằng cách thêm tất cả alive peer (trừ self và đã có).
+// resolveSources expands the source list with all alive peers (except self).
 func (rn *RaftNode) resolveSources(initial []peer.ID) []peer.ID {
 	seen := make(map[peer.ID]bool)
 	out := make([]peer.ID, 0, len(initial))
@@ -272,8 +259,7 @@ func (rn *RaftNode) resolveSources(initial []peer.ID) []peer.ID {
 	return out
 }
 
-// fetchBlocksParallel chia range [from..to] thành shard và fetch song song.
-// Trả về slice block sorted theo Index tăng dần.
+// fetchBlocksParallel divides range [from..to] into shards and fetches in parallel.
 func (rn *RaftNode) fetchBlocksParallel(from, to int64, initialSources []peer.ID) ([]types.Block, error) {
 	sources := rn.resolveSources(initialSources)
 	if len(sources) == 0 {
@@ -285,7 +271,7 @@ func (rn *RaftNode) fetchBlocksParallel(from, to int64, initialSources []peer.ID
 		return nil, nil
 	}
 
-	shardSize := int64(netpkg.SyncShardSize)
+	shardSize := int64(rn.Config.GetSyncShardSize())
 	numShards := (totalCount + shardSize - 1) / shardSize
 
 	type shardResult struct {
@@ -308,7 +294,6 @@ func (rn *RaftNode) fetchBlocksParallel(from, to int64, initialSources []peer.ID
 		go func(idx int64) {
 			defer wg.Done()
 			r := &results[idx]
-			// Round-robin: thử source[idx%len], rồi xoay vòng nếu lỗi.
 			for attempt := 0; attempt < len(sources); attempt++ {
 				src := sources[(int(idx)+attempt)%len(sources)]
 				blocks, err := rn.fetchShardBlocks(src, r.from, r.to)
@@ -316,7 +301,7 @@ func (rn *RaftNode) fetchBlocksParallel(from, to int64, initialSources []peer.ID
 					r.blocks = blocks
 					return
 				}
-				log.Printf("[%s] sync: shard [%d..%d] from %s failed: %v (retry next source)",
+				rn.Logger.Printf("[%s] sync: shard [%d..%d] from %s failed: %v (retry next source)",
 					rn.Transport.ID().ShortString(), r.from, r.to, src.ShortString(), err)
 				r.err = err
 			}
@@ -324,7 +309,6 @@ func (rn *RaftNode) fetchBlocksParallel(from, to int64, initialSources []peer.ID
 	}
 	wg.Wait()
 
-	// Assemble và verify count
 	all := make([]types.Block, 0, totalCount)
 	for i := range results {
 		if results[i].err != nil && len(results[i].blocks) == 0 {
@@ -333,19 +317,15 @@ func (rn *RaftNode) fetchBlocksParallel(from, to int64, initialSources []peer.ID
 		all = append(all, results[i].blocks...)
 	}
 
-	// Sort by hash chain order: blocks should already be in order from shard ordering,
-	// nhưng để chắc chắn, sort theo timestamp + size không khả thi (hash chain thật sự
-	// chỉ verify được tuần tự). Ở đây các shard ở thứ tự index, mỗi shard server cũng
-	// stream theo thứ tự index → kết hợp theo thứ tự i là đủ.
 	if int64(len(all)) != totalCount {
 		return nil, fmt.Errorf("expected %d blocks, got %d", totalCount, len(all))
 	}
 	return all, nil
 }
 
-// fetchShardBlocks mở stream tới src, request blocks [from..to], đọc đến EOF.
+// fetchShardBlocks opens a stream to src and requests blocks [from..to].
 func (rn *RaftNode) fetchShardBlocks(src peer.ID, from, to int64) ([]types.Block, error) {
-	log.Printf("[%s] sync: fetching shard [%d..%d] from %s",
+	rn.Logger.Printf("[%s] sync: fetching shard [%d..%d] from %s",
 		rn.Transport.ID().ShortString(), from, to, src.ShortString())
 
 	stream, err := rn.Transport.OpenSyncStream(src)
@@ -354,8 +334,7 @@ func (rn *RaftNode) fetchShardBlocks(src peer.ID, from, to int64) ([]types.Block
 	}
 	defer stream.Close()
 
-	// Set deadline
-	_ = stream.SetDeadline(time.Now().Add(netpkg.SyncFetchTimeout))
+	_ = stream.SetDeadline(time.Now().Add(rn.Config.GetSyncFetchTimeout()))
 
 	encoder := json.NewEncoder(stream)
 	if err := encoder.Encode(types.SyncDataRequest{
@@ -387,20 +366,19 @@ func (rn *RaftNode) fetchShardBlocks(src peer.ID, from, to int64) ([]types.Block
 	return collected, nil
 }
 
-// fetchLogEntriesParallel y hệt fetchBlocksParallel nhưng cho RaftLog entries.
+// fetchLogEntriesParallel fetches RaftLog entries.
 func (rn *RaftNode) fetchLogEntriesParallel(from, to int64, initialSources []peer.ID) ([]types.LogEntry, error) {
 	sources := rn.resolveSources(initialSources)
 	if len(sources) == 0 {
 		return nil, fmt.Errorf("no source peers available")
 	}
 
-	// Log entries thường ít, không chia shard cho phức tạp.
 	for _, src := range sources {
 		entries, err := rn.fetchShardLogEntries(src, from, to)
 		if err == nil {
 			return entries, nil
 		}
-		log.Printf("[%s] sync: log entries from %s failed: %v",
+		rn.Logger.Printf("[%s] sync: log entries from %s failed: %v",
 			rn.Transport.ID().ShortString(), src.ShortString(), err)
 	}
 	return nil, fmt.Errorf("all sources failed")
@@ -412,7 +390,7 @@ func (rn *RaftNode) fetchShardLogEntries(src peer.ID, from, to int64) ([]types.L
 		return nil, err
 	}
 	defer stream.Close()
-	_ = stream.SetDeadline(time.Now().Add(netpkg.SyncFetchTimeout))
+	_ = stream.SetDeadline(time.Now().Add(rn.Config.GetSyncFetchTimeout()))
 
 	encoder := json.NewEncoder(stream)
 	if err := encoder.Encode(types.SyncDataRequest{
@@ -444,8 +422,7 @@ func (rn *RaftNode) fetchShardLogEntries(src peer.ID, from, to int64) ([]types.L
 	return collected, nil
 }
 
-// installLogEntries append các log entry chưa có trong RaftLog cục bộ.
-// Chỉ append entry có Index > current last index — không ghi đè entry cũ.
+// installLogEntries appends new log entries that don't already exist locally.
 func (rn *RaftNode) installLogEntries(entries []types.LogEntry) {
 	if len(entries) == 0 {
 		return
@@ -462,10 +439,7 @@ func (rn *RaftNode) installLogEntries(entries []types.LogEntry) {
 	}
 }
 
-// verifyHashChain kiểm tra:
-//  1. Mỗi block.PrevHash khớp với hash của block trước (hoặc startHash cho block đầu).
-//  2. Mỗi block.Hash recompute = block.BlockHash() khớp với block.Hash đang lưu.
-//  3. block.Hash của block cuối khớp với expectedFinalHash.
+// verifyHashChain verifies PrevHash chain + final hash.
 func verifyHashChain(startHash []byte, blocks []types.Block, expectedFinalHash []byte) error {
 	if len(blocks) == 0 {
 		return nil

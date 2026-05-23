@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"time"
 
@@ -15,7 +14,6 @@ import (
 )
 
 // SubmitTransaction submits a signed blockchain transaction to the ordering service.
-// If this node is not the leader, the transaction is forwarded to the leader.
 func (rn *RaftNode) SubmitTransaction(tx types.Transaction) (string, error) {
 	if err := tx.Validate(); err != nil {
 		return "", fmt.Errorf("transaction validation failed: %w", err)
@@ -38,15 +36,16 @@ func (rn *RaftNode) processTx(tx types.Transaction) (string, error) {
 	poolSize := len(rn.TxPool)
 	rn.TxPoolMu.Unlock()
 
-	log.Printf("[%s] Received tx %s (pool size: %d)",
+	rn.Logger.Printf("[%s] Received tx %s (pool size: %d)",
 		rn.Transport.ID().ShortString(), tx.Txid, poolSize)
+	rn.Emitter.TxPoolChanged(rn.Transport.ID(), poolSize)
 
 	return tx.Txid, nil
 }
 
 // forwardTxToLeader forwards a transaction to the leader.
 func (rn *RaftNode) forwardTxToLeader(tx types.Transaction, leaderID peer.ID) (string, error) {
-	log.Printf("[%s] Forwarding tx %s to leader %s",
+	rn.Logger.Printf("[%s] Forwarding tx %s to leader %s",
 		rn.Transport.ID().ShortString(), tx.Txid, leaderID.ShortString())
 
 	msg := types.Message{
@@ -68,25 +67,25 @@ func (rn *RaftNode) forwardTxToLeader(tx types.Transaction, leaderID peer.ID) (s
 func (rn *RaftNode) HandleTxRequest(msg types.Message) {
 	data, err := json.Marshal(msg.Data)
 	if err != nil {
-		log.Printf("[%s] Error marshaling tx data: %v", rn.Transport.ID().ShortString(), err)
+		rn.Logger.Printf("[%s] Error marshaling tx data: %v", rn.Transport.ID().ShortString(), err)
 		return
 	}
 
 	var tx types.Transaction
 	if err := json.Unmarshal(data, &tx); err != nil {
-		log.Printf("[%s] Error unmarshaling tx: %v", rn.Transport.ID().ShortString(), err)
+		rn.Logger.Printf("[%s] Error unmarshaling tx: %v", rn.Transport.ID().ShortString(), err)
 		return
 	}
 
 	if err := tx.Validate(); err != nil {
-		log.Printf("[%s] Transaction validation failed: %v", rn.Transport.ID().ShortString(), err)
+		rn.Logger.Printf("[%s] Transaction validation failed: %v", rn.Transport.ID().ShortString(), err)
 		return
 	}
 
 	if !rn.IsLeader() {
 		leaderID := rn.GetLeaderID()
 		if leaderID == "" {
-			log.Printf("[%s] Received tx %s but no leader known, dropping",
+			rn.Logger.Printf("[%s] Received tx %s but no leader known, dropping",
 				rn.Transport.ID().ShortString(), tx.Txid)
 			return
 		}
@@ -98,22 +97,21 @@ func (rn *RaftNode) HandleTxRequest(msg types.Message) {
 			Timestamp: time.Now(),
 		}
 		if err := rn.Transport.SendMessage(leaderID, fwdMsg); err != nil {
-			log.Printf("[%s] Failed to forward tx %s to leader: %v",
+			rn.Logger.Printf("[%s] Failed to forward tx %s to leader: %v",
 				rn.Transport.ID().ShortString(), tx.Txid, err)
 		}
 		return
 	}
 
-	// We are the leader — store in TxPool
 	rn.TxPoolMu.Lock()
 	rn.TxPool = append(rn.TxPool, tx)
 	poolSize := len(rn.TxPool)
 	rn.TxPoolMu.Unlock()
 
-	log.Printf("[%s] Accepted tx %s from client (pool size: %d)",
+	rn.Logger.Printf("[%s] Accepted tx %s from client (pool size: %d)",
 		rn.Transport.ID().ShortString(), tx.Txid, poolSize)
+	rn.Emitter.TxPoolChanged(rn.Transport.ID(), poolSize)
 
-	// Send acknowledgment back to sender
 	senderID, err := peer.Decode(msg.SenderID)
 	if err == nil && senderID != rn.Transport.ID() {
 		rn.mu.RLock()
@@ -128,7 +126,7 @@ func (rn *RaftNode) HandleTxRequest(msg types.Message) {
 			Timestamp: time.Now(),
 		}
 		if err := rn.Transport.SendMessage(senderID, ackMsg); err != nil {
-			log.Printf("[%s] Failed to send tx ack to %s: %v",
+			rn.Logger.Printf("[%s] Failed to send tx ack to %s: %v",
 				rn.Transport.ID().ShortString(), senderID.ShortString(), err)
 		}
 	}
@@ -144,7 +142,7 @@ func (rn *RaftNode) HandleTxResponse(msg types.Message) {
 	if err := json.Unmarshal(data, &tx); err != nil {
 		return
 	}
-	log.Printf("[%s] Tx response received: %s",
+	rn.Logger.Printf("[%s] Tx response received: %s",
 		rn.Transport.ID().ShortString(), tx.Txid)
 }
 
@@ -190,10 +188,9 @@ func (rn *RaftNode) proposeBlockWithTxs(blockTxs []types.Transaction) error {
 		Block:        *block,
 	}
 
-	// Append to leader's own RaftLog
 	rn.RaftLog.AppendEntry(entry)
 
-	log.Printf("[%s] Proposing block %s (log index %d, prev %d) with %d tx",
+	rn.Logger.Printf("[%s] Proposing block %s (log index %d, prev %d) with %d tx",
 		rn.Transport.ID().ShortString(), blockID, entry.Index, entry.PrevLogIndex, len(blockTxs))
 
 	proposal := types.BlockProposal{
@@ -216,7 +213,8 @@ func (rn *RaftNode) proposeBlockWithTxs(blockTxs []types.Transaction) error {
 	rn.lastBlockSentTime = time.Now()
 	rn.mu.Unlock()
 
-	// Wait for ACKs from majority
+	rn.Emitter.BlockProposed(rn.Transport.ID(), blockID, len(blockTxs))
+
 	go rn.waitForBlockAcks(entry)
 
 	return nil
@@ -225,7 +223,7 @@ func (rn *RaftNode) proposeBlockWithTxs(blockTxs []types.Transaction) error {
 // waitForBlockAcks waits for acknowledgments from followers for a block proposal.
 func (rn *RaftNode) waitForBlockAcks(entry types.LogEntry) {
 	acks := make(map[peer.ID]bool)
-	acks[rn.Transport.ID()] = true // Count ourselves
+	acks[rn.Transport.ID()] = true
 
 	totalCount := rn.Membership.GetTotalCount()
 	majority := totalCount/2 + 1
@@ -236,25 +234,25 @@ func (rn *RaftNode) waitForBlockAcks(entry types.LogEntry) {
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 
-	log.Printf("[%s] Waiting for block ACKs (need %d/%d)",
+	rn.Logger.Printf("[%s] Waiting for block ACKs (need %d/%d)",
 		rn.Transport.ID().ShortString(), majority, totalCount)
 
 	for {
 		select {
 		case <-timeout:
 			if len(acks) >= majority {
-				log.Printf("[%s] Received majority ACKs (%d/%d) for block %s",
+				rn.Logger.Printf("[%s] Received majority ACKs (%d/%d) for block %s",
 					rn.Transport.ID().ShortString(), len(acks), majority, blockID)
 				rn.commitBlock(entry)
 			} else {
-				log.Printf("[%s] Failed to get majority ACKs (%d/%d) for block %s",
+				rn.Logger.Printf("[%s] Failed to get majority ACKs (%d/%d) for block %s",
 					rn.Transport.ID().ShortString(), len(acks), majority, blockID)
 			}
 			return
 
 		case <-ticker.C:
 			if len(acks) >= majority {
-				log.Printf("[%s] Received majority ACKs (%d/%d) for block %s",
+				rn.Logger.Printf("[%s] Received majority ACKs (%d/%d) for block %s",
 					rn.Transport.ID().ShortString(), len(acks), majority, blockID)
 				rn.commitBlock(entry)
 				return
@@ -275,7 +273,7 @@ func (rn *RaftNode) waitForBlockAcks(entry types.LogEntry) {
 				senderID, err := peer.Decode(msg.SenderID)
 				if err == nil {
 					acks[senderID] = true
-					log.Printf("[%s] Received ACK from %s for block %s (%d/%d)",
+					rn.Logger.Printf("[%s] Received ACK from %s for block %s (%d/%d)",
 						rn.Transport.ID().ShortString(), senderID.ShortString(), blockID, len(acks), majority)
 				}
 			}
@@ -283,10 +281,10 @@ func (rn *RaftNode) waitForBlockAcks(entry types.LogEntry) {
 	}
 }
 
-// ExecuteBlockTransactions logs committed transactions (UTXO state is managed by peer nodes, not the ordering service).
+// ExecuteBlockTransactions logs committed transactions.
 func (rn *RaftNode) ExecuteBlockTransactions(block types.Block) error {
 	for _, tx := range block.Transactions {
-		log.Printf("[%s] Block tx: %s (%d inputs, %d outputs)",
+		rn.Logger.Printf("[%s] Block tx: %s (%d inputs, %d outputs)",
 			rn.Transport.ID().ShortString(), tx.Txid, len(tx.Vin), len(tx.Vout))
 	}
 	return nil
@@ -297,22 +295,14 @@ func (rn *RaftNode) commitBlock(entry types.LogEntry) {
 	block := entry.Block
 	blockID := block.BlockID()
 
-	log.Printf("[%s] Committing block %s (log index %d) with %d tx",
+	rn.Logger.Printf("[%s] Committing block %s (log index %d) with %d tx",
 		rn.Transport.ID().ShortString(), blockID, entry.Index, len(block.Transactions))
 
-	// Append block to OrderingBlock
 	rn.OrderingBlock.AppendBlock(block)
-
-	// Log committed transactions
 	rn.ExecuteBlockTransactions(block)
-
-	// Update the hash chain pointer
 	rn.setLastCommittedHash(block.Hash)
-
-	// Fan-out to committing peers subscribed on this node (leader path).
 	rn.DeliverMgr.NotifyNewBlock(block)
 
-	// Remove committed transactions from TxPool by Txid
 	committedIDs := make(map[string]bool, len(block.Transactions))
 	for _, tx := range block.Transactions {
 		committedIDs[tx.Txid] = true
@@ -325,9 +315,9 @@ func (rn *RaftNode) commitBlock(entry types.LogEntry) {
 		}
 	}
 	rn.TxPool = remaining
+	poolSize := len(rn.TxPool)
 	rn.TxPoolMu.Unlock()
 
-	// Broadcast commit to followers
 	commit := types.BlockCommit{
 		BlockID:   blockID,
 		LogIndex:  entry.Index,
@@ -348,18 +338,22 @@ func (rn *RaftNode) commitBlock(entry types.LogEntry) {
 
 	rn.BroadcastMessage(msg)
 
-	// Block commit acts as heartbeat
 	rn.mu.Lock()
 	rn.lastBlockSentTime = time.Now()
 	rn.mu.Unlock()
 
-	log.Printf("[%s] Block %s committed (hash: %s, merkle: %s, ordering blocks: %d)",
+	blockIndex := uint64(rn.OrderingBlock.GetLastIndex())
+	blockHashHex := hex.EncodeToString(block.Hash)
+
+	rn.Logger.Printf("[%s] Block %s committed (hash: %s, merkle: %s, ordering blocks: %d)",
 		rn.Transport.ID().ShortString(), blockID,
 		hex.EncodeToString(block.Hash[:4]),
 		hex.EncodeToString(block.MerkleRoot[:4]),
 		rn.OrderingBlock.GetLastIndex())
 
-	// Signal auto-propose goroutine (non-blocking)
+	rn.Emitter.BlockCommitted(rn.Transport.ID(), blockIndex, blockHashHex, len(block.Transactions))
+	rn.Emitter.TxPoolChanged(rn.Transport.ID(), poolSize)
+
 	select {
 	case rn.blockCommittedNotify <- struct{}{}:
 	default:
@@ -374,13 +368,13 @@ func (rn *RaftNode) HandleBlockProposal(msg types.Message) {
 
 	data, err := json.Marshal(msg.Data)
 	if err != nil {
-		log.Printf("[%s] Error marshaling block proposal: %v", rn.Transport.ID().ShortString(), err)
+		rn.Logger.Printf("[%s] Error marshaling block proposal: %v", rn.Transport.ID().ShortString(), err)
 		return
 	}
 
 	var proposal types.BlockProposal
 	if err := json.Unmarshal(data, &proposal); err != nil {
-		log.Printf("[%s] Error unmarshaling block proposal: %v", rn.Transport.ID().ShortString(), err)
+		rn.Logger.Printf("[%s] Error unmarshaling block proposal: %v", rn.Transport.ID().ShortString(), err)
 		return
 	}
 
@@ -398,27 +392,25 @@ func (rn *RaftNode) HandleBlockProposal(msg types.Message) {
 	}
 
 	if senderID != leaderID {
-		log.Printf("[%s] Block proposal from non-leader %s, ignoring",
+		rn.Logger.Printf("[%s] Block proposal from non-leader %s, ignoring",
 			rn.Transport.ID().ShortString(), senderID.ShortString())
 		return
 	}
 
 	if msg.Term < currentTerm {
-		log.Printf("[%s] Block proposal with old term %d (current: %d), rejecting",
+		rn.Logger.Printf("[%s] Block proposal with old term %d (current: %d), rejecting",
 			rn.Transport.ID().ShortString(), msg.Term, currentTerm)
 		rn.sendBlockProposalAck(blockID, entry.Index, false, "old term")
 		return
 	}
 
-	// Block proposal from leader counts as heartbeat
 	rn.updateLastHeartbeat()
 
-	// Check log continuity
 	lastIndex := rn.RaftLog.GetLastIndex()
 	if entry.PrevLogIndex != lastIndex {
 		reason := fmt.Sprintf("log discontinuity: expected PrevLogIndex=%d but got %d (our last index=%d)",
 			lastIndex, entry.PrevLogIndex, lastIndex)
-		log.Printf("[%s] Rejecting block %s: %s",
+		rn.Logger.Printf("[%s] Rejecting block %s: %s",
 			rn.Transport.ID().ShortString(), blockID, reason)
 		rn.sendBlockProposalAck(blockID, entry.Index, false, reason)
 		return
@@ -428,7 +420,7 @@ func (rn *RaftNode) HandleBlockProposal(msg types.Message) {
 		prevEntry := rn.RaftLog.FindEntryByIndex(entry.PrevLogIndex)
 		if prevEntry == nil {
 			reason := fmt.Sprintf("previous log entry %d not found", entry.PrevLogIndex)
-			log.Printf("[%s] Rejecting block %s: %s",
+			rn.Logger.Printf("[%s] Rejecting block %s: %s",
 				rn.Transport.ID().ShortString(), blockID, reason)
 			rn.sendBlockProposalAck(blockID, entry.Index, false, reason)
 			return
@@ -437,7 +429,7 @@ func (rn *RaftNode) HandleBlockProposal(msg types.Message) {
 			rn.RaftLog.RemoveFrom(entry.PrevLogIndex)
 			reason := fmt.Sprintf("term mismatch on prev entry %d: have %d, expected ~%d",
 				entry.PrevLogIndex, prevEntry.Term, entry.Term)
-			log.Printf("[%s] Rejecting block %s: %s",
+			rn.Logger.Printf("[%s] Rejecting block %s: %s",
 				rn.Transport.ID().ShortString(), blockID, reason)
 			rn.sendBlockProposalAck(blockID, entry.Index, false, reason)
 			return
@@ -446,7 +438,7 @@ func (rn *RaftNode) HandleBlockProposal(msg types.Message) {
 
 	rn.RaftLog.AppendEntry(entry)
 
-	log.Printf("[%s] Accepted block proposal %s (log index %d, prev %d, %d tx)",
+	rn.Logger.Printf("[%s] Accepted block proposal %s (log index %d, prev %d, %d tx)",
 		rn.Transport.ID().ShortString(), blockID, entry.Index, entry.PrevLogIndex, len(entry.Block.Transactions))
 
 	rn.sendBlockProposalAck(blockID, entry.Index, true, "")
@@ -480,7 +472,7 @@ func (rn *RaftNode) sendBlockProposalAck(blockID string, logIndex int64, accepte
 	}
 
 	if err := rn.Transport.SendMessage(leaderID, msg); err != nil {
-		log.Printf("[%s] Error sending block proposal ACK: %v", rn.Transport.ID().ShortString(), err)
+		rn.Logger.Printf("[%s] Error sending block proposal ACK: %v", rn.Transport.ID().ShortString(), err)
 	}
 }
 
@@ -493,7 +485,7 @@ func (rn *RaftNode) HandleBlockProposalAck(msg types.Message) {
 	select {
 	case rn.BlockAckChan <- msg:
 	default:
-		log.Printf("[%s] Block ACK channel full, dropping ACK", rn.Transport.ID().ShortString())
+		rn.Logger.Printf("[%s] Block ACK channel full, dropping ACK", rn.Transport.ID().ShortString())
 	}
 }
 
@@ -505,13 +497,13 @@ func (rn *RaftNode) HandleBlockCommit(msg types.Message) {
 
 	data, err := json.Marshal(msg.Data)
 	if err != nil {
-		log.Printf("[%s] Error marshaling block commit: %v", rn.Transport.ID().ShortString(), err)
+		rn.Logger.Printf("[%s] Error marshaling block commit: %v", rn.Transport.ID().ShortString(), err)
 		return
 	}
 
 	var commit types.BlockCommit
 	if err := json.Unmarshal(data, &commit); err != nil {
-		log.Printf("[%s] Error unmarshaling block commit: %v", rn.Transport.ID().ShortString(), err)
+		rn.Logger.Printf("[%s] Error unmarshaling block commit: %v", rn.Transport.ID().ShortString(), err)
 		return
 	}
 
@@ -526,31 +518,29 @@ func (rn *RaftNode) HandleBlockCommit(msg types.Message) {
 	rn.mu.RUnlock()
 
 	if senderID != leaderID {
-		log.Printf("[%s] Block commit from non-leader %s, ignoring",
+		rn.Logger.Printf("[%s] Block commit from non-leader %s, ignoring",
 			rn.Transport.ID().ShortString(), senderID.ShortString())
 		return
 	}
 
 	if msg.Term < currentTerm {
-		log.Printf("[%s] Block commit with old term %d (current: %d), ignoring",
+		rn.Logger.Printf("[%s] Block commit with old term %d (current: %d), ignoring",
 			rn.Transport.ID().ShortString(), msg.Term, currentTerm)
 		return
 	}
 
 	rn.updateLastHeartbeat()
 
-	// Find the log entry to commit
 	entry := rn.RaftLog.FindEntryByIndex(commit.LogIndex)
 	if entry == nil {
-		log.Printf("[%s] Warning: log entry %d for block %s not found in RaftLog — triggering sync",
+		rn.Logger.Printf("[%s] Warning: log entry %d for block %s not found in RaftLog — triggering sync",
 			rn.Transport.ID().ShortString(), commit.LogIndex, commit.BlockID)
 		go rn.StartSync("missing-log-entry")
 		return
 	}
 
-	// Verify the block ID matches
 	if entry.Block.BlockID() != commit.BlockID {
-		log.Printf("[%s] Warning: block ID mismatch at log index %d: have %s, got %s",
+		rn.Logger.Printf("[%s] Warning: block ID mismatch at log index %d: have %s, got %s",
 			rn.Transport.ID().ShortString(), commit.LogIndex, entry.Block.BlockID(), commit.BlockID)
 		return
 	}
@@ -559,11 +549,17 @@ func (rn *RaftNode) HandleBlockCommit(msg types.Message) {
 	rn.setLastCommittedHash(entry.Block.Hash)
 	rn.DeliverMgr.NotifyNewBlock(entry.Block)
 
-	log.Printf("[%s] Committed block %s (log index %d) — ordering blocks: %d",
+	blockIndex := uint64(rn.OrderingBlock.GetLastIndex())
+	blockHashHex := hex.EncodeToString(entry.Block.Hash)
+
+	rn.Logger.Printf("[%s] Committed block %s (log index %d) — ordering blocks: %d",
 		rn.Transport.ID().ShortString(), commit.BlockID, commit.LogIndex, rn.OrderingBlock.GetLastIndex())
+
+	rn.Emitter.BlockCommitted(rn.Transport.ID(), blockIndex, blockHashHex, len(entry.Block.Transactions))
 }
 
 // StartAutoProposeBlock starts an auto-propose loop on the leader.
+// The interval is read from Config on each tick so runtime changes take effect immediately.
 func (rn *RaftNode) StartAutoProposeBlock(batchSize int) error {
 	if !rn.IsLeader() {
 		return fmt.Errorf("only leader can auto-propose blocks")
@@ -579,7 +575,7 @@ func (rn *RaftNode) StartAutoProposeBlock(batchSize int) error {
 	stopChan := rn.autoProposeStop
 	rn.autoProposeMu.Unlock()
 
-	log.Printf("[%s] Auto-propose started (batch size: %d tx/block)",
+	rn.Logger.Printf("[%s] Auto-propose started (batch size: %d tx/block)",
 		rn.Transport.ID().ShortString(), batchSize)
 
 	go func() {
@@ -587,24 +583,25 @@ func (rn *RaftNode) StartAutoProposeBlock(batchSize int) error {
 			rn.autoProposeMu.Lock()
 			rn.autoProposeRunning = false
 			rn.autoProposeMu.Unlock()
-			log.Printf("[%s] Auto-propose goroutine exited", rn.Transport.ID().ShortString())
+			rn.Logger.Printf("[%s] Auto-propose goroutine exited", rn.Transport.ID().ShortString())
 		}()
 
-		ticker := time.NewTicker(AutoProposeInterval)
-		defer ticker.Stop()
-
 		for {
+			// Use time.After to read the current interval on each tick (runtime-tunable).
 			select {
 			case <-stopChan:
 				return
-			case <-ticker.C:
+			case <-time.After(rn.Config.GetAutoProposalInterval()):
 			}
 
 			if !rn.IsLeader() {
-				log.Printf("[%s] Auto-propose: stepped down from leader, stopping",
+				rn.Logger.Printf("[%s] Auto-propose: stepped down from leader, stopping",
 					rn.Transport.ID().ShortString())
 				return
 			}
+
+			// Use current block size from config (also runtime-tunable)
+			currentBatchSize := rn.Config.GetAutoProposalBlockSize()
 
 			rn.TxPoolMu.Lock()
 			poolSize := len(rn.TxPool)
@@ -614,11 +611,11 @@ func (rn *RaftNode) StartAutoProposeBlock(batchSize int) error {
 				continue
 			}
 
-			log.Printf("[%s] Auto-propose: proposing block with up to %d tx (pool: %d)",
-				rn.Transport.ID().ShortString(), batchSize, poolSize)
+			rn.Logger.Printf("[%s] Auto-propose: proposing block with up to %d tx (pool: %d)",
+				rn.Transport.ID().ShortString(), currentBatchSize, poolSize)
 
-			if err := rn.ProposeBlock(batchSize); err != nil {
-				log.Printf("[%s] Auto-propose: ProposeBlock error: %v",
+			if err := rn.ProposeBlock(currentBatchSize); err != nil {
+				rn.Logger.Printf("[%s] Auto-propose: ProposeBlock error: %v",
 					rn.Transport.ID().ShortString(), err)
 				continue
 			}
@@ -627,10 +624,10 @@ func (rn *RaftNode) StartAutoProposeBlock(batchSize int) error {
 			case <-stopChan:
 				return
 			case <-rn.blockCommittedNotify:
-				log.Printf("[%s] Auto-propose: block committed, checking next batch",
+				rn.Logger.Printf("[%s] Auto-propose: block committed, checking next batch",
 					rn.Transport.ID().ShortString())
 			case <-time.After(10 * time.Second):
-				log.Printf("[%s] Auto-propose: commit timeout, continuing",
+				rn.Logger.Printf("[%s] Auto-propose: commit timeout, continuing",
 					rn.Transport.ID().ShortString())
 			}
 		}
@@ -649,7 +646,7 @@ func (rn *RaftNode) StopAutoProposeBlock() {
 	}
 	close(rn.autoProposeStop)
 	rn.autoProposeStop = nil
-	log.Printf("[%s] Auto-propose stop signal sent", rn.Transport.ID().ShortString())
+	rn.Logger.Printf("[%s] Auto-propose stop signal sent", rn.Transport.ID().ShortString())
 }
 
 // IsAutoProposeRunning returns true if the auto-propose loop is active.

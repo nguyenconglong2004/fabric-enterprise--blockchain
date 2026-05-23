@@ -2,7 +2,6 @@ package raft
 
 import (
 	"encoding/json"
-	"log"
 	"sync"
 
 	"github.com/libp2p/go-libp2p/core/network"
@@ -65,7 +64,7 @@ func (rn *RaftNode) HandleDeliverStream(s network.Stream) {
 
 	var req types.DeliverRequest
 	if err := decoder.Decode(&req); err != nil {
-		log.Printf("[%s] deliver: failed to decode request: %v",
+		rn.Logger.Printf("[%s] deliver: failed to decode request: %v",
 			rn.Transport.ID().ShortString(), err)
 		return
 	}
@@ -80,7 +79,7 @@ func (rn *RaftNode) HandleDeliverStream(s network.Stream) {
 	for i := int64(0); i < int64(len(existingBlocks)); i++ {
 		if i+1 >= fromIndex { // blocks are 1-indexed by position
 			if err := encoder.Encode(existingBlocks[i]); err != nil {
-				log.Printf("[%s] deliver: error sending existing block: %v",
+				rn.Logger.Printf("[%s] deliver: error sending existing block: %v",
 					rn.Transport.ID().ShortString(), err)
 				return
 			}
@@ -91,14 +90,14 @@ func (rn *RaftNode) HandleDeliverStream(s network.Stream) {
 	subID, ch := rn.DeliverMgr.subscribe()
 	defer rn.DeliverMgr.unsubscribe(subID)
 
-	log.Printf("[%s] deliver: peer subscribed (sub=%d, fromIndex=%d)",
+	rn.Logger.Printf("[%s] deliver: peer subscribed (sub=%d, fromIndex=%d)",
 		rn.Transport.ID().ShortString(), subID, fromIndex)
 
 	for {
 		select {
 		case block := <-ch:
 			if err := encoder.Encode(block); err != nil {
-				log.Printf("[%s] deliver: sub=%d disconnected: %v",
+				rn.Logger.Printf("[%s] deliver: sub=%d disconnected: %v",
 					rn.Transport.ID().ShortString(), subID, err)
 				return
 			}

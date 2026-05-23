@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
+	"os"
 	"sync"
 	"time"
 
@@ -24,6 +26,15 @@ const (
 // RaftNode represents a node in the Raft-based order service
 type RaftNode struct {
 	Transport *netpkg.Transport
+
+	// Runtime-tunable config
+	Config *Config
+
+	// Event emitter for UI integration
+	Emitter EventEmitter
+
+	// Per-node logger (allows separate log output per node when embedded in orchestrator)
+	Logger *log.Logger
 
 	// State
 	mu              sync.RWMutex
@@ -73,11 +84,9 @@ type RaftNode struct {
 	DeliverMgr *DeliverManager
 
 	// Heartbeat delay simulation (testing only).
-	// When delayTargetPriorities is non-empty, the next sendHeartbeat() call will sleep
-	// delayDuration before sending to nodes whose priority is in the set (one-shot per call).
 	delayMu              sync.Mutex
 	delayedPriorities    map[int]bool
-	heartbeatPausedUntil time.Time // leader will not send any heartbeat before this time
+	heartbeatPausedUntil time.Time
 
 	// Sync coordinator state (block/log catch-up khi first-join hoặc rejoin).
 	syncMu         sync.Mutex
@@ -85,15 +94,30 @@ type RaftNode struct {
 	SyncStatusChan chan types.Message // buffered: chứa MsgSyncStatusResponse trong cửa sổ discovery
 }
 
-// NewRaftNode creates a new Raft node
-func NewRaftNode(ctx context.Context, port int) (*RaftNode, error) {
+// NewRaftNode creates a new Raft node.
+// config and emitter may be nil; defaults are used in that case.
+// logger may be nil; log.Default() is used in that case.
+func NewRaftNode(ctx context.Context, port int, config *Config, emitter EventEmitter, logger *log.Logger) (*RaftNode, error) {
 	transport, err := netpkg.NewTransport(ctx, port)
 	if err != nil {
 		return nil, err
 	}
 
+	if config == nil {
+		config = DefaultConfig()
+	}
+	if emitter == nil {
+		emitter = NoopEmitter{}
+	}
+	if logger == nil {
+		logger = log.New(os.Stderr, "", log.LstdFlags)
+	}
+
 	node := &RaftNode{
 		Transport:            transport,
+		Config:               config,
+		Emitter:              emitter,
+		Logger:               logger,
 		state:                types.Follower,
 		currentTerm:          0,
 		Membership:           types.NewMembershipView(),
@@ -118,14 +142,14 @@ func NewRaftNode(ctx context.Context, port int) (*RaftNode, error) {
 	// Set stream handler
 	transport.SetStreamHandler(node.handleStream)
 
-	log.Printf("[%s] Node created with ID: %s", transport.ID().ShortString(), transport.ID())
+	node.Logger.Printf("[%s] Node created with ID: %s", transport.ID().ShortString(), transport.ID())
 
 	return node, nil
 }
 
 // Start begins the node's operation
 func (rn *RaftNode) Start() {
-	log.Printf("[%s] Starting node", rn.Transport.ID().ShortString())
+	rn.Logger.Printf("[%s] Starting node", rn.Transport.ID().ShortString())
 
 	// Register deliver stream handler
 	rn.Transport.SetDeliverStreamHandler(rn.HandleDeliverStream)
@@ -156,7 +180,7 @@ func (rn *RaftNode) handleStream(s network.Stream) {
 	var msg types.Message
 
 	if err := decoder.Decode(&msg); err != nil {
-		log.Printf("[%s] Error decoding message: %v", rn.Transport.ID().ShortString(), err)
+		rn.Logger.Printf("[%s] Error decoding message: %v", rn.Transport.ID().ShortString(), err)
 		return
 	}
 
@@ -170,7 +194,7 @@ func (rn *RaftNode) ConnectToPeer(peerAddr string) error {
 		return err
 	}
 
-	log.Printf("[%s] Connected to peer: %s", rn.Transport.ID().ShortString(), addr.ID.ShortString())
+	rn.Logger.Printf("[%s] Connected to peer: %s", rn.Transport.ID().ShortString(), addr.ID.ShortString())
 
 	// Request to join the membership
 	rn.requestMembershipJoin(addr.ID)
@@ -195,9 +219,27 @@ func (rn *RaftNode) requestMembershipJoin(bootstrapPeer peer.ID) {
 	}
 
 	if err := rn.Transport.SendMessage(bootstrapPeer, msg); err != nil {
-		log.Printf("[%s] Error sending membership request: %v",
+		rn.Logger.Printf("[%s] Error sending membership request: %v",
 			rn.Transport.ID().ShortString(), err)
 	}
+}
+
+// setState atomically changes the node state and emits a StateChanged event.
+// Do NOT call while holding rn.mu.
+func (rn *RaftNode) setState(newState types.NodeState) {
+	rn.mu.Lock()
+	old := rn.state
+	rn.state = newState
+	rn.mu.Unlock()
+	if old != newState {
+		rn.Emitter.StateChanged(rn.Transport.ID(), old, newState)
+	}
+}
+
+// SetLogOutput redirects the node's logger to the given writer.
+// Useful for the CLI server to redirect logs to readline.Stdout() after readline is initialized.
+func (rn *RaftNode) SetLogOutput(w io.Writer) {
+	rn.Logger.SetOutput(w)
 }
 
 // GetAddress returns the node's address
@@ -385,14 +427,13 @@ func (rn *RaftNode) BroadcastMessageWithFailureHandler(msg types.Message, onSend
 }
 
 // BroadcastToAllMembers broadcasts a message to ALL known members (alive + dead).
-// Used for MsgIAmNewLeader to reach nodes that may have been incorrectly marked dead.
 func (rn *RaftNode) BroadcastToAllMembers(msg types.Message) {
 	rn.Transport.BroadcastMessage(msg, rn.Membership.GetAllMembers(), nil)
 }
 
 // Stop gracefully stops the node
 func (rn *RaftNode) Stop() {
-	log.Printf("[%s] Stopping node", rn.Transport.ID().ShortString())
+	rn.Logger.Printf("[%s] Stopping node", rn.Transport.ID().ShortString())
 	close(rn.stopChan)
 	rn.Transport.Close()
 }

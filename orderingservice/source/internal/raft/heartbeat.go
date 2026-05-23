@@ -2,12 +2,10 @@ package raft
 
 import (
 	"encoding/json"
-	"log"
 	"time"
 
 	"github.com/libp2p/go-libp2p/core/peer"
 
-	"raft-order-service/internal/network"
 	"raft-order-service/internal/types"
 )
 
@@ -26,7 +24,7 @@ func (rn *RaftNode) monitorHeartbeat() {
 	}
 }
 
-// checkHeartbeat checks if heartbeat has timed out; hoặc hết thời gian chờ expected leader gửi I AM NEW LEADER
+// checkHeartbeat checks if heartbeat has timed out
 func (rn *RaftNode) checkHeartbeat() {
 	rn.mu.RLock()
 	state := rn.state
@@ -42,7 +40,7 @@ func (rn *RaftNode) checkHeartbeat() {
 		lastBlock := rn.lastBlockSentTime
 		rn.mu.RUnlock()
 
-		if time.Since(lastBlock) >= network.HeartbeatInterval {
+		if time.Since(lastBlock) >= rn.Config.GetHeartbeatInterval() {
 			rn.sendHeartbeat()
 		}
 		return
@@ -52,9 +50,9 @@ func (rn *RaftNode) checkHeartbeat() {
 		return
 	}
 
-	// Nếu đang chờ expected leader gửi I AM NEW LEADER mà hết thời gian (= HeartbeatTimeout) -> đánh dấu chết, chọn leader mới (priority kế tiếp)
+	// Nếu đang chờ expected leader mà hết thời gian → đánh dấu chết, chọn leader mới
 	if expectedID != "" && !expectedDeadline.IsZero() && time.Now().After(expectedDeadline) {
-		log.Printf("[%s] Expected leader %s did not send I AM NEW LEADER in time, marking dead and re-electing",
+		rn.Logger.Printf("[%s] Expected leader %s did not send I AM NEW LEADER in time, marking dead and re-electing",
 			rn.Transport.ID().ShortString(), expectedID.ShortString())
 		rn.Membership.MarkDead(expectedID)
 		rn.mu.Lock()
@@ -66,18 +64,14 @@ func (rn *RaftNode) checkHeartbeat() {
 	}
 
 	// Check if heartbeat from current leader has timed out
-	if time.Since(lastHB) > network.HeartbeatTimeout && leaderID != "" {
-		log.Printf("[%s] Heartbeat timeout! Last heartbeat: %v ago",
+	if time.Since(lastHB) > rn.Config.GetHeartbeatTimeout() && leaderID != "" {
+		rn.Logger.Printf("[%s] Heartbeat timeout! Last heartbeat: %v ago",
 			rn.Transport.ID().ShortString(), time.Since(lastHB))
 		rn.selectNewLeader()
 	}
 }
 
 // sendHeartbeat sends heartbeat to all followers.
-// Nếu delayedPriorities còn hiệu lực (heartbeatPausedUntil chưa hết), heartbeat tới các node
-// có priority trong danh sách đó bị bỏ qua — giả lập delay mạng.
-// Khi heartbeatPausedUntil đã qua, delayedPriorities được xóa và gửi bình thường.
-// Khi gửi tới một follower thất bại, leader đánh dấu follower đó chết.
 func (rn *RaftNode) sendHeartbeat() {
 	rn.mu.RLock()
 	currentTerm := rn.currentTerm
@@ -97,48 +91,48 @@ func (rn *RaftNode) sendHeartbeat() {
 	if stillPaused && len(rn.delayedPriorities) > 0 {
 		skippedPriorities = rn.delayedPriorities
 	} else if !stillPaused && len(rn.delayedPriorities) > 0 {
-		// Pause expired — clear and send to everyone normally
 		rn.delayedPriorities = make(map[int]bool)
 		rn.heartbeatPausedUntil = time.Time{}
 	}
 	rn.delayMu.Unlock()
 
 	members := rn.Membership.GetAliveMembers()
+	selfID := rn.Transport.ID()
 	for _, member := range members {
-		if member.PeerID == rn.Transport.ID() {
+		if member.PeerID == selfID {
 			continue
 		}
 		if skippedPriorities[member.Priority] {
-			log.Printf("[%s] Skipping heartbeat to priority-%d node %s (delay active)",
-				rn.Transport.ID().ShortString(), member.Priority, member.PeerID.ShortString())
+			rn.Logger.Printf("[%s] Skipping heartbeat to priority-%d node %s (delay active)",
+				selfID.ShortString(), member.Priority, member.PeerID.ShortString())
 			continue
 		}
 		pID := member.PeerID
 		go func(peerID peer.ID) {
 			if err := rn.Transport.SendMessage(peerID, msg); err != nil {
 				rn.leaderOnSendFailure(peerID)
+			} else {
+				rn.Emitter.HeartbeatSent(selfID, peerID, currentTerm)
 			}
 		}(pID)
 	}
 }
 
 // SetHeartbeatDelay simulates a network delay to nodes with the given priorities.
-// Heartbeats to those nodes will be skipped for the given duration.
-// Call with an empty slice to cancel any active delay.
 func (rn *RaftNode) SetHeartbeatDelay(priorities []int, duration time.Duration) {
 	rn.delayMu.Lock()
 	defer rn.delayMu.Unlock()
 	rn.delayedPriorities = make(map[int]bool)
 	if len(priorities) == 0 {
 		rn.heartbeatPausedUntil = time.Time{}
-		log.Printf("[%s] Heartbeat delay cleared", rn.Transport.ID().ShortString())
+		rn.Logger.Printf("[%s] Heartbeat delay cleared", rn.Transport.ID().ShortString())
 		return
 	}
 	for _, p := range priorities {
 		rn.delayedPriorities[p] = true
 	}
 	rn.heartbeatPausedUntil = time.Now().Add(duration)
-	log.Printf("[%s] Heartbeat delay set for priorities %v (duration: %v)",
+	rn.Logger.Printf("[%s] Heartbeat delay set for priorities %v (duration: %v)",
 		rn.Transport.ID().ShortString(), priorities, duration)
 }
 
@@ -162,20 +156,18 @@ func (rn *RaftNode) sendHeartbeatResponse(targetID peer.ID) {
 		Timestamp: time.Now(),
 	}
 	if err := rn.Transport.SendMessage(targetID, msg); err != nil {
-		log.Printf("[%s] Failed to send heartbeat response to %s: %v",
+		rn.Logger.Printf("[%s] Failed to send heartbeat response to %s: %v",
 			rn.Transport.ID().ShortString(), targetID.ShortString(), err)
 	}
 }
 
 // handleHeartbeatResponse handles a response from a follower to a stale heartbeat.
-// If the response carries a higher term, this node steps down and resyncs state.
 func (rn *RaftNode) handleHeartbeatResponse(msg types.Message) {
 	rn.mu.RLock()
 	state := rn.state
 	curTerm := rn.currentTerm
 	rn.mu.RUnlock()
 
-	// Only act if we think we are leader or claiming
 	if state != types.Leader && state != types.ClaimingLeader {
 		return
 	}
@@ -198,10 +190,11 @@ func (rn *RaftNode) handleHeartbeatResponse(msg types.Message) {
 		return
 	}
 
-	log.Printf("[%s] Stepping down: heartbeat response from %s shows stale term (mine=%d, current=%d, leader=%s)",
+	rn.Logger.Printf("[%s] Stepping down: heartbeat response from %s shows stale term (mine=%d, current=%d, leader=%s)",
 		rn.Transport.ID().ShortString(), msg.SenderID, curTerm, resp.CurrentTerm, leaderID.ShortString())
 
 	rn.mu.Lock()
+	oldState := rn.state
 	rn.state = types.Follower
 	rn.currentTerm = resp.CurrentTerm
 	rn.currentLeaderID = leaderID
@@ -210,20 +203,14 @@ func (rn *RaftNode) handleHeartbeatResponse(msg types.Message) {
 	rn.expectedLeaderDeadline = time.Time{}
 	rn.mu.Unlock()
 
-	// Resync membership from the response.
-	// Resync membership from the response.
-	// After updateMembershipFromData, self is marked dead (as seen by followers).
-	// Restore ourselves as alive locally so the new leader can reach us via heartbeat.
+	if oldState != types.Follower {
+		rn.Emitter.StateChanged(rn.Transport.ID(), oldState, types.Follower)
+	}
+
 	rn.updateMembershipFromData(resp.MembershipData)
 	rn.Membership.MarkAlive(rn.Transport.ID())
 
-	// Notify the new leader that we are alive by sending a join request.
-	// The leader's membership view has us marked dead, so it won't send heartbeats
-	// to us. This re-join causes the leader to MarkAlive us and resume heartbeats.
 	go rn.requestMembershipJoin(leaderID)
-
-	// Sau khi nhận diện stale-leader và step down, trigger sync để bắt kịp blocks/log
-	// đã được cluster commit trong khoảng ta là stale leader.
 	go rn.StartSync("stepped-down-after-stale-heartbeat")
 }
 
@@ -235,14 +222,12 @@ func (rn *RaftNode) updateLastHeartbeat() {
 }
 
 // handleHeartbeat handles heartbeat message.
-// Chỉ reset lastHeartbeat và cập nhật leader khi term hợp lệ (>= currentTerm).
-// Heartbeat từ term thấp hơn bị bỏ qua hoàn toàn — không reset timer.
 func (rn *RaftNode) handleHeartbeat(msg types.Message) {
 	rn.mu.Lock()
 
 	// Heartbeat từ term cũ — báo lại cho sender biết để step down
 	if msg.Term < rn.currentTerm {
-		log.Printf("[%s] Received stale heartbeat from %s (term %d < current %d), sending response",
+		rn.Logger.Printf("[%s] Received stale heartbeat from %s (term %d < current %d), sending response",
 			rn.Transport.ID().ShortString(), msg.SenderID, msg.Term, rn.currentTerm)
 		senderID, err := peer.Decode(msg.SenderID)
 		rn.mu.Unlock()
@@ -252,11 +237,9 @@ func (rn *RaftNode) handleHeartbeat(msg types.Message) {
 		return
 	}
 
-	// Phát hiện gap dài kể từ lần heartbeat trước → khả năng vừa rejoin sau disconnect.
 	gap := time.Since(rn.lastHeartbeat)
-	rejoinDetected := !rn.lastHeartbeat.IsZero() && gap > 2*network.HeartbeatTimeout
+	rejoinDetected := !rn.lastHeartbeat.IsZero() && gap > 2*rn.Config.GetHeartbeatTimeout()
 
-	// Term hợp lệ → reset timer và cập nhật thông tin leader
 	rn.lastHeartbeat = time.Now()
 
 	leaderID, err := peer.Decode(msg.SenderID)
@@ -265,25 +248,30 @@ func (rn *RaftNode) handleHeartbeat(msg types.Message) {
 		return
 	}
 
+	oldState := rn.state
 	if leaderID != rn.Transport.ID() {
-		// Step down nếu đang là Leader hoặc ClaimingLeader — có leader hợp lệ khác
 		if rn.state == types.Leader || rn.state == types.ClaimingLeader {
-			log.Printf("[%s] Stepping down: received heartbeat from %s (term %d >= current term %d)",
+			rn.Logger.Printf("[%s] Stepping down: received heartbeat from %s (term %d >= current term %d)",
 				rn.Transport.ID().ShortString(), leaderID.ShortString(), msg.Term, rn.currentTerm)
 			rn.state = types.Follower
 		}
 	}
 	rn.currentLeaderID = leaderID
 	rn.currentTerm = msg.Term
-	// Đã có leader thật (heartbeat) -> bỏ chờ expected leader
 	rn.expectedLeaderID = ""
 	rn.expectedLeaderDeadline = time.Time{}
 	state := rn.state
 	rn.mu.Unlock()
 
-	// Đảm bảo leader được đánh dấu alive trong membership cục bộ.
-	// Cần thiết khi leader đã bị mark dead trong selectNewLeader() do bầu chọn sai,
-	// nhưng thực tế vẫn đang sống và gửi heartbeat.
+	// Emit state change if we stepped down
+	if oldState != state {
+		rn.Emitter.StateChanged(rn.Transport.ID(), oldState, state)
+	}
+
+	// Emit heartbeat received
+	rn.Emitter.HeartbeatReceived(rn.Transport.ID(), leaderID)
+
+	// Ensure leader is marked alive locally
 	if leaderID != rn.Transport.ID() {
 		rn.Membership.Mu.RLock()
 		info, exists := rn.Membership.Members[leaderID]
@@ -291,14 +279,14 @@ func (rn *RaftNode) handleHeartbeat(msg types.Message) {
 		rn.Membership.Mu.RUnlock()
 		if isDead {
 			rn.Membership.MarkAlive(leaderID)
-			log.Printf("[%s] Restored leader %s to alive in membership",
+			rn.Logger.Printf("[%s] Restored leader %s to alive in membership",
 				rn.Transport.ID().ShortString(), leaderID.ShortString())
 		}
 	}
 
-	// Trigger sync nếu vừa rejoin sau gap dài. Bỏ qua nếu là leader hoặc đang sync.
+	// Trigger sync nếu vừa rejoin sau gap dài
 	if rejoinDetected && state == types.Follower {
-		log.Printf("[%s] Detected rejoin after %v gap, triggering sync",
+		rn.Logger.Printf("[%s] Detected rejoin after %v gap, triggering sync",
 			rn.Transport.ID().ShortString(), gap)
 		go rn.StartSync("rejoin-after-disconnect")
 	}

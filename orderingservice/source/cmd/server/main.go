@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"strconv"
 	"strings"
@@ -33,7 +32,7 @@ func main() {
 	}
 
 	ctx := context.Background()
-	node, err := raft.NewRaftNode(ctx, p2pPort)
+	node, err := raft.NewRaftNode(ctx, p2pPort, raft.DefaultConfig(), raft.NoopEmitter{}, nil)
 	if err != nil {
 		fmt.Printf("Error creating node: %v\n", err)
 		return
@@ -78,8 +77,8 @@ func main() {
 	}
 	defer rl.Close()
 
-	// Redirect tất cả log.Printf sang readline.Stdout để không chen vào input
-	log.SetOutput(rl.Stdout())
+	// Redirect node log output to readline.Stdout so logs don't interleave with input
+	node.SetLogOutput(rl.Stdout())
 
 	fmt.Fprintln(rl.Stdout(), "\n=== Commands ===")
 	fmt.Fprintln(rl.Stdout(), "  status              - Show node status (membership, raft log, ordering blocks)")

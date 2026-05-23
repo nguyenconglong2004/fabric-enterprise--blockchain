@@ -2,7 +2,6 @@ package raft
 
 import (
 	"encoding/json"
-	"log"
 	"time"
 
 	"github.com/libp2p/go-libp2p/core/network"
@@ -18,7 +17,7 @@ func (rn *RaftNode) handleSyncStatusRequest(msg types.Message) {
 	syncing := rn.syncing
 	rn.syncMu.Unlock()
 	if syncing {
-		log.Printf("[%s] sync: ignoring status request from %s — we are syncing",
+		rn.Logger.Printf("[%s] sync: ignoring status request from %s — we are syncing",
 			rn.Transport.ID().ShortString(), msg.SenderID)
 		return
 	}
@@ -52,7 +51,7 @@ func (rn *RaftNode) handleSyncStatusRequest(msg types.Message) {
 	}
 
 	if err := rn.Transport.SendMessage(senderID, respMsg); err != nil {
-		log.Printf("[%s] sync: failed to send status response to %s: %v",
+		rn.Logger.Printf("[%s] sync: failed to send status response to %s: %v",
 			rn.Transport.ID().ShortString(), senderID.ShortString(), err)
 	}
 }
@@ -67,7 +66,7 @@ func (rn *RaftNode) HandleSyncStream(s network.Stream) {
 	syncing := rn.syncing
 	rn.syncMu.Unlock()
 	if syncing {
-		log.Printf("[%s] sync: refusing sync stream — we are syncing", rn.Transport.ID().ShortString())
+		rn.Logger.Printf("[%s] sync: refusing sync stream — we are syncing", rn.Transport.ID().ShortString())
 		return
 	}
 
@@ -76,12 +75,12 @@ func (rn *RaftNode) HandleSyncStream(s network.Stream) {
 
 	var req types.SyncDataRequest
 	if err := decoder.Decode(&req); err != nil {
-		log.Printf("[%s] sync: failed to decode sync request: %v",
+		rn.Logger.Printf("[%s] sync: failed to decode sync request: %v",
 			rn.Transport.ID().ShortString(), err)
 		return
 	}
 
-	log.Printf("[%s] sync: serving request kind=%d range=[%d..%d]",
+	rn.Logger.Printf("[%s] sync: serving request kind=%d range=[%d..%d]",
 		rn.Transport.ID().ShortString(), req.Kind, req.FromIndex, req.ToIndex)
 
 	switch req.Kind {
@@ -117,7 +116,7 @@ func (rn *RaftNode) streamBlocks(encoder *json.Encoder, req types.SyncDataReques
 		return
 	}
 
-	chunkSize := int64(64)
+	chunkSize := int64(rn.Config.GetSyncShardSize())
 	for cursor := from; cursor <= to; cursor += chunkSize {
 		end := cursor + chunkSize - 1
 		if end > to {
@@ -131,7 +130,7 @@ func (rn *RaftNode) streamBlocks(encoder *json.Encoder, req types.SyncDataReques
 			EOF:    end == to,
 		}
 		if err := encoder.Encode(chunk); err != nil {
-			log.Printf("[%s] sync: failed to send block chunk: %v",
+			rn.Logger.Printf("[%s] sync: failed to send block chunk: %v",
 				rn.Transport.ID().ShortString(), err)
 			return
 		}
@@ -154,7 +153,7 @@ func (rn *RaftNode) streamLogEntries(encoder *json.Encoder, req types.SyncDataRe
 		return
 	}
 
-	chunkSize := 64
+	chunkSize := rn.Config.GetSyncShardSize()
 	for i := 0; i < len(collected); i += chunkSize {
 		end := i + chunkSize
 		if end > len(collected) {
@@ -167,7 +166,7 @@ func (rn *RaftNode) streamLogEntries(encoder *json.Encoder, req types.SyncDataRe
 			EOF:     end == len(collected),
 		}
 		if err := encoder.Encode(chunk); err != nil {
-			log.Printf("[%s] sync: failed to send log chunk: %v",
+			rn.Logger.Printf("[%s] sync: failed to send log chunk: %v",
 				rn.Transport.ID().ShortString(), err)
 			return
 		}
