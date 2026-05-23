@@ -158,6 +158,7 @@ func main() {
 	http.HandleFunc("/api/transactions", apiServer.HandleListCommittedTransactions)
 	http.HandleFunc("/api/state", apiServer.HandleGetState)
 	http.HandleFunc("/api/block", apiServer.HandleGetBlock)
+	http.HandleFunc("/api/metrics/e2e", apiServer.HandleE2EMetrics)
 	http.HandleFunc("/api/explorer/stream", apiServer.HandleExplorerStream)
 
 	port := ":8080"

@@ -280,7 +280,7 @@ MsgSyncStatusRequest / MsgSyncStatusResponse
 ## Lưu ý
 
 - **Priority-based succession**: Node join trước có priority thấp hơn (ưu tiên cao hơn) và được chọn làm leader khi leader hiện tại fail
-- **TxPool**: Transactions từ client được lưu với status `pending`; Leader tự động propose block mỗi 0.5 s với tối đa 20 tx/block
+- **TxPool**: Transactions từ client được lưu với status `pending`; Leader tự động propose block mỗi 0.5 s với tối đa 500 tx/block (`AutoProposeBlockSize`)
 - **Block proposal**: Chỉ Leader mới có thể propose block; cần majority ACKs từ followers để commit; auto-propose luôn chạy khi node lên leader, không cần thao tác CLI
 - **Deliver**: Committing peer kết nối qua protocol `/raft-order-service/deliver/1.0.0` để nhận blocks đã commit
 - **Endorsement**: Core Service gửi endorsed transactions qua protocol `/raft-order-service/endorsement/1.0.0`

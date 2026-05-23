@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"os"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -280,12 +282,24 @@ func (p *CommittingPeer) handleBlock(block types.Block) {
 }
 
 // saveBlockToDatabase persists the committed block and its transactions to PostgreSQL.
+// Full-flow timing (submit → SoT) uses ledger_committed_at on each ledger_transactions row.
 func (p *CommittingPeer) saveBlockToDatabase(block types.Block, hashHex string, blockNumber int64) {
-	blockID, err := p.db.SaveBlockToLedger(hashHex, blockNumber, block, len(block.Transactions))
+	blockLedgerAt := time.Now().UTC()
+	blockID, err := p.db.SaveBlockToLedger(
+		hashHex, blockNumber, block, len(block.Transactions), blockLedgerAt,
+	)
 	if err != nil {
 		log.Printf("[peer] failed to save block to database hash=%s: %v", hashHex, err)
 		return
 	}
+
+	var (
+		savedTxs      int
+		minSubmitMs   int64 = 0
+		maxLedgerAt         = blockLedgerAt
+		hasSubmit           bool
+		sumE2EMs      int64
+	)
 
 	// Save each transaction: full wire-format tx (vin, vout, hex payload, …) + payload_decoded when JSON.
 	for i, tx := range block.Transactions {
@@ -295,13 +309,68 @@ func (p *CommittingPeer) saveBlockToDatabase(block types.Block, hashHex string, 
 			continue
 		}
 
-		if err := p.db.SaveTransactionToLedger(blockID, tx.Txid, i, txData); err != nil {
+		txLedgerAt := time.Now().UTC()
+		if err := p.db.SaveTransactionToLedger(
+			blockID, tx.Txid, i, txData, tx.SubmittedAtMs, txLedgerAt,
+		); err != nil {
 			log.Printf("[peer] failed to save transaction to database txid=%s: %v", tx.Txid, err)
 			continue
 		}
+		savedTxs++
+
+		if tx.SubmittedAtMs > 0 {
+			if !hasSubmit || tx.SubmittedAtMs < minSubmitMs {
+				minSubmitMs = tx.SubmittedAtMs
+				hasSubmit = true
+			}
+			e2eMs := txLedgerAt.Sub(time.UnixMilli(tx.SubmittedAtMs)).Milliseconds()
+			if e2eMs < 0 {
+				e2eMs = 0
+			}
+			sumE2EMs += e2eMs
+			if txLedgerAt.After(maxLedgerAt) {
+				maxLedgerAt = txLedgerAt
+			}
+			if e2eLogTx() {
+				log.Printf(
+					"[e2e] ledger SoT txid=%s submitted_at_ms=%d ledger_committed_at=%s e2e_ms=%d (commit_peer.ledger_transactions)",
+					tx.Txid, tx.SubmittedAtMs, txLedgerAt.Format(time.RFC3339Nano), e2eMs,
+				)
+			}
+		} else if e2eLogTx() {
+			log.Printf("[e2e] ledger SoT txid=%s ledger_committed_at=%s (no submitted_at_ms — E2E N/A)",
+				tx.Txid, txLedgerAt.Format(time.RFC3339Nano))
+		}
 	}
 
-	log.Printf("[peer] successfully saved block hash=%s with %d transactions to database", hashHex, len(block.Transactions))
+	var blockE2EMs int64
+	if hasSubmit && savedTxs > 0 {
+		blockE2EMs = maxLedgerAt.Sub(time.UnixMilli(minSubmitMs)).Milliseconds()
+		if blockE2EMs < 0 {
+			blockE2EMs = 0
+		}
+	}
+	avgE2E := int64(0)
+	if savedTxs > 0 && hasSubmit {
+		avgE2E = sumE2EMs / int64(savedTxs)
+	}
+
+	log.Printf(
+		"[e2e] ledger SoT block closed block_number=%d block_hash=%s txs=%d block_e2e_ms=%d avg_tx_e2e_ms=%d block_ledger_at=%s",
+		blockNumber, hashHex[:min(16, len(hashHex))], savedTxs, blockE2EMs, avgE2E, blockLedgerAt.Format(time.RFC3339Nano),
+	)
+	log.Printf("[peer] successfully saved block hash=%s with %d transactions to database", hashHex, savedTxs)
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func e2eLogTx() bool {
+	return strings.TrimSpace(os.Getenv("E2E_LOG_TX")) == "1"
 }
 
 // ledgerTransactionRecord matches order/core JSON (hex payload, locktime, vin, vout, contract fields).

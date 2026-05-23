@@ -29,6 +29,8 @@ type Transaction struct {
 	ContractName string `json:"contract_name"`
 	FunctionName string `json:"function_name"`
 	Payload      []byte `json:"payload"`
+
+	SubmittedAtMs int64 `json:"submitted_at_ms,omitempty"`
 }
 
 // UnmarshalJSON decodes payload as hex (deliver stream from order service).
@@ -46,6 +48,7 @@ func (t *Transaction) UnmarshalJSON(data []byte) error {
 		ContractName   string             `json:"contract_name"`
 		FunctionName   string             `json:"function_name"`
 		Payload        string             `json:"payload"`
+		SubmittedAtMs  int64              `json:"submitted_at_ms"`
 	}
 	aux := &Alias{}
 	if err := json.Unmarshal(data, aux); err != nil {
@@ -62,6 +65,7 @@ func (t *Transaction) UnmarshalJSON(data []byte) error {
 	t.Vout = aux.Vout
 	t.ContractName = aux.ContractName
 	t.FunctionName = aux.FunctionName
+	t.SubmittedAtMs = aux.SubmittedAtMs
 	if aux.Payload != "" {
 		b, err := hex.DecodeString(aux.Payload)
 		if err != nil {
@@ -94,6 +98,7 @@ func (t Transaction) MarshalJSON() ([]byte, error) {
 		ContractName   string             `json:"contract_name"`
 		FunctionName   string             `json:"function_name"`
 		Payload        string             `json:"payload"`
+		SubmittedAtMs  int64              `json:"submitted_at_ms,omitempty"`
 	}
 	aux := Alias{
 		Txid:           t.Txid,
@@ -107,6 +112,7 @@ func (t Transaction) MarshalJSON() ([]byte, error) {
 		Vout:           t.Vout,
 		ContractName:   t.ContractName,
 		FunctionName:   t.FunctionName,
+		SubmittedAtMs:  t.SubmittedAtMs,
 	}
 	if len(t.Payload) > 0 {
 		aux.Payload = hex.EncodeToString(t.Payload)

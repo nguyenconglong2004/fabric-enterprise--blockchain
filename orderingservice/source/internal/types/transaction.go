@@ -32,6 +32,9 @@ type Transaction struct {
 	SenderPubKey string        `json:"sender_pubkey"` // Public key of the endorser
 	Signature    string        `json:"signature"`     // Signature from endorser
 	Endorsements []Endorsement `json:"endorsements"`  // Array of endorsements from peers
+
+	// SubmittedAtMs: client/Core submit time (UTC ms), preserved through ordering.
+	SubmittedAtMs int64 `json:"submitted_at_ms,omitempty"`
 }
 
 // UnmarshalJSON decodes payload as hex (from core node / explorer), not base64.
@@ -48,12 +51,14 @@ func (t *Transaction) UnmarshalJSON(data []byte) error {
 		ClientPubKey string        `json:"client_pubkey"`
 		SenderPubKey string        `json:"sender_pubkey"`
 		Signature    string        `json:"signature"`
-		Endorsements []Endorsement `json:"endorsements"`
+		Endorsements  []Endorsement `json:"endorsements"`
+		SubmittedAtMs int64         `json:"submitted_at_ms"`
 	}
 	aux := &Alias{}
 	if err := json.Unmarshal(data, aux); err != nil {
 		return err
 	}
+	t.SubmittedAtMs = aux.SubmittedAtMs
 	t.Version = aux.Version
 	t.Vin = aux.Vin
 	t.Vout = aux.Vout
@@ -103,10 +108,12 @@ func (t Transaction) MarshalJSON() ([]byte, error) {
 		ClientPubKey string        `json:"client_pubkey"`
 		SenderPubKey string        `json:"sender_pubkey"`
 		Signature    string        `json:"signature"`
-		Endorsements []Endorsement `json:"endorsements"`
+		Endorsements  []Endorsement `json:"endorsements"`
+		SubmittedAtMs int64         `json:"submitted_at_ms,omitempty"`
 	}
 	aux := Alias{
-		Version:      t.Version,
+		Version:       t.Version,
+		SubmittedAtMs: t.SubmittedAtMs,
 		Vin:          t.Vin,
 		Vout:         t.Vout,
 		LockTime:     t.LockTime,

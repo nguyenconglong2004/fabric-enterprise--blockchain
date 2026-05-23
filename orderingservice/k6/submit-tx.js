@@ -1,12 +1,22 @@
 /**
- * k6 — POST /api/tx/submit (Core :8080, cùng FE)
+ * k6 — POST /api/tx/submit (Core :8080)
  *
- * Chạy nhanh (mặc định ~50 req/s):
+ * Đo throughput thật (tx/s, block/s trên ledger): sau test chạy
+ *   curl "http://localhost:8080/api/metrics/e2e?window=120&tx_prefix=k6-"
+ * k6 chỉ tạo tải; RATE thấp sẽ GIỚI HẠN phía client — đừng dùng steady để tìm max hệ thống.
+ *
+ * Đẩy tối đa (mặc định) — mỗi VU submit liên tục, không cap req/s:
  *   k6 run submit-tx.js
- *   k6 run -e RATE=100 -e VUS=80 submit-tx.js
+ *   k6 run -e VUS=400 -e DURATION=90s submit-tx.js
  *
- * Burst (gom nhiều tx vào pool orderer trong 200ms):
- *   k6 run -e SCENARIO=burst submit-tx.js
+ * Open-loop — cố gắng bắn OPEN_RATE req/s (k6 tự tăng VU tới maxVUs):
+ *   k6 run -e SCENARIO=open -e OPEN_RATE=5000 submit-tx.js
+ *
+ * Ramp — tăng dần để tìm điểm bão hòa:
+ *   k6 run -e SCENARIO=ramp submit-tx.js
+ *
+ * Cố định tải (smoke / so sánh):
+ *   k6 run -e SCENARIO=steady -e RATE=50 -e VUS=80 submit-tx.js
  */
 
 import http from 'k6/http';
@@ -14,59 +24,116 @@ import { check } from 'k6';
 import { Counter, Trend } from 'k6/metrics';
 
 const BASE_URL = __ENV.BASE_URL || 'http://localhost:8080';
-const RATE = Number(__ENV.RATE || 50);
 const DURATION = __ENV.DURATION || '60s';
-const VUS = Number(__ENV.VUS || 50);
+const VUS = Number(__ENV.VUS || 300);
 const CONTRACT = __ENV.CONTRACT || 'example_asset';
-const SCENARIO = (__ENV.SCENARIO || 'steady').toLowerCase();
+const SCENARIO = (__ENV.SCENARIO || 'maxpush').toLowerCase();
+const REQ_TIMEOUT = __ENV.REQ_TIMEOUT || '60s';
+
+// steady / open
+const RATE = Number(__ENV.RATE || 100);
+const OPEN_RATE = Number(__ENV.OPEN_RATE || 5000);
+const RAMP_PEAK = Number(__ENV.RAMP_PEAK || 3000);
 
 const submitOk = new Counter('submit_ok');
 const submitFail = new Counter('submit_fail');
 const submitLatency = new Trend('submit_latency_ms', true);
 
-const scenarios =
-  SCENARIO === 'burst'
-    ? {
-        burst: {
-          executor: 'ramping-arrival-rate',
-          startRate: 10,
-          timeUnit: '1s',
-          preAllocatedVUs: Math.max(VUS, 80),
-          maxVUs: Math.max(VUS * 2, 150),
-          stages: [
-            { duration: '10s', target: 20 },
-            { duration: '20s', target: 20 },
-            { duration: '20s', target: 20 },
-            { duration: '10s', target: 20 },
-          ],
-        },
-      }
-    : {
+const maxVUsOpen = Math.max(Number(__ENV.MAX_VUS || 600), VUS * 2);
+
+function buildScenarios() {
+  switch (SCENARIO) {
+    case 'steady':
+      return {
         steady: {
           executor: 'constant-arrival-rate',
           rate: RATE,
           timeUnit: '1s',
           duration: DURATION,
-          preAllocatedVUs: VUS,
-          maxVUs: Math.max(VUS * 2, 100),
+          preAllocatedVUs: Math.min(VUS, RATE * 2),
+          maxVUs: Math.max(VUS * 2, RATE + 50),
         },
       };
 
+    case 'open':
+      // Open model: k6 cố giữ OPEN_RATE iter/s — phù hợp khi muốn “ép” hàng nghìn offer/s
+      return {
+        open: {
+          executor: 'constant-arrival-rate',
+          rate: OPEN_RATE,
+          timeUnit: '1s',
+          duration: DURATION,
+          preAllocatedVUs: Math.min(maxVUsOpen, 400),
+          maxVUs: maxVUsOpen,
+        },
+      };
+
+    case 'ramp':
+      return {
+        ramp: {
+          executor: 'ramping-arrival-rate',
+          startRate: 50,
+          timeUnit: '1s',
+          preAllocatedVUs: 100,
+          maxVUs: maxVUsOpen,
+          stages: [
+            { duration: '20s', target: 200 },
+            { duration: '20s', target: 500 },
+            { duration: '20s', target: 1000 },
+            { duration: '20s', target: RAMP_PEAK },
+            { duration: '30s', target: RAMP_PEAK },
+            { duration: '20s', target: 500 },
+            { duration: '10s', target: 100 },
+          ],
+        },
+      };
+
+    case 'burst':
+      // Giữ tên cũ — ramp ngắn (legacy)
+      return {
+        burst: {
+          executor: 'ramping-arrival-rate',
+          startRate: 100,
+          timeUnit: '1s',
+          preAllocatedVUs: Math.max(VUS, 150),
+          maxVUs: maxVUsOpen,
+          stages: [
+            { duration: '15s', target: 500 },
+            { duration: '30s', target: 1500 },
+            { duration: '30s', target: RAMP_PEAK },
+            { duration: '15s', target: 500 },
+          ],
+        },
+      };
+
+    case 'maxpush':
+    default:
+      // Closed loop: N VU submit liên tục — throughput ≈ f(latency), không bị cap bởi RATE
+      return {
+        maxpush: {
+          executor: 'constant-vus',
+          vus: VUS,
+          duration: DURATION,
+        },
+      };
+  }
+}
+
 export const options = {
-  scenarios,
+  scenarios: buildScenarios(),
   thresholds: {
-    http_req_failed: ['rate<0.25'],
     submit_ok: ['count>0'],
+    // Không siết fail/latency khi maxpush — hệ thống có thể nghẽn; xem /api/metrics/e2e
   },
 };
 
 function jsonToPayloadHex(obj) {
   const s = JSON.stringify(obj);
-  let hex = '';
+  const bytes = [];
   for (let i = 0; i < s.length; i++) {
-    hex += s.charCodeAt(i).toString(16).padStart(2, '0');
+    bytes.push(s.charCodeAt(i).toString(16).padStart(2, '0'));
   }
-  return hex;
+  return bytes.join('');
 }
 
 function buildTx(vu, iter) {
@@ -82,6 +149,7 @@ function buildTx(vu, iter) {
     vout: [],
     contract_name: CONTRACT,
     function_name: 'execute',
+    submitted_at_ms: Date.now(),
     payload: jsonToPayloadHex({
       id,
       color: 'blue',
@@ -99,6 +167,21 @@ function isSuccess(body) {
   }
 }
 
+function scenarioLabel() {
+  switch (SCENARIO) {
+    case 'steady':
+      return `steady cap ${RATE} req/s, VUS≤${Math.max(VUS * 2, RATE + 50)}, ${DURATION}`;
+    case 'open':
+      return `open-loop target ${OPEN_RATE} req/s, maxVUs=${maxVUsOpen}, ${DURATION}`;
+    case 'ramp':
+      return `ramp → peak ${RAMP_PEAK} req/s, ${DURATION} + stages`;
+    case 'burst':
+      return `burst ramp → ${RAMP_PEAK} req/s`;
+    default:
+      return `maxpush ${VUS} VUs × loop (no RATE cap), ${DURATION}`;
+  }
+}
+
 export function setup() {
   const res = http.get(`${BASE_URL}/api/contracts`, { timeout: '5s' });
   if (res.status !== 200) {
@@ -106,7 +189,11 @@ export function setup() {
       `Core API không phản hồi tại ${BASE_URL} (status ${res.status}).`,
     );
   }
-  console.log(`setup ok: ${BASE_URL} scenario=${SCENARIO}`);
+  console.log(`setup ok: ${BASE_URL}`);
+  console.log(`scenario: ${scenarioLabel()}`);
+  console.log(
+    'Sau test: curl -s "http://localhost:8080/api/metrics/e2e?window=120&tx_prefix=k6-"',
+  );
   return { baseUrl: BASE_URL };
 }
 
@@ -115,7 +202,7 @@ export default function () {
   const res = http.post(`${BASE_URL}/api/tx/submit`, JSON.stringify(tx), {
     headers: { 'Content-Type': 'application/json' },
     tags: { name: 'tx-submit' },
-    timeout: '60s',
+    timeout: REQ_TIMEOUT,
   });
 
   submitLatency.add(res.timings.duration);
@@ -131,7 +218,7 @@ export default function () {
     submitOk.add(1);
   } else {
     submitFail.add(1);
-    if (__ITER < 5) {
+    if (__ITER < 3) {
       console.warn(`fail vu=${__VU} status=${res.status} body=${res.body}`);
     }
   }
@@ -139,4 +226,7 @@ export default function () {
 
 export function teardown(data) {
   console.log(`done: ${data.baseUrl}`);
+  console.log(
+    'Ledger throughput (full flow): GET /api/metrics/e2e?window=<test_seconds>&tx_prefix=k6-',
+  );
 }

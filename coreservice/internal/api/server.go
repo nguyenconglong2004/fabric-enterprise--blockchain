@@ -12,10 +12,15 @@ import (
 
 	"coreservice/internal/core"
 	"coreservice/internal/discovery"
+	"coreservice/internal/e2e"
 	"coreservice/internal/network"
 	"coreservice/internal/storage"
 	"coreservice/internal/vm"
 )
+
+func apiVerbose() bool {
+	return vm.Verbose()
+}
 
 // APIServer bọc lấy WasmEngine để xử lý request
 type APIServer struct {
@@ -140,7 +145,15 @@ func (s *APIServer) HandleSubmitTx(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fmt.Printf("\n📥 [API] Nhận được giao dịch: %s gọi contract '%s'\n", tx.Txid, tx.ContractName)
+	if tx.SubmittedAtMs == 0 {
+		tx.SubmittedAtMs = time.Now().UnixMilli()
+	}
+	if e2e.LogEnabled() {
+		fmt.Printf("[e2e] core submit stamped txid=%s submitted_at_ms=%d (Core POST /api/tx/submit — start of full flow)\n",
+			tx.Txid, tx.SubmittedAtMs)
+	} else if apiVerbose() {
+		fmt.Printf("\n📥 [API] Nhận được giao dịch: %s gọi contract '%s'\n", tx.Txid, tx.ContractName)
+	}
 
 	// Execute contract
 	err = s.Engine.Execute(r.Context(), tx)
@@ -157,7 +170,9 @@ func (s *APIServer) HandleSubmitTx(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.signTxViaCommitPeer(&tx); err != nil {
-		fmt.Printf("❌ [API] Commit peer signing failed: %v\n", err)
+		if apiVerbose() {
+			fmt.Printf("❌ [API] Commit peer signing failed: %v\n", err)
+		}
 		w.WriteHeader(http.StatusBadGateway)
 		json.NewEncoder(w).Encode(map[string]string{
 			"status":  "error",
@@ -173,23 +188,18 @@ func (s *APIServer) HandleSubmitTx(w http.ResponseWriter, r *http.Request) {
 	if len(sigPreview) > 32 {
 		sigPreview = sigPreview[:32] + "..."
 	}
-	fmt.Printf("✍️  [API] Đã ký qua commit peer: %s (endorsements=%d)\n", sigPreview, len(tx.Endorsements))
-	if len(tx.SenderPubKey) > 16 {
-		fmt.Printf("📌 [API] Endorser pubkey (legacy / last): %s...\n", tx.SenderPubKey[:16])
+	if apiVerbose() {
+		fmt.Printf("✍️  [API] Đã ký qua commit peer: %s (endorsements=%d)\n", sigPreview, len(tx.Endorsements))
+		if len(tx.SenderPubKey) > 16 {
+			fmt.Printf("📌 [API] Endorser pubkey (legacy / last): %s...\n", tx.SenderPubKey[:16])
+		}
 	}
 
 	// Send endorsement to Order Service over libp2p (endorsement protocol).
 	if s.OrderDiscovery != nil && s.Transport != nil {
-		fmt.Printf("📤 [API] Gửi endorsement qua order discovery...\n")
-		if err := discovery.SendEndorsement(r.Context(), s.OrderDiscovery, s.Transport, tx); err != nil {
+		if err := discovery.SendEndorsement(r.Context(), s.OrderDiscovery, s.Transport, tx); err != nil && apiVerbose() {
 			fmt.Printf("⚠️  [API] Gửi endorsement thất bại: %v\n", err)
-		} else {
-			fmt.Printf("✅ [API] Đã gửi endorsement tới order service (libp2p)\n")
 		}
-	} else if s.OrderServicePeer != "" {
-		fmt.Printf("⚠️  [API] Order discovery chưa cấu hình — bỏ qua gửi endorsement\n")
-	} else {
-		fmt.Printf("📤 [API] Không có ORDER_SERVICE_PEER — bỏ qua gửi endorsement tới order service\n")
 	}
 
 	w.WriteHeader(http.StatusOK)
@@ -227,15 +237,18 @@ func (s *APIServer) signTxViaCommitPeer(tx *core.Transaction) error {
 			return fmt.Errorf("libp2p transport not available")
 		}
 
-		fmt.Printf("📞 [API] Trying commit peer %d/%d: %s\n", i+1, len(addrs), addr[:min(32, len(addr))]+"...")
+		if apiVerbose() {
+			fmt.Printf("📞 [API] Trying commit peer %d/%d: %s\n", i+1, len(addrs), addr[:min(32, len(addr))]+"...")
+		}
 		err := s.Transport.SignTransactionViaCommitPeer(addr, tx)
 		if err == nil {
-			fmt.Printf("✅ [API] Commit peer %d signed successfully\n", i+1)
 			return nil
 		}
 
 		lastErr = err
-		fmt.Printf("⚠️  [API] Commit peer %d failed: %v, trying next...\n", i+1, err)
+		if apiVerbose() {
+			fmt.Printf("⚠️  [API] Commit peer %d failed: %v, trying next...\n", i+1, err)
+		}
 	}
 
 	if lastErr != nil {
@@ -541,6 +554,54 @@ func (s *APIServer) HandleListCommittedTransactions(w http.ResponseWriter, r *ht
 		"status":       "success",
 		"transactions": txs,
 		"count":        len(txs),
+	})
+}
+
+// HandleE2EMetrics returns throughput and E2E latency from ledger DB (submit → ledger_committed_at).
+// GET /api/metrics/e2e?window=60&tx_prefix=k6-
+func (s *APIServer) HandleE2EMetrics(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Only GET supported", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if s.DB == nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		json.NewEncoder(w).Encode(map[string]string{
+			"status": "error",
+			"error":  "PostgreSQL not connected",
+		})
+		return
+	}
+
+	windowSec := 60
+	if raw := r.URL.Query().Get("window"); raw != "" {
+		var parsed int
+		if _, err := fmt.Sscanf(raw, "%d", &parsed); err == nil && parsed > 0 {
+			windowSec = parsed
+		}
+	}
+	txPrefix := r.URL.Query().Get("tx_prefix")
+	since := time.Now().Add(-time.Duration(windowSec) * time.Second)
+
+	metrics, err := s.DB.GetE2EMetrics(since, txPrefix)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{
+			"status": "error",
+			"error":  err.Error(),
+		})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":  "success",
+		"metrics": metrics,
+		"hint":    "tx_e2e_ms = ledger_committed_at - submitted_at; run migrations/add_e2e_timestamps.sql on existing DB",
 	})
 }
 

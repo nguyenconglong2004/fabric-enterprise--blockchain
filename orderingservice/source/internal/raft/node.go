@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	AutoProposeBlockSize = 20                       // max tx per auto-proposed block
+	AutoProposeBlockSize = 500                     // max tx per auto-proposed block
 	AutoProposeInterval  = 500 * time.Millisecond   // tick interval for auto-propose loop
 )
 
