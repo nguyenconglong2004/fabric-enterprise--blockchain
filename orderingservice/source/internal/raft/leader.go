@@ -205,11 +205,18 @@ func (rn *RaftNode) evaluateAndAckLeaderClaim(claimerID peer.ID, data types.IAmN
 		// treat it as dead locally so hp recomputes correctly. Without this, a
 		// follower whose own timeout hasn't fired yet keeps the old leader as hp
 		// and votes NO on a valid claim from the next-priority node.
+		//
+		// [TC04 guard] Skip if we ARE the current leader: a Leader never receives
+		// its own heartbeat, so rn.lastHeartbeat is permanently stale on it. Without
+		// this guard, an old leader receiving a claim would mark itself dead, recompute
+		// hp = claimer, vote YES, but stay in Leader state — then keep emitting
+		// heartbeats at the new term and dragging the new leader back to Follower.
 		rn.mu.RLock()
 		curLeader := rn.currentLeaderID
 		curLastHB := rn.lastHeartbeat
 		rn.mu.RUnlock()
-		if curLeader != "" && time.Since(curLastHB) > rn.Config.GetHeartbeatTimeout() {
+		if curLeader != "" && curLeader != rn.Transport.ID() &&
+			time.Since(curLastHB) > rn.Config.GetHeartbeatTimeout() {
 			rn.Membership.MarkDead(curLeader)
 			rn.Logger.Printf("[%s] Current leader %s timed out during claim evaluation, marking dead",
 				rn.Transport.ID().ShortString(), curLeader.ShortString())
