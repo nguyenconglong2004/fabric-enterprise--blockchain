@@ -110,7 +110,7 @@ Khi node hiện tại CHÍNH LÀ leader bị challenge (như f0 trong TC04):
 - `rn.lastHeartbeat` chỉ update khi **nhận** heartbeat → Leader không bao giờ nhận → `lastHeartbeat` permanently stale.
 - Điều kiện `time.Since(curLastHB) > HBT` luôn TRUE trên Leader.
 
-Hệ quả: **leader cũ tự mark mình dead → recompute hp = claimer → vote YES**. Tệ hơn, nhánh accept không transition state ([leader.go:226-230](../../source/internal/raft/leader.go#L226-L230)) — leader cũ vẫn ở state `Leader`, đồng thời cập nhật `currentTerm = data.NewTerm`. Sau khi `delay` hết, leader cũ tiếp tục gửi heartbeat **ở term mới của leader mới** → trùng term → tại [heartbeat.go:252-258](../../source/internal/raft/heartbeat.go#L252-L258) new leader nhìn thấy sender khác cùng term → tự step down.
+Hệ quả: **leader cũ tự mark mình dead → recompute hp = claimer → vote YES**. Tệ hơn, nhánh accept không transition state — leader cũ vẫn ở state `Leader`, đồng thời cập nhật `currentTerm = data.NewTerm`. Sau khi `delay` hết, leader cũ tiếp tục gửi heartbeat **ở term mới của leader mới** → trùng term → tại [heartbeat.go:252-258](../../source/internal/raft/heartbeat.go#L252-L258) new leader nhìn thấy sender khác cùng term → tự step down.
 
 ### Điều kiện trigger
 
@@ -122,22 +122,23 @@ Hệ quả: **leader cũ tự mark mình dead → recompute hp = claimer → vot
 
 ## 4. Fix
 
-Thêm guard ở [leader.go:212](../../source/internal/raft/leader.go#L212): chỉ mark current leader dead khi current leader **không phải chính mình**.
+> **Lưu ý:** Fix ban đầu (2026-05-24) dùng guard `curLeader != self` trong mark-dead block. Sau khi phát hiện TC05 (cùng ngày), fix được tổng quát hóa thành **early return** cho Leader/ClaimingLeader — bao quát cả TC04 (lower-priority claim) và TC05 (higher-priority claim). Guard cũ được revert.
+
+Thêm early return ngay đầu [`evaluateAndAckLeaderClaim`](../../source/internal/raft/leader.go#L189) — Leader/ClaimingLeader luôn vote NO mà không cần đánh giá:
 
 ```go
 rn.mu.RLock()
-curLeader := rn.currentLeaderID
-curLastHB := rn.lastHeartbeat
+state := rn.state
 rn.mu.RUnlock()
-if curLeader != "" && curLeader != rn.Transport.ID() &&
-    time.Since(curLastHB) > rn.Config.GetHeartbeatTimeout() {
-    rn.Membership.MarkDead(curLeader)
-    rn.Logger.Printf("[%s] Current leader %s timed out during claim evaluation, marking dead",
-        rn.Transport.ID().ShortString(), curLeader.ShortString())
+if state == types.Leader || state == types.ClaimingLeader {
+    rn.sendLeaderClaimAck(claimerID, data.NewTerm, false)
+    return
 }
 ```
 
-Không cần touch nhánh accept hay thêm transition state — flow step-down của old leader đã có sẵn qua `handleHeartbeat` và `handleHeartbeatResponse`.
+Step-down của old leader diễn ra thụ động sau khi new leader gửi heartbeat:
+- **Nhánh A:** New leader gửi first heartbeat (term T+1) → old leader (state=Leader, term T) nhận → `msg.Term ≥ currentTerm`, sender ≠ self → step down tại [heartbeat.go:252-258](../../source/internal/raft/heartbeat.go#L252-L258).
+- **Nhánh B (backup):** Delay hết, old leader gửi HB term T → new leader reply stale-term → old leader vào [handleHeartbeatResponse](../../source/internal/raft/heartbeat.go#L164) → step down.
 
 ---
 
@@ -148,13 +149,9 @@ Thời gian | f0 (Leader)                | f1 (prio 1)                  | f2 (pr
 ----------+----------------------------+------------------------------+---------------------
 t = 9s    | Nhận MsgIAmNewLeader      | (đang chờ ACK)               | (đang sleep evaluate)
           | evaluateAndAckLeaderClaim:|                              |
-          |  hp=f0(self)≠f1           |                              |
-          |  [GUARD] curLeader=SELF   |                              |
-          |   → SKIP MarkDead         |                              |
-          |  hp recompute = f0        |                              |
-          |  hp≠claimer → REJECT      |                              |
-          |  state vẫn Leader, term T |                              |
-          |  Vote NO                  |                              |
+          |  [EARLY RETURN]           |                              |
+          |  state=Leader → vote NO   |                              |
+          |  return                   |                              |
           |                            |                              | sau sleep:
           |                            |                              |  curLeader=f0
           |                            |                              |  lastHB>5s → MarkDead(f0)
@@ -167,9 +164,8 @@ t ≈ 9s    |                            | Nhận YES từ f2 (1+1=2)      |
           |                            |  go sendHeartbeat()          |
 ----------+----------------------------+------------------------------+---------------------
 t ≈ 9s    | Nhận HB từ f1 (term T+1):| Gửi HB(T+1) tới f0, f2      | Nhận HB từ f1 (term T+1):
-          |  msg.Term(T+1)<curTerm(T)|                              |  MarkAlive(f1)
-          |  = false → không stale   |                              |  currentLeaderID = f1
-          |  sender≠self, state=     |                              |
+          |  msg.Term(T+1)≥curTerm(T)|                              |  MarkAlive(f1)
+          |  sender≠self, state=     |                              |  currentLeaderID = f1
           |  Leader                   |                              |
           |  → STEP DOWN → Follower  |                              |
           |  currentLeaderID = f1    |                              |
@@ -200,7 +196,7 @@ Cluster phục hồi nhất quán. f0 nhường ngôi cho f1 dù vẫn còn số
 
 ### TC01 (1 follower isolate trong cluster 8 node)
 
-Trước fix TC04, f0 (Leader) trong TC01 cũng có rủi ro tự mark mình dead khi nhận claim từ f1 — sai với mô tả "f0 vote NO" trong [tc01-f1-timeout.md](tc01-f1-timeout.md#bước-4--tất-cả-node-từ-chối-claim). Fix TC04 đảm bảo f0 vote NO đúng như tài liệu mô tả: guard chặn self-mark-dead → hp vẫn = f0 → REJECT.
+Trước fix TC04/TC05, f0 (Leader) trong TC01 cũng có rủi ro tự mark mình dead khi nhận claim từ f1. Fix TC04/TC05 đảm bảo f0 vote NO ngay lập tức qua early return — đúng với mô tả "f0 vote NO" trong [tc01-f1-timeout.md](tc01-f1-timeout.md#bước-4--tất-cả-node-từ-chối-claim).
 
 ### TC02 (follower priority thấp timeout)
 
@@ -208,7 +204,11 @@ f2 đi qua expected-leader path ([leader.go:170-183](../../source/internal/raft/
 
 ### TC03 (leader crash trong cluster 3 node)
 
-Leader f0 đã chết, không node nào ở trạng thái "Leader nhận claim" — guard không kích hoạt. f1 và f2 vẫn là follower → `currentLeaderID = f0 ≠ self` → guard không chặn → vẫn mark f0 dead đúng theo TC03 fix → claim của f1 vẫn thành công.
+Leader f0 đã chết, không node nào ở trạng thái Leader khi xử lý claim → early return không kích hoạt. f1, f2 là Follower → flow TC03 mark-dead chạy bình thường → claim của f1 vẫn thành công.
+
+### TC05 (leader bị claim từ node priority cao hơn)
+
+Early return cũng bảo vệ trường hợp claimer có priority **cao hơn** leader hiện tại — xem [tc05-leader-yields-to-higher-priority.md](tc05-leader-yields-to-higher-priority.md).
 
 ---
 
@@ -216,4 +216,5 @@ Leader f0 đã chết, không node nào ở trạng thái "Leader nhận claim" 
 
 | Ngày | Mô tả |
 |---|---|
-| 2026-05-24 | Phát hiện qua log `delay 7 1 2` trên cluster 3 node: f0 vote YES sai cho claim của f1 do tự mark mình dead, sau đó tiếp tục gửi heartbeat ở term mới → kéo f1 step down. Fix bằng cách thêm guard `curLeader != self` vào TC03 mark-dead block. |
+| 2026-05-24 | Phát hiện qua log `delay 7 1 2` trên cluster 3 node: f0 vote YES sai cho claim của f1 do tự mark mình dead, sau đó tiếp tục gửi heartbeat ở term mới → kéo f1 step down. |
+| 2026-05-24 | Fix generalized: thay guard `curLeader != self` bằng early return cho Leader/ClaimingLeader ở đầu `evaluateAndAckLeaderClaim` — bao quát cả trường hợp claimer priority cao hơn (TC05). |

@@ -187,6 +187,23 @@ func (rn *RaftNode) handleIAmNewLeader(msg types.Message) {
 
 // evaluateAndAckLeaderClaim evaluates the claim after waiting for current leader timeout if needed.
 func (rn *RaftNode) evaluateAndAckLeaderClaim(claimerID peer.ID, data types.IAmNewLeaderClaim) {
+	// [TC04+TC05] Leader/ClaimingLeader always rejects claims from other nodes.
+	// The claimer wins via majority of others; this node steps down passively
+	// when it receives the new leader's heartbeat (handleHeartbeat step-down branch)
+	// or a stale-term heartbeat response (handleHeartbeatResponse).
+	//
+	// Without this guard, accepting a claim would update currentTerm to NewTerm
+	// while keeping state == Leader — this node would then keep sending heartbeats
+	// at the new term, causing the new leader to step down via the same-term
+	// step-down branch in handleHeartbeat.
+	rn.mu.RLock()
+	state := rn.state
+	rn.mu.RUnlock()
+	if state == types.Leader || state == types.ClaimingLeader {
+		rn.sendLeaderClaimAck(claimerID, data.NewTerm, false)
+		return
+	}
+
 	hp := rn.Membership.GetHighestPriorityAliveNode()
 	rn.mu.RLock()
 	curTerm := rn.currentTerm
@@ -205,18 +222,12 @@ func (rn *RaftNode) evaluateAndAckLeaderClaim(claimerID peer.ID, data types.IAmN
 		// treat it as dead locally so hp recomputes correctly. Without this, a
 		// follower whose own timeout hasn't fired yet keeps the old leader as hp
 		// and votes NO on a valid claim from the next-priority node.
-		//
-		// [TC04 guard] Skip if we ARE the current leader: a Leader never receives
-		// its own heartbeat, so rn.lastHeartbeat is permanently stale on it. Without
-		// this guard, an old leader receiving a claim would mark itself dead, recompute
-		// hp = claimer, vote YES, but stay in Leader state — then keep emitting
-		// heartbeats at the new term and dragging the new leader back to Follower.
+		// (Leaders never reach here — the early return above handles them.)
 		rn.mu.RLock()
 		curLeader := rn.currentLeaderID
 		curLastHB := rn.lastHeartbeat
 		rn.mu.RUnlock()
-		if curLeader != "" && curLeader != rn.Transport.ID() &&
-			time.Since(curLastHB) > rn.Config.GetHeartbeatTimeout() {
+		if curLeader != "" && time.Since(curLastHB) > rn.Config.GetHeartbeatTimeout() {
 			rn.Membership.MarkDead(curLeader)
 			rn.Logger.Printf("[%s] Current leader %s timed out during claim evaluation, marking dead",
 				rn.Transport.ID().ShortString(), curLeader.ShortString())

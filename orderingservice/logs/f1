@@ -1,28 +1,24 @@
-2026/05/24 15:21:41 [<peer.ID 12*FWX3HD>] Node created with ID: 12D3KooWFCzm3h7FLWEgwZagTLFh5a4w2fHLyMZUBRbiR5FWX3HD
-2026/05/24 15:21:41 [<peer.ID 12*FWX3HD>] Starting node
-2026/05/24 15:21:41 [<peer.ID 12*FWX3HD>] *** I AM NOW THE LEADER (term 0) ***
-2026/05/24 15:21:41 [<peer.ID 12*FWX3HD>] Auto-propose started (batch size: 500 tx/block)
-2026/05/24 15:21:41 [<peer.ID 12*FWX3HD>] Connected to peer: <peer.ID 12*YVPgT6>
-2026/05/24 15:21:41 [<peer.ID 12*FWX3HD>] Received membership update from 12D3KooWMVQ3JNXEqobNognfH6wvLZZ6PN6akkuEHgnaJWYVPgT6
-2026/05/24 15:21:41 [<peer.ID 12*FWX3HD>] Applying membership update from leader
-2026/05/24 15:21:41 [<peer.ID 12*FWX3HD>] Updating membership with 2 members
-2026/05/24 15:21:41 [<peer.ID 12*FWX3HD>] Updated member: <peer.ID 12*YVPgT6> (priority: 0, alive: true, addresses: 2)
-2026/05/24 15:21:41 [<peer.ID 12*FWX3HD>] Updated member: <peer.ID 12*FWX3HD> (priority: 1, alive: true, addresses: 1)
-2026/05/24 15:21:41 [<peer.ID 12*FWX3HD>] Membership update complete, total members: 2
-2026/05/24 15:21:41 [<peer.ID 12*FWX3HD>] Connected to peer <peer.ID 12*YVPgT6> for membership sync
-2026/05/24 15:21:41 [<peer.ID 12*FWX3HD>] Received membership ack from 12D3KooWMVQ3JNXEqobNognfH6wvLZZ6PN6akkuEHgnaJWYVPgT6
-2026/05/24 15:21:41 [<peer.ID 12*FWX3HD>] Updating membership with 2 members
-2026/05/24 15:21:41 [<peer.ID 12*FWX3HD>] Updated member: <peer.ID 12*YVPgT6> (priority: 0, alive: true, addresses: 2)
-2026/05/24 15:21:41 [<peer.ID 12*FWX3HD>] Updated member: <peer.ID 12*FWX3HD> (priority: 1, alive: true, addresses: 1)
-2026/05/24 15:21:41 [<peer.ID 12*FWX3HD>] Membership update complete, total members: 2
-2026/05/24 15:21:41 [<peer.ID 12*FWX3HD>] Stepping down, discovered higher priority leader: <peer.ID 12*YVPgT6>
-2026/05/24 15:21:41 [<peer.ID 12*FWX3HD>] Updated membership view, current leader: <peer.ID 12*YVPgT6>
-2026/05/24 15:21:41 [<peer.ID 12*FWX3HD>] sync: starting (reason=first-join, localCommit=0)
-2026/05/24 15:21:41 [<peer.ID 12*FWX3HD>] Connected to peer <peer.ID 12*YVPgT6> for membership sync
-2026/05/24 15:21:41 [<peer.ID 12*FWX3HD>] Auto-propose: stepped down from leader, stopping
-2026/05/24 15:21:41 [<peer.ID 12*FWX3HD>] Auto-propose goroutine exited
-2026/05/24 15:21:43 [<peer.ID 12*FWX3HD>] sync: target commitIndex=0, hash=, sources=1, localCommit=0
-2026/05/24 15:21:43 [<peer.ID 12*FWX3HD>] sync: already up-to-date with target, skip block fetch
-2026/05/24 15:21:43 [<peer.ID 12*FWX3HD>] sync: completed successfully
-2026/05/24 15:21:46 [<peer.ID 12*FWX3HD>] Received membership update from 12D3KooWGugAKm46vfmLEQeCb1AYzFcQd45j8EeSJV8FxLhjyftF
-2026/05/24 15:21:46 [<peer.ID 12*FWX3HD>] Not leader, ignoring join request
+2026/05/24 16:56:59 [<peer.ID 12*HA8eJC>] Heartbeat timeout! Last heartbeat: 5.6683154s ago
+2026/05/24 16:56:59 [<peer.ID 12*HA8eJC>] Marked old leader <peer.ID 12*Br1fE3> as dead (heartbeat timeout)
+2026/05/24 16:56:59 [<peer.ID 12*HA8eJC>] Current alive members after leader death:
+2026/05/24 16:56:59   - <peer.ID 12*HA8eJC> (priority: 1)
+2026/05/24 16:56:59   - <peer.ID 12*vbsMYR> (priority: 2)
+2026/05/24 16:56:59 [<peer.ID 12*HA8eJC>] I have highest priority (1), sending I AM NEW LEADER
+2026/05/24 16:56:59 [<peer.ID 12*HA8eJC>] Leader claim ack YES from 12D3KooWEg8PDP74r6ufPBTYoM7zX3iyZeafyMNC2ijy4evbsMYR (total YES: 2/3, need: 2)
+2026/05/24 16:56:59 [<peer.ID 12*HA8eJC>] *** I AM NOW THE LEADER (term 1) *** YES=2 >= majority=2
+2026/05/24 16:56:59 [<peer.ID 12*HA8eJC>] Auto-propose started (batch size: 500 tx/block)
+2026/05/24 16:57:00 [<peer.ID 12*HA8eJC>] Received stale heartbeat from 12D3KooWScL7E9yLUGR4W5Qdn7qNTVqt4e13UxzG2yFQE7Br1fE3 (term 0 < current 1), sending response
+2026/05/24 16:57:00 [<peer.ID 12*HA8eJC>] Received membership update from 12D3KooWScL7E9yLUGR4W5Qdn7qNTVqt4e13UxzG2yFQE7Br1fE3
+2026/05/24 16:57:00 [<peer.ID 12*HA8eJC>] Added/restored member <peer.ID 12*Br1fE3> with priority 0
+2026/05/24 16:57:11 [<peer.ID 12*HA8eJC>] Heartbeat delay set for priorities [0 2] (duration: 5s)
+2026/05/24 16:57:11 [<peer.ID 12*HA8eJC>] Skipping heartbeat to priority-2 node <peer.ID 12*vbsMYR> (delay active)
+2026/05/24 16:57:11 [<peer.ID 12*HA8eJC>] Skipping heartbeat to priority-0 node <peer.ID 12*Br1fE3> (delay active)
+2026/05/24 16:57:12 [<peer.ID 12*HA8eJC>] Skipping heartbeat to priority-0 node <peer.ID 12*Br1fE3> (delay active)
+2026/05/24 16:57:12 [<peer.ID 12*HA8eJC>] Skipping heartbeat to priority-2 node <peer.ID 12*vbsMYR> (delay active)
+2026/05/24 16:57:13 [<peer.ID 12*HA8eJC>] Skipping heartbeat to priority-0 node <peer.ID 12*Br1fE3> (delay active)
+2026/05/24 16:57:13 [<peer.ID 12*HA8eJC>] Skipping heartbeat to priority-2 node <peer.ID 12*vbsMYR> (delay active)
+2026/05/24 16:57:14 [<peer.ID 12*HA8eJC>] Skipping heartbeat to priority-0 node <peer.ID 12*Br1fE3> (delay active)
+2026/05/24 16:57:14 [<peer.ID 12*HA8eJC>] Skipping heartbeat to priority-2 node <peer.ID 12*vbsMYR> (delay active)
+2026/05/24 16:57:15 [<peer.ID 12*HA8eJC>] Skipping heartbeat to priority-0 node <peer.ID 12*Br1fE3> (delay active)
+2026/05/24 16:57:15 [<peer.ID 12*HA8eJC>] Skipping heartbeat to priority-2 node <peer.ID 12*vbsMYR> (delay active)
+2026/05/24 16:57:15 [<peer.ID 12*HA8eJC>] Responded true to I AM NEW LEADER from <peer.ID 12*Br1fE3>
