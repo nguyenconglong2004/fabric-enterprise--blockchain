@@ -1,6 +1,9 @@
 import { useState } from 'react'
 import { useClusterStore } from '../store/cluster'
 import { NodeTerminal } from './NodeTerminal'
+import { NodeStatus } from './NodeStatus'
+import { NodeConnect } from './NodeConnect'
+import { NodeDelay } from './NodeDelay'
 import { ConfigPanel } from './ConfigPanel'
 import { api } from '../api/rest'
 
@@ -15,7 +18,7 @@ const COLLAPSED_W = 40
 export function Sidebar({ width = 320, collapsed = false, onToggleCollapse }: SidebarProps) {
   const selectedPort = useClusterStore(s => s.selectedPort)
   const node = useClusterStore(s => selectedPort ? s.nodes[selectedPort] : null)
-  const [tab, setTab] = useState<'terminal' | 'config'>('terminal')
+  const [tab, setTab] = useState<'logs' | 'status' | 'connect' | 'delay' | 'config'>('logs')
 
   if (collapsed) {
     return (
@@ -72,18 +75,21 @@ export function Sidebar({ width = 320, collapsed = false, onToggleCollapse }: Si
 
       {/* Tabs */}
       <div style={{ display: 'flex', borderBottom: '1px solid #1F2937' }}>
-        {(['terminal', 'config'] as const).map(t => (
+        {(['logs', 'status', 'connect', 'delay', 'config'] as const).map(t => (
           <button key={t} onClick={() => setTab(t)} style={{
-            flex: 1, padding: '8px 0', background: tab === t ? '#1F2937' : 'transparent',
+            flex: 1, padding: '7px 0', background: tab === t ? '#1F2937' : 'transparent',
             color: tab === t ? '#F3F4F6' : '#6B7280', border: 'none', cursor: 'pointer',
-            fontSize: 12, textTransform: 'capitalize',
+            fontSize: 11, textTransform: 'capitalize',
           }}>{t}</button>
         ))}
       </div>
 
       <div style={{ padding: 12, overflow: 'auto', flex: 1 }}>
-        {tab === 'terminal' && <NodeTerminal key={node.port} port={node.port} />}
-        {tab === 'config' && <ConfigPanel key={node.port} port={node.port} />}
+        {tab === 'logs'    && <NodeTerminal key={node.port} port={node.port} />}
+        {tab === 'status'  && <NodeStatus   key={node.port} port={node.port} />}
+        {tab === 'connect' && <NodeConnect  key={node.port} port={node.port} />}
+        {tab === 'delay'   && <NodeDelay    key={node.port} port={node.port} />}
+        {tab === 'config'  && <ConfigPanel  key={node.port} port={node.port} />}
       </div>
     </aside>
   )
