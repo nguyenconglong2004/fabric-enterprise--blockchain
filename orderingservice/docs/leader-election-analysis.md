@@ -12,25 +12,39 @@ Hệ thống sử dụng **Raft biến thể dựa trên Priority** thay vì Raf
 ### 1.1 Các trạng thái node
 
 ```
-Follower  ←──────────────────────────────────────────┐
-    │                                                  │
-    │ Heartbeat timeout (5s)                           │
-    ▼                                                  │
-selectNewLeader()                                      │
-    │                                                  │
-    ├─── [Tôi là node priority cao nhất?]              │
-    │         YES                                       │
-    │         ▼                                         │
-    │    ClaimingLeader                                 │
-    │    (gửi MsgIAmNewLeader, chờ majority ACK)        │
-    │         │                                         │
-    │    [YES ≥ majority?]                              │
-    │         │YES                      NO─────────────┤
-    │         ▼                                         │
-    │       Leader ─────── step down ──────────────────┘
+[Start()]
+    │
+    ├─ BootstrapAsLeader() ──────────────────────────────┐
+    │   (gọi khi đây là node đầu tiên của cluster)       │
+    │                                                     ▼
+    ├─ JoinCluster(addr)                              Leader ──────── step down ──────┐
+    │   (gọi khi cluster đã tồn tại)                      │                           │
+    │   → query MsgMembershipRequest                      │ Gửi heartbeat              │
+    │   → discover leader                                 │ Gửi block proposal         │
+    │   → requestMembershipJoin(leaderID)                 │                           │
+    │                                                     │                           │
+    ▼                                                     │                           │
+Follower  ←───────────────────────────────────────────────┘                           │
+    │                                                                                  │
+    │ Heartbeat timeout (5s)                                                           │
+    ▼                                                                                  │
+selectNewLeader()                                                                      │
+    │                                                                                  │
+    ├─── [Tôi là node priority cao nhất?]                                             │
+    │         YES                                                                       │
+    │         ▼                                                                         │
+    │    ClaimingLeader                                                                 │
+    │    (gửi MsgIAmNewLeader, chờ majority ACK)                                       │
+    │         │                                                                         │
+    │    [YES ≥ majority?]                                                              │
+    │         │YES                      NO───────────────────────────────────────────── ┘
+    │         ▼
+    │       Leader
     │
     └─── [NO] → đặt expectedLeaderID, chờ 15s
 ```
+
+> **Điểm mấu chốt:** `Start()` chỉ khởi động goroutines. Node ở trạng thái **Follower** sau khi Start() cho đến khi được gọi `BootstrapAsLeader()` (bootstrap lần đầu) hoặc nhận `MsgMembershipAck` từ leader (sau khi `JoinCluster()`).
 
 ### 1.2 Sơ đồ message trong một lần bầu chọn
 
@@ -80,6 +94,58 @@ majority := totalCount/2 + 1
 ```
 
 Quorum tính trên **tổng số member** (kể cả dead) để chống split-brain: nếu cluster bị chia làm hai nhóm bằng nhau (partition 2/2), không nhóm nào đủ majority → leader cũ được giữ nguyên.
+
+### 1.5 Startup flow — bootstrap vs join
+
+Có hai con đường khởi động rõ ràng, tách biệt hoàn toàn:
+
+#### Con đường 1: Node đầu tiên của cluster mới
+
+```
+node.Start()                     // chỉ khởi động goroutines, state = Follower
+node.BootstrapAsLeader()         // node.go: gọi becomeLeader() trực tiếp
+    → state = Leader
+    → Bắt đầu gửi heartbeat
+    → Bắt đầu auto-propose block
+```
+
+Caller (orchestrator `CreateNetwork`, CLI server khi user chọn "y") chịu trách nhiệm gọi `BootstrapAsLeader()`.
+
+#### Con đường 2: Node join vào cluster đã tồn tại
+
+```
+node.Start()                     // state = Follower
+node.JoinCluster(bootstrapAddr)  // node.go
+    │
+    ├─ Transport.Connect(bootstrapAddr)
+    ├─ Gửi MsgMembershipRequest → bootstrap peer
+    ├─ Chờ MsgMembershipResponse (1.5s timeout, tối đa 5 lần retry với 2s backoff)
+    │       response chứa: members[] + leader_id
+    ├─ Nếu leader_id rỗng (cluster đang bầu chọn) → retry
+    ├─ Nếu leader_id khác bootstrap peer → nạp leader addresses vào peerstore
+    └─ requestMembershipJoin(leaderID)
+            → Gửi MsgMembershipUpdate (MembershipProposal) đến leader thật
+```
+
+Leader nhận join request:
+```
+handleMembershipUpdate()
+    → AddMember(newNode), MarkAlive(newNode)
+    → broadcastMembershipView() tới tất cả
+    → Gửi MsgMembershipAck về newNode
+
+newNode nhận MsgMembershipAck:
+handleMembershipAck()
+    → updateMembershipFromData()
+    → currentLeaderID = leaderID
+    → state = Follower
+    → StartSync("first-join") nếu cần
+```
+
+**Lý do dùng MsgMembershipRequest thay vì gửi join request thẳng:**  
+Bootstrap peer có thể là Follower (không phải Leader). Follower sẽ drop join request im lặng (`handleMembershipUpdate` nhánh `if !IsLeader()`). Bằng cách query membership trước, node mới biết được leader thật và gửi thẳng tới leader — tránh join bị mất.
+
+Implementation: [node.go — JoinCluster()](../source/internal/raft/node.go), [membership.go — handleMembershipRequest()](../source/internal/raft/membership.go#L182)
 
 ---
 
@@ -381,7 +447,7 @@ Channel có capacity 100 nhưng vẫn có thể đầy nếu nhiều ACK đến 
 | Q2-fixed | Không mark dead leader sau sleep trong `evaluateAndAckLeaderClaim` | 🟡 Quan trọng | leader.go | ✅ Đã xử lý ([TC03](scenarios/tc03-leader-crash-small-cluster.md)) |
 | Q2 | Race condition sau `time.Sleep` trong `evaluateAndAckLeaderClaim` | 🟡 Quan trọng | leader.go | Chưa xử lý |
 | Q3 | `currentLeaderID` set sớm trước khi bầu chọn xong | 🟡 Quan trọng | leader.go, heartbeat.go | ✅ Đã xử lý ([TC02](scenarios/tc02-f2-timeout.md#7-lịch-sử-fix)) |
-| Q4 | Không có retry cho join request khi đang bầu chọn | 🟡 Quan trọng | membership.go | Chưa xử lý |
+| Q4 | Join request bị drop khi connect vào Follower (phantom leader) | 🟡 Quan trọng | node.go, membership.go | ✅ Đã xử lý ([TC05](scenarios/tc05-phantom-leader-on-join.md)) |
 | Q5 | Điều kiện step-down trong `handleMembershipAck` quá chặt | 🟡 Quan trọng | membership.go | Chưa xử lý |
 | N1 | Không xác thực chữ ký trên leadership claim | 🟢 Nhỏ | leader.go | Chưa xử lý |
 | N2 | `LeaderClaimAckChan` có thể drop ACK | 🟢 Nhỏ | leader.go, node.go | Chưa xử lý |

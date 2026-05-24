@@ -1,43 +1,6 @@
-=== Commands ===
-  status              - Show node status (membership, raft log, ordering blocks)
-  connect <addr>      - Connect to another node
-  delay <seconds> <p1> [p2]...  - Delay heartbeat to nodes with given priorities for X seconds (leader only)
-  quit                - Exit
-
-2026/05/24 12:35:51 [<peer.ID 12*39XTbR>] Received membership update from 12D3KooWFdRZ4iFV658FTfYgHnqhSU54EzyTnBWzh3R4zLqqArQF
-2026/05/24 12:35:51 [<peer.ID 12*39XTbR>] Added/restored member <peer.ID 12*qqArQF> with priority 1                       
-2026/05/24 12:36:19 [<peer.ID 12*39XTbR>] Received membership update from 12D3KooWKSqdkKdUyfwHMi8yE3Sv9JMVG4S7pviyzMeGJbEnqM1Z
-2026/05/24 12:36:19 [<peer.ID 12*39XTbR>] Added/restored member <peer.ID 12*EnqM1Z> with priority 2                       
-> delay 7 1 2                                                                                                             
-2026/05/24 12:36:38 [<peer.ID 12*39XTbR>] Heartbeat delay set for priorities [1 2] (duration: 7s)
-Next heartbeat to priority [1 2] will be delayed by 7s
-2026/05/24 12:36:38 [<peer.ID 12*39XTbR>] Skipping heartbeat to priority-2 node <peer.ID 12*EnqM1Z> (delay active)        
-2026/05/24 12:36:38 [<peer.ID 12*39XTbR>] Skipping heartbeat to priority-1 node <peer.ID 12*qqArQF> (delay active)        
-2026/05/24 12:36:39 [<peer.ID 12*39XTbR>] Skipping heartbeat to priority-1 node <peer.ID 12*qqArQF> (delay active)        
-2026/05/24 12:36:39 [<peer.ID 12*39XTbR>] Skipping heartbeat to priority-2 node <peer.ID 12*EnqM1Z> (delay active)        
-2026/05/24 12:36:40 [<peer.ID 12*39XTbR>] Skipping heartbeat to priority-1 node <peer.ID 12*qqArQF> (delay active)        
-2026/05/24 12:36:40 [<peer.ID 12*39XTbR>] Skipping heartbeat to priority-2 node <peer.ID 12*EnqM1Z> (delay active)        
-2026/05/24 12:36:41 [<peer.ID 12*39XTbR>] Skipping heartbeat to priority-1 node <peer.ID 12*qqArQF> (delay active)        
-2026/05/24 12:36:41 [<peer.ID 12*39XTbR>] Skipping heartbeat to priority-2 node <peer.ID 12*EnqM1Z> (delay active)        
-2026/05/24 12:36:42 [<peer.ID 12*39XTbR>] Skipping heartbeat to priority-1 node <peer.ID 12*qqArQF> (delay active)        
-2026/05/24 12:36:42 [<peer.ID 12*39XTbR>] Skipping heartbeat to priority-2 node <peer.ID 12*EnqM1Z> (delay active)        
-2026/05/24 12:36:42 [<peer.ID 12*39XTbR>] Current leader <peer.ID 12*39XTbR> timed out during claim evaluation, marking dead
-2026/05/24 12:36:42 [<peer.ID 12*39XTbR>] Responded true to I AM NEW LEADER from <peer.ID 12*qqArQF>                      
-2026/05/24 12:36:43 [<peer.ID 12*39XTbR>] Skipping heartbeat to priority-1 node <peer.ID 12*qqArQF> (delay active)        
-2026/05/24 12:36:43 [<peer.ID 12*39XTbR>] Skipping heartbeat to priority-2 node <peer.ID 12*EnqM1Z> (delay active)        
-2026/05/24 12:36:44 [<peer.ID 12*39XTbR>] Skipping heartbeat to priority-1 node <peer.ID 12*qqArQF> (delay active)        
-2026/05/24 12:36:44 [<peer.ID 12*39XTbR>] Skipping heartbeat to priority-2 node <peer.ID 12*EnqM1Z> (delay active)        
-> status                                                                                                                  
-                                                                                                                          
-=== Node Status ===                                                                                                       
-Node ID:    <peer.ID 12*39XTbR>                                                                                           
-State:      Leader                                                                                                        
-Term:       1                                                                                                             
-Leader:     <peer.ID 12*qqArQF>                                                                                           
-Address:    /ip4/10.40.104.121/tcp/600/p2p/12D3KooWF7paVWmAzrDhKvWpCZqAyXaVjrgdFi4HFzUnGd39XTbR                           
-Last hash:  (none)
-
-=== Membership ===
-Alive members: 2
-  - Priority 1: <peer.ID 12*qqArQF> (LEADER)
-  - Priority 2: <peer.ID 12*EnqM1Z>
+2026/05/24 15:21:38 [<peer.ID 12*YVPgT6>] Node created with ID: 12D3KooWMVQ3JNXEqobNognfH6wvLZZ6PN6akkuEHgnaJWYVPgT6
+2026/05/24 15:21:38 [<peer.ID 12*YVPgT6>] Starting node
+2026/05/24 15:21:38 [<peer.ID 12*YVPgT6>] *** I AM NOW THE LEADER (term 0) ***
+2026/05/24 15:21:38 [<peer.ID 12*YVPgT6>] Auto-propose started (batch size: 500 tx/block)
+2026/05/24 15:21:41 [<peer.ID 12*YVPgT6>] Received membership update from 12D3KooWFCzm3h7FLWEgwZagTLFh5a4w2fHLyMZUBRbiR5FWX3HD
+2026/05/24 15:21:41 [<peer.ID 12*YVPgT6>] Added/restored member <peer.ID 12*FWX3HD> with priority 1

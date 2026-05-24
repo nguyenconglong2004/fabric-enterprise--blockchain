@@ -45,7 +45,7 @@ func (m *NodeManager) PeerPort(id peer.ID) int {
 	return m.peerToPort[id]
 }
 
-// CreateNetwork creates the first (leader-candidate) node.
+// CreateNetwork creates the first node and bootstraps it as the cluster leader.
 func (m *NodeManager) CreateNetwork(port int, cfg *raft.Config) (*ManagedNode, error) {
 	m.mu.Lock()
 	if _, exists := m.nodes[port]; exists {
@@ -59,11 +59,14 @@ func (m *NodeManager) CreateNetwork(port int, cfg *raft.Config) (*ManagedNode, e
 		return nil, err
 	}
 
+	mn.Raft.BootstrapAsLeader()
+
 	m.bus.Publish(MakeEvent("node-added", buildNodeAddedPayload(mn)))
 	return mn, nil
 }
 
-// AddNode creates a follower node and connects it to the current leader.
+// AddNode creates a follower node and joins it to the existing cluster.
+// It discovers the current leader automatically via JoinCluster.
 func (m *NodeManager) AddNode(port int, cfg *raft.Config) (*ManagedNode, error) {
 	m.mu.Lock()
 	if _, exists := m.nodes[port]; exists {
@@ -77,12 +80,11 @@ func (m *NodeManager) AddNode(port int, cfg *raft.Config) (*ManagedNode, error) 
 		return nil, err
 	}
 
-	// Connect to any alive node to join the cluster
-	leaderAddr := m.findAnyNodeAddress()
-	if leaderAddr != "" {
+	bootstrapAddr := m.findAnyNodeAddress()
+	if bootstrapAddr != "" {
 		time.Sleep(300 * time.Millisecond) // let libp2p host come up
-		if err := mn.Raft.ConnectToPeer(leaderAddr); err != nil {
-			mn.Logger.Printf("[orchestrator] failed to connect to %s: %v", leaderAddr, err)
+		if err := mn.Raft.JoinCluster(bootstrapAddr); err != nil {
+			mn.Logger.Printf("[orchestrator] failed to join cluster via %s: %v", bootstrapAddr, err)
 		}
 	}
 

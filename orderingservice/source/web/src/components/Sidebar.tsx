@@ -82,8 +82,8 @@ export function Sidebar({ width = 320, collapsed = false, onToggleCollapse }: Si
       </div>
 
       <div style={{ padding: 12, overflow: 'auto', flex: 1 }}>
-        {tab === 'terminal' && <NodeTerminal port={node.port} />}
-        {tab === 'config' && <ConfigPanel port={node.port} />}
+        {tab === 'terminal' && <NodeTerminal key={node.port} port={node.port} />}
+        {tab === 'config' && <ConfigPanel key={node.port} port={node.port} />}
       </div>
     </aside>
   )

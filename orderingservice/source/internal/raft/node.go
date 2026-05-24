@@ -12,6 +12,7 @@ import (
 
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/libp2p/go-libp2p/core/peerstore"
 	"github.com/multiformats/go-multiaddr"
 
 	netpkg "raft-order-service/internal/network"
@@ -92,6 +93,9 @@ type RaftNode struct {
 	syncMu         sync.Mutex
 	syncing        bool
 	SyncStatusChan chan types.Message // buffered: chứa MsgSyncStatusResponse trong cửa sổ discovery
+
+	// JoinCluster: chứa MsgMembershipResponse khi đang query leader qua bootstrap peer.
+	MembershipResponseChan chan types.Message
 }
 
 // NewRaftNode creates a new Raft node.
@@ -131,9 +135,10 @@ func NewRaftNode(ctx context.Context, port int, config *Config, emitter EventEmi
 		LeaderClaimAckChan:   make(chan types.Message, 100),
 		BlockAckChan:         make(chan types.Message, 100),
 		blockCommittedNotify: make(chan struct{}, 1),
-		DeliverMgr:           NewDeliverManager(),
-		delayedPriorities:    make(map[int]bool),
-		SyncStatusChan:       make(chan types.Message, 100),
+		DeliverMgr:                NewDeliverManager(),
+		delayedPriorities:         make(map[int]bool),
+		SyncStatusChan:            make(chan types.Message, 100),
+		MembershipResponseChan:    make(chan types.Message, 8),
 	}
 
 	// Add self to membership
@@ -165,11 +170,6 @@ func (rn *RaftNode) Start() {
 
 	// Start heartbeat monitor
 	go rn.monitorHeartbeat()
-
-	// If this is the first node (only member), become leader
-	if len(rn.Membership.GetAliveMembers()) == 1 {
-		rn.becomeLeader()
-	}
 }
 
 // handleStream handles incoming streams
@@ -187,7 +187,129 @@ func (rn *RaftNode) handleStream(s network.Stream) {
 	rn.MessageChan <- msg
 }
 
-// ConnectToPeer connects to another peer
+// BootstrapAsLeader makes this node the leader of a brand-new single-node cluster.
+// Call this only when no other cluster exists (i.e., this is the very first node).
+func (rn *RaftNode) BootstrapAsLeader() {
+	rn.becomeLeader()
+}
+
+// JoinCluster connects to a bootstrap peer, discovers the current leader via
+// MsgMembershipRequest/Response, then sends a join request directly to the leader.
+// It retries up to 5 times with 2s backoff if the cluster has no leader yet (e.g.
+// during election). Returns an error if the cluster remains leaderless after retries.
+func (rn *RaftNode) JoinCluster(bootstrapAddr string) error {
+	bootstrapInfo, err := rn.Transport.Connect(bootstrapAddr)
+	if err != nil {
+		return fmt.Errorf("connect to bootstrap peer: %w", err)
+	}
+	rn.Logger.Printf("[%s] Connected to bootstrap peer: %s",
+		rn.Transport.ID().ShortString(), bootstrapInfo.ID.ShortString())
+
+	const maxRetries = 5
+	const retryInterval = 2 * time.Second
+	const responseTimeout = 1500 * time.Millisecond
+
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		if attempt > 0 {
+			rn.Logger.Printf("[%s] JoinCluster: no leader in response, retry %d/%d",
+				rn.Transport.ID().ShortString(), attempt, maxRetries-1)
+			time.Sleep(retryInterval)
+		}
+
+		// Drain stale responses from previous attempt.
+	drain:
+		for {
+			select {
+			case <-rn.MembershipResponseChan:
+			default:
+				break drain
+			}
+		}
+
+		queryMsg := types.Message{
+			Type:      types.MsgMembershipRequest,
+			Term:      rn.GetCurrentTerm(),
+			SenderID:  rn.Transport.ID().String(),
+			Timestamp: time.Now(),
+		}
+		if err := rn.Transport.SendMessage(bootstrapInfo.ID, queryMsg); err != nil {
+			rn.Logger.Printf("[%s] JoinCluster: failed to send membership query: %v",
+				rn.Transport.ID().ShortString(), err)
+			continue
+		}
+
+		var resp types.Message
+		select {
+		case resp = <-rn.MembershipResponseChan:
+		case <-time.After(responseTimeout):
+			rn.Logger.Printf("[%s] JoinCluster: timed out waiting for membership response",
+				rn.Transport.ID().ShortString())
+			continue
+		}
+
+		dataMap, ok := resp.Data.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		leaderIDStr, _ := dataMap["leader_id"].(string)
+		if leaderIDStr == "" {
+			// Cluster has no leader yet (e.g., during election).
+			continue
+		}
+
+		leaderID, err := peer.Decode(leaderIDStr)
+		if err != nil {
+			rn.Logger.Printf("[%s] JoinCluster: invalid leader_id %q: %v",
+				rn.Transport.ID().ShortString(), leaderIDStr, err)
+			continue
+		}
+
+		// If leader is a different peer, load its addresses into peerstore first.
+		if leaderID != bootstrapInfo.ID {
+			if members, ok := dataMap["members"].([]interface{}); ok {
+				rn.loadLeaderAddrs(leaderID, leaderIDStr, members)
+			}
+		}
+
+		rn.Logger.Printf("[%s] JoinCluster: sending join request to leader %s",
+			rn.Transport.ID().ShortString(), leaderID.ShortString())
+		rn.requestMembershipJoin(leaderID)
+		return nil
+	}
+
+	return fmt.Errorf("no leader available after %d retries", maxRetries)
+}
+
+// loadLeaderAddrs adds the leader's multiaddresses into the local peerstore so that
+// subsequent SendMessage calls can reach it without an explicit Connect.
+func (rn *RaftNode) loadLeaderAddrs(leaderID peer.ID, leaderIDStr string, members []interface{}) {
+	for _, m := range members {
+		memberMap, ok := m.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if pid, _ := memberMap["peer_id"].(string); pid != leaderIDStr {
+			continue
+		}
+		addrsRaw, _ := memberMap["addresses"].([]interface{})
+		for _, addrRaw := range addrsRaw {
+			addrStr, ok := addrRaw.(string)
+			if !ok {
+				continue
+			}
+			// Addresses in the snapshot may or may not already include the /p2p/ component.
+			addrInfo, err := peer.AddrInfoFromString(fmt.Sprintf("%s/p2p/%s", addrStr, leaderIDStr))
+			if err != nil {
+				continue
+			}
+			rn.Transport.Peerstore().AddAddrs(leaderID, addrInfo.Addrs, peerstore.PermanentAddrTTL)
+		}
+		break
+	}
+}
+
+// ConnectToPeer connects to another peer and sends a raw join request.
+// Prefer JoinCluster for initial cluster join; use this for runtime peer connections.
 func (rn *RaftNode) ConnectToPeer(peerAddr string) error {
 	addr, err := rn.Transport.Connect(peerAddr)
 	if err != nil {

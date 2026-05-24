@@ -42,6 +42,12 @@ func (rn *RaftNode) handleMessage(msg types.Message) {
 		rn.handleMembershipAck(msg)
 	case types.MsgMembershipRequest:
 		rn.handleMembershipRequest(msg)
+	case types.MsgMembershipResponse:
+		select {
+		case rn.MembershipResponseChan <- msg:
+		default:
+			rn.Logger.Printf("[%s] membership response channel full, dropping", rn.Transport.ID().ShortString())
+		}
 	case types.MsgTxRequest:
 		rn.HandleTxRequest(msg)
 	case types.MsgTxResponse:

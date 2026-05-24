@@ -50,14 +50,16 @@ func main() {
 	response, _ := reader.ReadString('\n')
 	response = strings.TrimSpace(strings.ToLower(response))
 
-	if response != "y" && response != "yes" {
+	if response == "y" || response == "yes" {
+		node.BootstrapAsLeader()
+	} else {
 		fmt.Print("Enter address of existing node to connect to: ")
 		peerAddr, _ := reader.ReadString('\n')
 		peerAddr = strings.TrimSpace(peerAddr)
 
 		if peerAddr != "" {
-			if err := node.ConnectToPeer(peerAddr); err != nil {
-				fmt.Printf("Error connecting to peer: %v\n", err)
+			if err := node.JoinCluster(peerAddr); err != nil {
+				fmt.Printf("Error joining cluster: %v\n", err)
 			} else {
 				time.Sleep(2 * time.Second)
 			}
@@ -151,10 +153,10 @@ func main() {
 				fmt.Fprintln(out, "Usage: connect <address>")
 				continue
 			}
-			if err := node.ConnectToPeer(parts[1]); err != nil {
-				fmt.Fprintf(out, "Error connecting: %v\n", err)
+			if err := node.JoinCluster(parts[1]); err != nil {
+				fmt.Fprintf(out, "Error joining cluster: %v\n", err)
 			} else {
-				fmt.Fprintln(out, "Connected successfully")
+				fmt.Fprintln(out, "Joined cluster successfully")
 			}
 
 		case "quit", "exit":
