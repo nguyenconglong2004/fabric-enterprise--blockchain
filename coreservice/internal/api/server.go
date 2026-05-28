@@ -2,17 +2,18 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
 	"coreservice/internal/core"
 	"coreservice/internal/discovery"
-	"coreservice/internal/e2e"
 	"coreservice/internal/network"
 	"coreservice/internal/storage"
 	"coreservice/internal/vm"
@@ -145,13 +146,7 @@ func (s *APIServer) HandleSubmitTx(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if tx.SubmittedAtMs == 0 {
-		tx.SubmittedAtMs = time.Now().UnixMilli()
-	}
-	if e2e.LogEnabled() {
-		fmt.Printf("[e2e] core submit stamped txid=%s submitted_at_ms=%d (Core POST /api/tx/submit — start of full flow)\n",
-			tx.Txid, tx.SubmittedAtMs)
-	} else if apiVerbose() {
+	if apiVerbose() {
 		fmt.Printf("\n📥 [API] Nhận được giao dịch: %s gọi contract '%s'\n", tx.Txid, tx.ContractName)
 	}
 
@@ -195,12 +190,7 @@ func (s *APIServer) HandleSubmitTx(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Send endorsement to Order Service over libp2p (endorsement protocol).
-	if s.OrderDiscovery != nil && s.Transport != nil {
-		if err := discovery.SendEndorsement(r.Context(), s.OrderDiscovery, s.Transport, tx); err != nil && apiVerbose() {
-			fmt.Printf("⚠️  [API] Gửi endorsement thất bại: %v\n", err)
-		}
-	}
+	s.sendEndorsementAsync(tx)
 
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]interface{}{
@@ -211,9 +201,27 @@ func (s *APIServer) HandleSubmitTx(w http.ResponseWriter, r *http.Request) {
 		"sender_pubkey":     tx.SenderPubKey,
 		"client_pubkey":     tx.ClientPubKey,
 		"signature":         sigPreview,
-		"endorsements":      tx.Endorsements,
 		"endorsement_count": len(tx.Endorsements),
 	})
+}
+
+func (s *APIServer) sendEndorsementAsync(tx core.Transaction) {
+	if s.OrderDiscovery == nil || s.Transport == nil {
+		return
+	}
+	leaderOnly := endorseLeaderOnly()
+	run := func() {
+		if err := discovery.SendEndorsement(
+			context.Background(), s.OrderDiscovery, s.Transport, tx, leaderOnly,
+		); err != nil && apiVerbose() {
+			fmt.Printf("⚠️  [API] async endorsement failed txid=%s: %v\n", tx.Txid, err)
+		}
+	}
+	if asyncEndorse() {
+		go run()
+		return
+	}
+	run()
 }
 
 func (s *APIServer) signTxViaCommitPeer(tx *core.Transaction) error {
@@ -557,9 +565,11 @@ func (s *APIServer) HandleListCommittedTransactions(w http.ResponseWriter, r *ht
 	})
 }
 
-// HandleE2EMetrics returns throughput and E2E latency from ledger DB (submit → ledger_committed_at).
-// GET /api/metrics/e2e?window=60&tx_prefix=k6-
-func (s *APIServer) HandleE2EMetrics(w http.ResponseWriter, r *http.Request) {
+// HandleThroughputMetrics returns tx/s from ledger commit times (Postgres mirror).
+// GET /api/metrics/throughput?window=1&tx_prefix=k6-              (mode=latest, default)
+// GET /api/metrics/throughput?mode=peak&lookback=60&window=1    (max tx/s bucket in lookback)
+// GET /api/metrics/throughput?mode=since&since=...
+func (s *APIServer) HandleThroughputMetrics(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Only GET supported", http.StatusMethodNotAllowed)
 		return
@@ -575,17 +585,53 @@ func (s *APIServer) HandleE2EMetrics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	windowSec := 60
+	txPrefix := r.URL.Query().Get("tx_prefix")
+	windowSec := 1
 	if raw := r.URL.Query().Get("window"); raw != "" {
 		var parsed int
 		if _, err := fmt.Sscanf(raw, "%d", &parsed); err == nil && parsed > 0 {
 			windowSec = parsed
 		}
 	}
-	txPrefix := r.URL.Query().Get("tx_prefix")
-	since := time.Now().Add(-time.Duration(windowSec) * time.Second)
 
-	metrics, err := s.DB.GetE2EMetrics(since, txPrefix)
+	mode := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("mode")))
+	var metrics *storage.ThroughputMetrics
+	var err error
+
+	switch {
+	case mode == "peak":
+		lookbackSec := 60
+		if raw := r.URL.Query().Get("lookback"); raw != "" {
+			var parsed int
+			if _, parseErr := fmt.Sscanf(raw, "%d", &parsed); parseErr == nil && parsed > 0 {
+				lookbackSec = parsed
+			}
+		}
+		metrics, err = s.DB.GetThroughputPeak(lookbackSec, windowSec, txPrefix)
+
+	case mode == "since" || r.URL.Query().Get("since") != "":
+		mode = "since"
+		since := time.Now().Add(-time.Duration(windowSec) * time.Second)
+		if raw := r.URL.Query().Get("since"); raw != "" {
+			if t, parseErr := time.Parse(time.RFC3339, raw); parseErr == nil {
+				since = t
+			} else if t, parseErr := time.Parse(time.RFC3339Nano, raw); parseErr == nil {
+				since = t
+			} else if ms, parseErr := strconv.ParseInt(raw, 10, 64); parseErr == nil && ms > 0 {
+				if ms > 1_000_000_000_000 {
+					since = time.UnixMilli(ms)
+				} else {
+					since = time.Unix(ms, 0)
+				}
+			}
+		}
+		metrics, err = s.DB.GetThroughputSince(since, txPrefix)
+
+	default:
+		mode = "latest"
+		metrics, err = s.DB.GetThroughputLatest(windowSec, txPrefix)
+	}
+
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
@@ -596,13 +642,29 @@ func (s *APIServer) HandleE2EMetrics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	resp := map[string]interface{}{
+		"status":           "success",
+		"mode":             mode,
+		"tx_prefix":        txPrefix,
+		"window_seconds":   metrics.WindowSeconds,
+		"tx_committed":     metrics.TxCommitted,
+		"blocks_committed": metrics.BlocksCommitted,
+		"tx_per_sec":       metrics.TxPerSec,
+		"blocks_per_sec":   metrics.BlocksPerSec,
+	}
+	if metrics.WindowStart != nil {
+		resp["window_start"] = metrics.WindowStart.UTC().Format(time.RFC3339Nano)
+	}
+	if metrics.WindowEnd != nil {
+		resp["window_end"] = metrics.WindowEnd.UTC().Format(time.RFC3339Nano)
+	}
+	if metrics.LookbackSeconds > 0 {
+		resp["lookback_seconds"] = metrics.LookbackSeconds
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"status":  "success",
-		"metrics": metrics,
-		"hint":    "tx_e2e_ms = ledger_committed_at - submitted_at; run migrations/add_e2e_timestamps.sql on existing DB",
-	})
+	json.NewEncoder(w).Encode(resp)
 }
 
 // HandleExplorerStream streams explorer updates via SSE.

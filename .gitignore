@@ -1,6 +1,17 @@
 data/
 worldstate/
 worldstate1/
+
+# Commit peer: local blockchain file + UTXO (runtime, do not commit)
+**/chain.block
+**/*.block
+commitingpeer/source/chain
+
+# Local DB dumps / Postgres data dir (ledger mirror lives in DB, not repo)
+*.dump
+*.sql.gz
+pgdata/
+postgres-data/
 *.exe
 *.exe~
 *.dll

@@ -16,11 +16,13 @@ type EndorsementSender interface {
 
 // SendEndorsement delivers tx to the Raft leader when known, then other alive orderers.
 // On total failure the cache is invalidated so the next call refetches membership.
+// Set leaderOnly true to skip follower dial (faster under load).
 func SendEndorsement(
 	ctx context.Context,
 	disc *Client,
 	sender EndorsementSender,
 	tx interface{},
+	leaderOnly bool,
 ) error {
 	if disc == nil {
 		return fmt.Errorf("discovery: nil client")
@@ -29,12 +31,10 @@ func SendEndorsement(
 		return fmt.Errorf("discovery: nil endorsement sender")
 	}
 
-	trySend := func(mv *network.MembershipView) error {
-		var tried []string
+	trySend := func(mv *network.MembershipView, leaderOnly bool) error {
 		var lastErr error
 
 		sendOne := func(addrStr string) error {
-			tried = append(tried, addrStr)
 			ai, err := peer.AddrInfoFromString(addrStr)
 			if err != nil {
 				lastErr = err
@@ -52,6 +52,12 @@ func SendEndorsement(
 				return nil
 			}
 		}
+		if leaderOnly {
+			if lastErr != nil {
+				return lastErr
+			}
+			return fmt.Errorf("discovery: leader did not accept endorsement")
+		}
 
 		addrs, err := PickAllAliveOrdererAddrs(mv)
 		if err != nil {
@@ -61,16 +67,6 @@ func SendEndorsement(
 			return err
 		}
 		for _, addrStr := range addrs {
-			already := false
-			for _, t := range tried {
-				if t == addrStr {
-					already = true
-					break
-				}
-			}
-			if already {
-				continue
-			}
 			if err := sendOne(addrStr); err == nil {
 				return nil
 			}
@@ -85,7 +81,7 @@ func SendEndorsement(
 	if err != nil {
 		return err
 	}
-	if err := trySend(mv); err == nil {
+	if err := trySend(mv, leaderOnly); err == nil {
 		return nil
 	}
 
@@ -94,5 +90,5 @@ func SendEndorsement(
 	if err != nil {
 		return err
 	}
-	return trySend(mv)
+	return trySend(mv, leaderOnly)
 }

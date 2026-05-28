@@ -68,8 +68,7 @@ CREATE TABLE IF NOT EXISTS commit_peer.ledger (
     block_number BIGINT NOT NULL,
     block_data JSONB NOT NULL,
     num_transactions INT,
-    committed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    ledger_committed_at TIMESTAMPTZ
+    committed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX idx_ledger_hash ON commit_peer.ledger(block_hash);
@@ -82,16 +81,12 @@ CREATE TABLE IF NOT EXISTS commit_peer.ledger_transactions (
     txid VARCHAR(255) NOT NULL,
     tx_index INT,
     tx_data JSONB NOT NULL,
-    submitted_at TIMESTAMPTZ,
-    ledger_committed_at TIMESTAMPTZ,
     FOREIGN KEY (block_id) REFERENCES commit_peer.ledger(id) ON DELETE CASCADE,
     UNIQUE(block_id, txid)
 );
 
 CREATE INDEX idx_ledger_tx_block ON commit_peer.ledger_transactions(block_id);
 CREATE INDEX idx_ledger_tx_txid ON commit_peer.ledger_transactions(txid);
-CREATE INDEX idx_ledger_tx_ledger_committed ON commit_peer.ledger_transactions(ledger_committed_at);
-CREATE INDEX idx_ledger_ledger_committed ON commit_peer.ledger(ledger_committed_at);
 
 -- UTXO world state for the commit peer is stored on disk (LevelDB), not in PostgreSQL.
 

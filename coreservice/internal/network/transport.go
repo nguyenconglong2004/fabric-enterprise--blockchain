@@ -244,6 +244,19 @@ func (t *Transport) SignTransactionViaCommitPeer(commitPeerMultiaddr string, tx 
 	return nil
 }
 
+// WarmCommitPeer dials the commit peer once so the first tx-sign stream avoids cold connect.
+func (t *Transport) WarmCommitPeer(commitPeerMultiaddr string) error {
+	commitPeerMultiaddr = strings.TrimSpace(commitPeerMultiaddr)
+	if commitPeerMultiaddr == "" {
+		return nil
+	}
+	addrInfo, err := peer.AddrInfoFromString(commitPeerMultiaddr)
+	if err != nil {
+		return fmt.Errorf("parse commit peer multiaddr: %w", err)
+	}
+	return t.Host.Connect(t.Ctx, *addrInfo)
+}
+
 // Close closes the transport
 func (t *Transport) Close() error {
 	return t.Host.Close()

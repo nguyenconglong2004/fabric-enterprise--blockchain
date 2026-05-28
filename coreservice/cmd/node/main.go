@@ -136,8 +136,22 @@ func main() {
 	}
 	if commitPeerP2P != "" {
 		fmt.Printf("✅ Đã cấu hình CommitPeerP2P: %s\n", commitPeerP2P)
+		firstCP := strings.TrimSpace(strings.Split(commitPeerP2P, ",")[0])
+		if err := transport.WarmCommitPeer(firstCP); err != nil {
+			fmt.Printf("⚠️  Warm commit peer dial: %v\n", err)
+		} else {
+			fmt.Println("✅ Commit peer P2P warmed (first tx-sign faster)")
+		}
 	} else {
 		fmt.Println("⚠️  Chưa cấu CommitPeerP2P — /api/tx/submit sẽ thất bại khi sign transaction.")
+	}
+
+	if orderDiscovery != nil {
+		if _, err := orderDiscovery.Refresh(ctx); err != nil {
+			fmt.Printf("⚠️  Order discovery initial refresh: %v\n", err)
+		} else {
+			fmt.Println("✅ Order discovery membership cached")
+		}
 	}
 
 	apiServer := &api.APIServer{
@@ -158,7 +172,7 @@ func main() {
 	http.HandleFunc("/api/transactions", apiServer.HandleListCommittedTransactions)
 	http.HandleFunc("/api/state", apiServer.HandleGetState)
 	http.HandleFunc("/api/block", apiServer.HandleGetBlock)
-	http.HandleFunc("/api/metrics/e2e", apiServer.HandleE2EMetrics)
+	http.HandleFunc("/api/metrics/throughput", apiServer.HandleThroughputMetrics)
 	http.HandleFunc("/api/explorer/stream", apiServer.HandleExplorerStream)
 
 	port := ":8080"
@@ -169,7 +183,9 @@ func main() {
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
 	server := &http.Server{
-		Addr: port,
+		Addr:              port,
+		ReadHeaderTimeout: 10 * time.Second,
+		WriteTimeout:      120 * time.Second,
 	}
 
 	go func() {

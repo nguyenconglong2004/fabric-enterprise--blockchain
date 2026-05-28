@@ -6,8 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"os"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -33,13 +31,15 @@ type Stats struct {
 // CommittingPeer wires together all subsystems:
 //
 //	Orderer  →  deliver.Client  →  blockChan
-//	blockChan  →  validation  →  BlockStorage (file) + WorldState (LevelDB) + PostgresDB (ledger + txs only)
+//	blockChan  →  validation  →  BlockStorage (file) + WorldState (LevelDB)
+//	Postgres mirror runs async (explorer); chain commit completes before PG write.
 type CommittingPeer struct {
 	deliverClient *deliver.Client
 	validator     *validation.Engine
 	blockStore    *storage.BlockStorage
 	worldState    *storage.WorldState
 	db            *storage.PostgresDB
+	ledgerMirror  chan ledgerMirrorJob
 
 	// blockChan is the internal pipeline channel between the deliver goroutine
 	// (producer) and the commit loop (consumer).
@@ -65,7 +65,7 @@ func New(
 	worldState *storage.WorldState,
 	db *storage.PostgresDB,
 ) *CommittingPeer {
-	return &CommittingPeer{
+	p := &CommittingPeer{
 		deliverClient: deliverClient,
 		validator:     validator,
 		blockStore:    blockStore,
@@ -73,6 +73,8 @@ func New(
 		db:            db,
 		blockChan:     make(chan types.Block, 64),
 	}
+	p.initLedgerMirror()
+	return p
 }
 
 // Start subscribes to the ordering service at ordererAddr, beginning from
@@ -94,6 +96,7 @@ func (p *CommittingPeer) Start(ctx context.Context, ordererAddr string, fromInde
 	p.mu.Unlock()
 
 	go p.commitLoop(ctx)
+	p.startLedgerMirror(ctx)
 
 	if p.OrderDiscovery != nil {
 		go p.deliverReconnectLoop(ctx, ordererAddr, fromIndex)
@@ -273,104 +276,32 @@ func (p *CommittingPeer) handleBlock(block types.Block) {
 	p.lastBlockTxs = len(block.Transactions)
 	p.mu.Unlock()
 
+	committedAt := time.Now().UTC()
 	log.Printf("[peer] committed block hash=%s txs=%d", hashHex, len(block.Transactions))
 
-	// Mirror block + txs to PostgreSQL (explorer); world state stays in LevelDB only.
-	if p.db != nil {
-		go p.saveBlockToDatabase(block, hashHex, blockNumber)
-	}
+	// Explorer mirror only — does not affect commit success.
+	p.enqueueLedgerMirror(block, hashHex, blockNumber, committedAt)
 }
 
-// saveBlockToDatabase persists the committed block and its transactions to PostgreSQL.
-// Full-flow timing (submit → SoT) uses ledger_committed_at on each ledger_transactions row.
-func (p *CommittingPeer) saveBlockToDatabase(block types.Block, hashHex string, blockNumber int64) {
-	blockLedgerAt := time.Now().UTC()
-	blockID, err := p.db.SaveBlockToLedger(
-		hashHex, blockNumber, block, len(block.Transactions), blockLedgerAt,
-	)
-	if err != nil {
-		log.Printf("[peer] failed to save block to database hash=%s: %v", hashHex, err)
-		return
-	}
-
-	var (
-		savedTxs      int
-		minSubmitMs   int64 = 0
-		maxLedgerAt         = blockLedgerAt
-		hasSubmit           bool
-		sumE2EMs      int64
-	)
-
-	// Save each transaction: full wire-format tx (vin, vout, hex payload, …) + payload_decoded when JSON.
+// saveBlockToDatabase persists block + txs in one DB transaction (batch insert).
+func (p *CommittingPeer) saveBlockToDatabase(block types.Block, hashHex string, blockNumber int64, committedAt time.Time) {
+	rows := make([]storage.LedgerTxRow, 0, len(block.Transactions))
 	for i, tx := range block.Transactions {
 		txData, err := ledgerTransactionRecord(tx)
 		if err != nil {
-			log.Printf("[peer] failed to encode transaction for ledger txid=%s: %v", tx.Txid, err)
+			log.Printf("[peer] encode tx %s: %v", tx.Txid, err)
 			continue
 		}
-
-		txLedgerAt := time.Now().UTC()
-		if err := p.db.SaveTransactionToLedger(
-			blockID, tx.Txid, i, txData, tx.SubmittedAtMs, txLedgerAt,
-		); err != nil {
-			log.Printf("[peer] failed to save transaction to database txid=%s: %v", tx.Txid, err)
+		raw, err := json.Marshal(txData)
+		if err != nil {
+			log.Printf("[peer] marshal tx %s: %v", tx.Txid, err)
 			continue
 		}
-		savedTxs++
-
-		if tx.SubmittedAtMs > 0 {
-			if !hasSubmit || tx.SubmittedAtMs < minSubmitMs {
-				minSubmitMs = tx.SubmittedAtMs
-				hasSubmit = true
-			}
-			e2eMs := txLedgerAt.Sub(time.UnixMilli(tx.SubmittedAtMs)).Milliseconds()
-			if e2eMs < 0 {
-				e2eMs = 0
-			}
-			sumE2EMs += e2eMs
-			if txLedgerAt.After(maxLedgerAt) {
-				maxLedgerAt = txLedgerAt
-			}
-			if e2eLogTx() {
-				log.Printf(
-					"[e2e] ledger SoT txid=%s submitted_at_ms=%d ledger_committed_at=%s e2e_ms=%d (commit_peer.ledger_transactions)",
-					tx.Txid, tx.SubmittedAtMs, txLedgerAt.Format(time.RFC3339Nano), e2eMs,
-				)
-			}
-		} else if e2eLogTx() {
-			log.Printf("[e2e] ledger SoT txid=%s ledger_committed_at=%s (no submitted_at_ms — E2E N/A)",
-				tx.Txid, txLedgerAt.Format(time.RFC3339Nano))
-		}
+		rows = append(rows, storage.LedgerTxRow{Txid: tx.Txid, TxIndex: i, TxData: raw})
 	}
-
-	var blockE2EMs int64
-	if hasSubmit && savedTxs > 0 {
-		blockE2EMs = maxLedgerAt.Sub(time.UnixMilli(minSubmitMs)).Milliseconds()
-		if blockE2EMs < 0 {
-			blockE2EMs = 0
-		}
+	if err := p.db.SaveBlockWithTransactions(hashHex, blockNumber, block, rows, committedAt); err != nil {
+		log.Printf("[peer] postgres mirror failed hash=%s: %v", hashHex, err)
 	}
-	avgE2E := int64(0)
-	if savedTxs > 0 && hasSubmit {
-		avgE2E = sumE2EMs / int64(savedTxs)
-	}
-
-	log.Printf(
-		"[e2e] ledger SoT block closed block_number=%d block_hash=%s txs=%d block_e2e_ms=%d avg_tx_e2e_ms=%d block_ledger_at=%s",
-		blockNumber, hashHex[:min(16, len(hashHex))], savedTxs, blockE2EMs, avgE2E, blockLedgerAt.Format(time.RFC3339Nano),
-	)
-	log.Printf("[peer] successfully saved block hash=%s with %d transactions to database", hashHex, savedTxs)
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
-func e2eLogTx() bool {
-	return strings.TrimSpace(os.Getenv("E2E_LOG_TX")) == "1"
 }
 
 // ledgerTransactionRecord matches order/core JSON (hex payload, locktime, vin, vout, contract fields).

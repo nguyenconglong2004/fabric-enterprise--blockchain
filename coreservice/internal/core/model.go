@@ -55,9 +55,6 @@ type Transaction struct {
 	ContractName string `json:"contract_name"`
 	FunctionName string `json:"function_name"`
 	Payload      []byte `json:"-"` // Don't serialize as JSON
-
-	// SubmittedAtMs is set by Core on POST /api/tx/submit (UTC ms). Propagates to ledger for E2E metrics.
-	SubmittedAtMs int64 `json:"submitted_at_ms,omitempty"`
 }
 
 // Custom JSON unmarshaler to handle payload conversion from hex string
@@ -75,7 +72,6 @@ func (t *Transaction) UnmarshalJSON(data []byte) error {
 		ContractName   string             `json:"contract_name"`
 		FunctionName   string             `json:"function_name"`
 		Payload        string             `json:"payload"` // Hex string
-		SubmittedAtMs  int64              `json:"submitted_at_ms"`
 	}
 
 	aux := &Alias{}
@@ -94,7 +90,6 @@ func (t *Transaction) UnmarshalJSON(data []byte) error {
 	t.Vout = aux.Vout
 	t.ContractName = aux.ContractName
 	t.FunctionName = aux.FunctionName
-	t.SubmittedAtMs = aux.SubmittedAtMs
 
 	// Convert hex string to bytes
 	if aux.Payload != "" {
@@ -129,7 +124,6 @@ func (t Transaction) MarshalJSON() ([]byte, error) {
 		ContractName   string             `json:"contract_name"`
 		FunctionName   string             `json:"function_name"`
 		Payload        string             `json:"payload"`
-		SubmittedAtMs  int64              `json:"submitted_at_ms,omitempty"`
 	}
 
 	aux := Alias{
@@ -145,7 +139,6 @@ func (t Transaction) MarshalJSON() ([]byte, error) {
 		ContractName:   t.ContractName,
 		FunctionName:   t.FunctionName,
 		Payload:        hex.EncodeToString(t.Payload),
-		SubmittedAtMs:  t.SubmittedAtMs,
 	}
 	if len(aux.Endorsements) > 0 {
 		last := aux.Endorsements[len(aux.Endorsements)-1]

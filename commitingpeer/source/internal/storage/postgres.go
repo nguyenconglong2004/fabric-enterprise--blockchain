@@ -10,9 +10,15 @@ import (
 )
 
 // PostgresDB persists committed blocks and transactions for explorer / audit.
-// UTXO world state lives in LevelDB (WorldState), not here.
 type PostgresDB struct {
 	db *sql.DB
+}
+
+// LedgerTxRow is one transaction row for batch insert.
+type LedgerTxRow struct {
+	Txid    string
+	TxIndex int
+	TxData  []byte
 }
 
 // NewPostgresDB creates a new database connection
@@ -21,87 +27,75 @@ func NewPostgresDB(connStr string) (*PostgresDB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
-
 	if err := db.Ping(); err != nil {
 		return nil, fmt.Errorf("failed to ping database: %w", err)
 	}
-
+	db.SetMaxOpenConns(8)
+	db.SetMaxIdleConns(4)
 	return &PostgresDB{db: db}, nil
 }
 
-// SaveBlockToLedger saves a committed block to ledger (source of truth for block close time).
-func (p *PostgresDB) SaveBlockToLedger(
+// SaveBlockWithTransactions inserts block + all txs in one DB transaction (one round-trip commit).
+func (p *PostgresDB) SaveBlockWithTransactions(
 	blockHash string,
 	blockNumber int64,
 	blockData interface{},
-	numTransactions int,
-	ledgerCommittedAt time.Time,
-) (int64, error) {
+	txRows []LedgerTxRow,
+	committedAt time.Time,
+) error {
+	if committedAt.IsZero() {
+		committedAt = time.Now().UTC()
+	}
 	blockJSON, err := json.Marshal(blockData)
 	if err != nil {
-		return 0, fmt.Errorf("failed to marshal block data: %w", err)
+		return fmt.Errorf("marshal block: %w", err)
 	}
 
-	query := `
-		INSERT INTO commit_peer.ledger (block_hash, block_number, block_data, num_transactions, ledger_committed_at)
+	dbTx, err := p.db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer dbTx.Rollback()
+
+	var blockID int64
+	err = dbTx.QueryRow(`
+		INSERT INTO commit_peer.ledger (block_hash, block_number, block_data, num_transactions, committed_at)
 		VALUES ($1, $2, $3, $4, $5)
 		ON CONFLICT (block_hash) DO NOTHING
 		RETURNING id
-	`
-
-	var blockID int64
-	err = p.db.QueryRow(
-		query, blockHash, blockNumber, blockJSON, numTransactions, ledgerCommittedAt,
-	).Scan(&blockID)
+	`, blockHash, blockNumber, blockJSON, len(txRows), committedAt).Scan(&blockID)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			err = p.db.QueryRow(`SELECT id FROM commit_peer.ledger WHERE block_hash = $1`, blockHash).Scan(&blockID)
+			err = dbTx.QueryRow(`SELECT id FROM commit_peer.ledger WHERE block_hash = $1`, blockHash).Scan(&blockID)
 			if err != nil {
-				return 0, fmt.Errorf("failed to get existing block ID: %w", err)
+				return fmt.Errorf("get existing block id: %w", err)
 			}
 		} else {
-			return 0, fmt.Errorf("failed to save block: %w", err)
+			return fmt.Errorf("insert block: %w", err)
 		}
 	}
 
-	return blockID, nil
-}
-
-// SaveTransactionToLedger saves a transaction row; ledger_committed_at is the SoT end of full flow.
-func (p *PostgresDB) SaveTransactionToLedger(
-	blockID int64,
-	txid string,
-	txIndex int,
-	txData interface{},
-	submittedAtMs int64,
-	ledgerCommittedAt time.Time,
-) error {
-	txJSON, err := json.Marshal(txData)
-	if err != nil {
-		return fmt.Errorf("failed to marshal transaction data: %w", err)
+	if len(txRows) == 0 {
+		return dbTx.Commit()
 	}
 
-	var submittedAt interface{}
-	if submittedAtMs > 0 {
-		submittedAt = time.UnixMilli(submittedAtMs).UTC()
-	}
-
-	query := `
-		INSERT INTO commit_peer.ledger_transactions (
-			block_id, txid, tx_index, tx_data, submitted_at, ledger_committed_at
-		)
-		VALUES ($1, $2, $3, $4, $5, $6)
+	stmt, err := dbTx.Prepare(`
+		INSERT INTO commit_peer.ledger_transactions (block_id, txid, tx_index, tx_data)
+		VALUES ($1, $2, $3, $4)
 		ON CONFLICT (block_id, txid) DO NOTHING
-	`
-
-	_, err = p.db.Exec(
-		query, blockID, txid, txIndex, txJSON, submittedAt, ledgerCommittedAt,
-	)
+	`)
 	if err != nil {
-		return fmt.Errorf("failed to save transaction: %w", err)
+		return fmt.Errorf("prepare tx insert: %w", err)
+	}
+	defer stmt.Close()
+
+	for _, row := range txRows {
+		if _, err := stmt.Exec(blockID, row.Txid, row.TxIndex, row.TxData); err != nil {
+			return fmt.Errorf("insert tx %s: %w", row.Txid, err)
+		}
 	}
 
-	return nil
+	return dbTx.Commit()
 }
 
 // Close closes the database connection
