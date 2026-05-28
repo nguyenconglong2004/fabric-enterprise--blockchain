@@ -77,6 +77,7 @@ func main() {
 
 	engine := vm.NewWasmEngine(stateDB)
 	defer engine.Close()
+	fmt.Printf("⚡ WASM pool: %d sandbox/contract (WASM_POOL_SIZE, max 32)\n", vm.ModulePoolSize())
 
 	// Libp2p multiaddr của bất kỳ orderer nào, ví dụ: /ip4/127.0.0.1/tcp/6000/p2p/12D3Koo...
 	envPeer := strings.TrimSpace(os.Getenv("ORDER_SERVICE_PEER"))

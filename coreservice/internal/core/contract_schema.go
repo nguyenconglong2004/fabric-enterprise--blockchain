@@ -83,6 +83,18 @@ func GetContractSchema(contractName string) *ContractSchema {
 				},
 			},
 		},
+		"bench_ping": {
+			Name: "bench_ping",
+			Fields: []FieldSpec{
+				{
+					Name:        "v",
+					Label:       "Value",
+					Type:        "string",
+					Required:    true,
+					Placeholder: "ping-1",
+				},
+			},
+		},
 		"demo_inventory": {
 			Name: "demo_inventory",
 			Fields: []FieldSpec{
@@ -140,6 +152,10 @@ func ListAvailableContracts() []ContractSchema {
 		{
 			Name:   "demo_inventory",
 			Fields: GetContractSchema("demo_inventory").Fields,
+		},
+		{
+			Name:   "bench_ping",
+			Fields: GetContractSchema("bench_ping").Fields,
 		},
 	}
 }

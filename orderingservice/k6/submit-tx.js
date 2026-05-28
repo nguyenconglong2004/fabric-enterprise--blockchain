@@ -1,13 +1,10 @@
 /**
  * k6 — POST /api/tx/submit (Core :8080)
  *
- * Mặc định: open-loop đều — RATE req/s cố định (không phụ thuộc latency).
- *
  *   k6 run submit-tx.js
- *   k6 run -e RATE=1200 -e DURATION=10s submit-tx.js
- *   k6 run -e SCENARIO=maxpush -e VUS=200 -e DURATION=5s submit-tx.js
- *
- * Sau test: GET /api/metrics/throughput?window=1&tx_prefix=k6-
+ *   k6 run -e RATE=5000 -e DURATION=20s -e MAX_VUS=6000 submit-tx.js
+ *   k6 run -e SCENARIO=sweep submit-tx.js
+ *   k6 run -e CONTRACT=bench_ping -e SCENARIO=sweep submit-tx.js
  */
 
 import http from 'k6/http';
@@ -15,25 +12,36 @@ import { check, sleep } from 'k6';
 import { Counter, Trend } from 'k6/metrics';
 
 const BASE_URL = __ENV.BASE_URL || 'http://localhost:8080';
-const DURATION = __ENV.DURATION || '10s';
-const CONTRACT = __ENV.CONTRACT || 'example_asset';
+const DURATION = __ENV.DURATION || '25s';
+const CONTRACT = __ENV.CONTRACT || 'bench_ping';
 const TX_PREFIX = __ENV.TX_PREFIX || 'k6-';
 const REQ_TIMEOUT = __ENV.REQ_TIMEOUT || '30s';
-const LEDGER_WAIT = __ENV.LEDGER_WAIT || '8s';
+const LEDGER_WAIT = __ENV.LEDGER_WAIT || '15s';
 
-// steady (mặc định): số request mỗi giây (open-loop, đều theo thời gian)
-const RATE = Number(__ENV.RATE || 2000);
-// max VU k6 được phép mở để đạt RATE (nên ≥ RATE khi latency > ~1s)
-const MAX_VUS = Number(__ENV.MAX_VUS || Math.max(400, RATE + 100));
-const PRE_VUS = Number(__ENV.PRE_VUS || Math.min(MAX_VUS, Math.max(RATE, 50)));
+const RATE = Number(__ENV.RATE || 6000);
+const MAX_VUS = Number(__ENV.MAX_VUS || Math.max(800, RATE + 800));
+const PRE_VUS = Number(__ENV.PRE_VUS || Math.min(MAX_VUS, Math.max(RATE, 100)));
 
-// maxpush: N VU loop nhanh nhất có thể (burst, không đều)
-const VUS = Number(__ENV.VUS || 100);
+const VUS = Number(__ENV.VUS || 300);
 const SCENARIO = (__ENV.SCENARIO || 'steady').toLowerCase();
+
+// sweep: tăng dần để tìm điểm bão hòa (ledger peak có tăng không)
+const SWEEP_START = Number(__ENV.SWEEP_START || 4000);
+const SWEEP_PEAK = Number(__ENV.SWEEP_PEAK || 10000);
+const SWEEP_STEP = Number(__ENV.SWEEP_STEP || 1500);
+const SWEEP_STAGE_SEC = Number(__ENV.SWEEP_STAGE_SEC || 15);
 
 const submitOk = new Counter('submit_ok');
 const submitFail = new Counter('submit_fail');
 const submitLatency = new Trend('submit_latency_ms', true);
+
+function sweepStages() {
+  const stages = [];
+  for (let target = SWEEP_START; target <= SWEEP_PEAK; target += SWEEP_STEP) {
+    stages.push({ duration: `${SWEEP_STAGE_SEC}s`, target });
+  }
+  return stages;
+}
 
 function buildScenarios() {
   switch (SCENARIO) {
@@ -46,6 +54,19 @@ function buildScenarios() {
           duration: DURATION,
         },
       };
+
+    case 'sweep':
+      return {
+        sweep: {
+          executor: 'ramping-arrival-rate',
+          startRate: SWEEP_START,
+          timeUnit: '1s',
+          preAllocatedVUs: Math.min(800, SWEEP_START + 200),
+          maxVUs: MAX_VUS,
+          stages: sweepStages(),
+        },
+      };
+
     case 'steady':
     default:
       return {
@@ -77,6 +98,18 @@ function jsonToPayloadHex(obj) {
   return bytes.join('');
 }
 
+function buildPayload(vu, iter) {
+  const id = `${TX_PREFIX}${vu}-${iter}`;
+  if (CONTRACT === 'bench_ping') {
+    return { v: id };
+  }
+  return {
+    id: `${id}-${Date.now()}`,
+    color: 'blue',
+    action: 'create',
+  };
+}
+
 function buildTx(vu, iter) {
   const id = `${TX_PREFIX}${vu}-${iter}-${Date.now()}`;
   return {
@@ -90,11 +123,7 @@ function buildTx(vu, iter) {
     vout: [],
     contract_name: CONTRACT,
     function_name: 'execute',
-    payload: jsonToPayloadHex({
-      id,
-      color: 'blue',
-      action: 'create',
-    }),
+    payload: jsonToPayloadHex(buildPayload(vu, iter)),
   };
 }
 
@@ -109,7 +138,7 @@ function isSuccess(body) {
 
 function parseDurationSec(s) {
   const m = String(s).match(/^(\d+(?:\.\d+)?)(ms|s|m|h)?$/);
-  if (!m) return 10;
+  if (!m) return 20;
   const n = parseFloat(m[1]);
   switch (m[2] || 's') {
     case 'ms':
@@ -126,10 +155,37 @@ function parseDurationSec(s) {
 function scenarioLabel() {
   const sec = parseDurationSec(DURATION);
   if (SCENARIO === 'maxpush' || SCENARIO === 'burst') {
-    return `maxpush ${VUS} VUs × ${DURATION} (closed-loop, không đều)`;
+    return `maxpush ${VUS} VUs × ${DURATION}`;
   }
-  const approx = Math.round(RATE * sec);
-  return `steady ${RATE} req/s × ${DURATION} ≈ ${approx} tx (open-loop, đều)`;
+  if (SCENARIO === 'sweep') {
+    return `sweep ${SWEEP_START}→${SWEEP_PEAK} req/s (+${SWEEP_STEP}/${SWEEP_STAGE_SEC}s)`;
+  }
+  return `steady ${RATE} req/s × ${DURATION} ≈ ${Math.round(RATE * sec)} submit`;
+}
+
+function fetchMetrics(baseUrl, query) {
+  const res = http.get(`${baseUrl}/api/metrics/throughput?${query}`, { timeout: '15s' });
+  if (res.status !== 200) {
+    console.error(`metrics failed (${query}): ${res.status} ${res.body}`);
+    return null;
+  }
+  try {
+    const m = JSON.parse(res.body);
+    return m.status === 'success' ? m : null;
+  } catch {
+    return null;
+  }
+}
+
+function logMetrics(label, m) {
+  if (!m) return;
+  console.log(`--- ${label} ---`);
+  console.log(`tx_committed: ${m.tx_committed}`);
+  console.log(`tx_per_sec:     ${m.tx_per_sec}`);
+  console.log(`blocks:         ${m.blocks_committed} (${m.blocks_per_sec}/s)`);
+  if (m.window_start) {
+    console.log(`window:         ${m.window_seconds}s (${m.window_start} → ${m.window_end})`);
+  }
 }
 
 export function setup() {
@@ -138,14 +194,8 @@ export function setup() {
     throw new Error(`Core API không phản hồi tại ${BASE_URL} (status ${res.status})`);
   }
   console.log(`→ ${BASE_URL}`);
+  console.log(`contract: ${CONTRACT}`);
   console.log(`scenario: ${scenarioLabel()}`);
-  console.log(
-    'metrics: curl -s "' +
-      BASE_URL +
-      '/api/metrics/throughput?window=1&tx_prefix=' +
-      TX_PREFIX +
-      '"',
-  );
   return { baseUrl: BASE_URL };
 }
 
@@ -178,31 +228,16 @@ export function teardown(data) {
   }
 
   const prefix = encodeURIComponent(TX_PREFIX);
-  const url = `${data.baseUrl}/api/metrics/throughput?window=1&tx_prefix=${prefix}`;
-  const res = http.get(url, { timeout: '15s' });
+  const latest = fetchMetrics(data.baseUrl, `window=1&tx_prefix=${prefix}`);
+  const peak = fetchMetrics(
+    data.baseUrl,
+    `mode=peak&lookback=240&window=1&tx_prefix=${prefix}`,
+  );
 
-  if (res.status !== 200) {
-    console.error(`throughput API failed: ${res.status} ${res.body}`);
-    return;
+  logMetrics('ledger latest (1s @ newest commit)', latest);
+  logMetrics('ledger peak (best 1s in 180s)', peak);
+
+  if (peak && latest && peak.tx_per_sec <= latest.tx_per_sec * 1.05) {
+    console.log('gợi ý: peak ≈ latest — có thể đã chạm trần pipeline (~' + Math.round(peak.tx_per_sec) + ' tx/s)');
   }
-
-  let m;
-  try {
-    m = JSON.parse(res.body);
-  } catch {
-    console.error('throughput parse error:', res.body);
-    return;
-  }
-
-  if (m.status !== 'success') {
-    console.error('throughput:', res.body);
-    return;
-  }
-
-  console.log('--- ledger throughput (1s @ latest commit) ---');
-  console.log(`tx_committed: ${m.tx_committed}`);
-  console.log(`tx_per_sec:     ${m.tx_per_sec}`);
-  console.log(`blocks:         ${m.blocks_committed} (${m.blocks_per_sec}/s)`);
-  console.log(`window:         ${m.window_seconds}s (${m.window_start || '?'} → ${m.window_end || '?'})`);
-  console.log(`query:          ${url}`);
 }

@@ -14,11 +14,14 @@ Tổng tx (ước): **`RATE × thời gian`** với `steady` (vd. `2000 × 10s �
 ```bash
 cd orderingservice/k6
 
-# Đều ~2000 req/s trong 10s (~20k tx)
+# Mặc định: bench_ping, ~6000 req/s × 25s
 k6 run submit-tx.js
 
-# Tăng tải + thời gian
-k6 run -e RATE=1500 -e DURATION=30s -e MAX_VUS=800 submit-tx.js
+# Ép hơn nữa (sau khi restart orderer 100ms interval)
+k6 run -e RATE=8000 -e DURATION=30s -e MAX_VUS=9000 submit-tx.js
+
+# Sweep 4k → 10k (+1500 mỗi 15s)
+k6 run -e SCENARIO=sweep submit-tx.js
 
 # Burst tối đa (không đều — chỉ stress)
 k6 run -e SCENARIO=maxpush -e VUS=200 -e DURATION=5s submit-tx.js
@@ -29,12 +32,15 @@ k6 run -e SCENARIO=maxpush -e VUS=200 -e DURATION=5s submit-tx.js
 | Biến | Mặc định | Mô tả |
 |------|----------|--------|
 | `SCENARIO` | `steady` | `steady` hoặc `maxpush` |
-| `RATE` | `2000` | Target req/s (`steady`) |
-| `DURATION` | `10s` | Thời gian test |
-| `MAX_VUS` | `max(400, RATE+100)` | Trần VU để k6 đạt RATE |
+| `CONTRACT` | `bench_ping` | Contract (nhẹ hơn `example_asset`) |
+| `RATE` | `6000` | Target req/s (`steady`) |
+| `DURATION` | `25s` | Thời gian test |
+| `MAX_VUS` | `max(800, RATE+800)` | Trần VU để k6 đạt RATE |
+| `SCENARIO` | `steady` | `steady`, `sweep`, `maxpush` |
+| `SWEEP_*` | 2500→6000 / 15s | Chỉ `sweep` |
 | `PRE_VUS` | `min(MAX_VUS, max(RATE,50))` | VU khởi tạo sẵn |
 | `VUS` | `100` | Chỉ `maxpush` |
-| `LEDGER_WAIT` | `8s` | Chờ mirror PG trước metrics |
+| `LEDGER_WAIT` | `12s` | Chờ mirror PG trước metrics |
 | `TX_PREFIX` | `k6-` | Lọc ledger |
 
 Nếu k6 báo không đủ VU để giữ RATE → tăng `MAX_VUS` hoặc giảm `RATE`.
@@ -59,4 +65,18 @@ curl -s "http://localhost:8080/api/metrics/throughput?mode=peak&lookback=60&wind
 
 ## Chuẩn bị stack
 
-Postgres → orderer → commit peer → core `:8080` → `curl -X POST http://localhost:8080/api/deploy-example` nếu cần.
+Postgres → orderer → commit peer → core `:8080`.
+
+Deploy contract (multipart, dùng chung `POST /api/tx/deploy`):
+
+```bash
+# example_asset (shortcut)
+curl -X POST http://localhost:8080/api/deploy-example
+
+# bench_ping — sau khi build WASM
+curl -X POST http://localhost:8080/api/tx/deploy \
+  -F "contract_name=bench_ping" \
+  -F "file=@/path/to/coreservice/contracts/bench_ping/my_contract.wasm"
+```
+
+k6 benchmark: `k6 run -e CONTRACT=bench_ping submit-tx.js`

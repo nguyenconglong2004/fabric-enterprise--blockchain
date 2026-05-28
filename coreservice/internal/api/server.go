@@ -357,10 +357,8 @@ func (s *APIServer) HandleDeployExampleAsset(w http.ResponseWriter, r *http.Requ
 	}
 
 	contractName := "example_asset"
-	// Relative to coreservice/cmd/node when running `go run .` from there.
 	wasmPath := "../contracts/example_asset/my_contract.wasm"
 
-	// Read the pre-built WASM file
 	wasmBytes, err := os.ReadFile(wasmPath)
 	if err != nil {
 		fmt.Printf("❌ [API] Lỗi đọc file WASM: %v\n", err)
@@ -368,18 +366,14 @@ func (s *APIServer) HandleDeployExampleAsset(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	// Save to LevelDB
-	err = s.Engine.GetDB().SaveContract(contractName, wasmBytes)
-	if err != nil {
+	if err := s.Engine.GetDB().SaveContract(contractName, wasmBytes); err != nil {
 		http.Error(w, "Lỗi lưu vào LevelDB", http.StatusInternalServerError)
 		return
 	}
 
-	// Save to PostgreSQL if available
 	if s.DB != nil {
 		if err := s.DB.SaveContract(contractName, wasmBytes, nil); err != nil {
 			fmt.Printf("⚠️  [API] Lỗi lưu contract vào PostgreSQL: %v\n", err)
-			// Continue even if DB save fails
 		} else {
 			fmt.Printf("✅ [API] Contract saved to PostgreSQL\n")
 		}

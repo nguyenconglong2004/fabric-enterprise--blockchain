@@ -83,20 +83,23 @@ func NewWasmEngine(db *state.StateDB) *WasmEngine {
 	}
 }
 
-func modulePoolSize() int {
+// ModulePoolSize is the number of WASM sandboxes kept per contract (env WASM_POOL_SIZE, default 16, max 32).
+func ModulePoolSize() int {
 	raw := strings.TrimSpace(os.Getenv("WASM_POOL_SIZE"))
 	if raw == "" {
-		return 4
+		return 16
 	}
 	n, err := strconv.Atoi(raw)
 	if err != nil || n < 1 {
-		return 4
+		return 16
 	}
 	if n > 32 {
 		return 32
 	}
 	return n
 }
+
+func modulePoolSize() int { return ModulePoolSize() }
 
 func (e *WasmEngine) moduleConfig(instanceName string) wazero.ModuleConfig {
 	stdout, stderr := io.Discard, io.Discard

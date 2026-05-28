@@ -21,7 +21,7 @@ import (
 
 const (
 	AutoProposeBlockSize = 1000                    // max tx per auto-proposed block
-	AutoProposeInterval  = 200 * time.Millisecond   // tick interval for auto-propose loop
+	AutoProposeInterval  = 100 * time.Millisecond   // tick interval for auto-propose loop
 )
 
 // RaftNode represents a node in the Raft-based order service
