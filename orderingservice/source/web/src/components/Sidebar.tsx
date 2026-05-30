@@ -84,7 +84,13 @@ export function Sidebar({ width = 320, collapsed = false, onToggleCollapse }: Si
         ))}
       </div>
 
-      <div style={{ padding: 12, overflow: 'auto', flex: 1 }}>
+      <div style={{
+        padding: 12,
+        overflow: tab === 'logs' ? 'hidden' : 'auto',
+        flex: 1,
+        display: tab === 'logs' ? 'flex' : 'block',
+        flexDirection: 'column',
+      }}>
         {tab === 'logs'    && <NodeTerminal key={node.port} port={node.port} />}
         {tab === 'status'  && <NodeStatus   key={node.port} port={node.port} />}
         {tab === 'connect' && <NodeConnect  key={node.port} port={node.port} />}

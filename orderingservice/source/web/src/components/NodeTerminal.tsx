@@ -23,16 +23,33 @@ export function NodeTerminal({ port }: Props) {
       theme: { background: '#0F172A', foreground: '#E2E8F0', cursor: '#F59E0B' },
       fontSize: 12,
       fontFamily: 'monospace',
-      rows: 20,
     })
     const fit = new FitAddon()
     term.loadAddon(fit)
     term.open(containerRef.current)
-    fit.fit()
+
+    try {
+      fit.fit()
+    } catch (e) {
+      console.warn('Initial terminal fit failed:', e)
+    }
+
     termRef.current = term
     fitRef.current = fit
 
-    return () => term.dispose()
+    const resizeObserver = new ResizeObserver(() => {
+      try {
+        fit.fit()
+      } catch (e) {
+        // Ignore resizing errors
+      }
+    })
+    resizeObserver.observe(containerRef.current)
+
+    return () => {
+      resizeObserver.disconnect()
+      term.dispose()
+    }
   }, [])
 
   useEffect(() => {
@@ -45,6 +62,6 @@ export function NodeTerminal({ port }: Props) {
   }, [logs])
 
   return (
-    <div ref={containerRef} style={{ borderRadius: 4, overflow: 'hidden' }} />
+    <div ref={containerRef} style={{ borderRadius: 4, overflow: 'hidden', flex: 1, minHeight: 0 }} />
   )
 }
