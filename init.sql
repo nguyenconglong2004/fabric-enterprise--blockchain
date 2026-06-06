@@ -90,5 +90,14 @@ CREATE INDEX idx_ledger_tx_txid ON commit_peer.ledger_transactions(txid);
 
 -- UTXO world state for the commit peer is stored on disk (LevelDB), not in PostgreSQL.
 
+-- Core: submit timestamps for E2E / benchmark metrics (CORE_RECORD_SUBMIT=1)
+CREATE TABLE IF NOT EXISTS core_service.tx_submit_times (
+    txid VARCHAR(255) PRIMARY KEY,
+    submitted_at TIMESTAMPTZ NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_tx_submit_times_submitted_at
+    ON core_service.tx_submit_times (submitted_at DESC);
+
 -- Nếu DB đã tạo trước khi có cột payload_schema:
 -- ALTER TABLE core_service.smart_contracts ADD COLUMN IF NOT EXISTS payload_schema JSONB;

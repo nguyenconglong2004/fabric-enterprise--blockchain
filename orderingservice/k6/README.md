@@ -1,5 +1,7 @@
 # k6 — submit transaction
 
+Tài liệu đầy đủ: [docs/BENCH_PING_AND_K6.md](../../docs/BENCH_PING_AND_K6.md) (setup + lệnh k6), [docs/BENCHMARK_METRICS.md](../../docs/BENCHMARK_METRICS.md) (đọc metric API).
+
 ## Cách k6 đang push
 
 | `SCENARIO` | Executor | Hành vi |

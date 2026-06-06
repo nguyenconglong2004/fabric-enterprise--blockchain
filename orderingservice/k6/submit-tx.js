@@ -196,7 +196,7 @@ export function setup() {
   console.log(`→ ${BASE_URL}`);
   console.log(`contract: ${CONTRACT}`);
   console.log(`scenario: ${scenarioLabel()}`);
-  return { baseUrl: BASE_URL };
+  return { baseUrl: BASE_URL, loadStart: new Date().toISOString() };
 }
 
 export default function () {
@@ -220,14 +220,54 @@ export default function () {
   else submitFail.add(1);
 }
 
+function fetchBenchmark(baseUrl, since, until, prefix) {
+  const q = [
+    `since=${encodeURIComponent(since)}`,
+    `until=${encodeURIComponent(until)}`,
+    `tx_prefix=${prefix}`,
+  ].join('&');
+  const res = http.get(`${baseUrl}/api/metrics/benchmark?${q}`, { timeout: '15s' });
+  if (res.status !== 200) {
+    console.error(`benchmark failed: ${res.status} ${res.body}`);
+    return null;
+  }
+  try {
+    const m = JSON.parse(res.body);
+    return m.status === 'success' ? m : null;
+  } catch {
+    return null;
+  }
+}
+
+function logBenchmark(label, m, k6Stats) {
+  if (!m) return;
+  console.log(`--- ${label} ---`);
+  console.log(`window: ${m.window_seconds}s (${m.window_start} → ${m.window_end})`);
+  if (k6Stats) {
+    console.log(`k6 submit_ok: ${k6Stats.ok}  fail: ${k6Stats.fail}  fail%: ${k6Stats.failPct}`);
+    console.log(`k6 submit sustained: ${Math.round(k6Stats.sustained)}/s (HTTP accept)`);
+  }
+  console.log(`submit sustained: ${Math.round(m.submit_tx_per_sec_sustained)}/s  peak: ${Math.round(m.submit_tx_per_sec_peak)}/s  count: ${m.submit_count}`);
+  console.log(`commit sustained: ${Math.round(m.commit_tx_per_sec_sustained)}/s  peak: ${Math.round(m.commit_tx_per_sec_peak)}/s  count: ${m.commit_count}`);
+  console.log(`blocks: ${m.blocks_committed} (${Math.round(m.blocks_per_sec_sustained)}/s)  avg tx/block: ${Math.round(m.avg_tx_per_block || 0)}`);
+  console.log(`e2e completed: ${m.e2e_completed}  pending: ${m.e2e_pending}  e2e peak: ${Math.round(m.e2e_tx_per_sec_peak)}/s`);
+  console.log(`latency p50: ${Math.round(m.latency_ms_p50)} ms  p95: ${Math.round(m.latency_ms_p95)} ms  p99: ${Math.round(m.latency_ms_p99)} ms`);
+  console.log(`RFP hints: submit≥5k=${m.meets_submit_sustained_5000}  commit≥5k=${m.meets_commit_sustained_5000}  p95<1s=${m.meets_latency_p95_under_1s}`);
+}
+
 export function teardown(data) {
   const waitSec = parseDurationSec(LEDGER_WAIT);
+  const loadSec = parseDurationSec(DURATION);
+  const loadEnd = new Date(new Date(data.loadStart).getTime() + loadSec * 1000).toISOString();
+
   if (waitSec > 0) {
     console.log(`chờ ledger ${LEDGER_WAIT}...`);
     sleep(waitSec);
   }
 
   const prefix = encodeURIComponent(TX_PREFIX);
+  const untilNow = new Date().toISOString();
+
   const latest = fetchMetrics(data.baseUrl, `window=1&tx_prefix=${prefix}`);
   const peak = fetchMetrics(
     data.baseUrl,
@@ -235,7 +275,15 @@ export function teardown(data) {
   );
 
   logMetrics('ledger latest (1s @ newest commit)', latest);
-  logMetrics('ledger peak (best 1s in 180s)', peak);
+  logMetrics('ledger peak (best 1s in lookback)', peak);
+
+  // Load window: submit during k6 run
+  const benchLoad = fetchBenchmark(data.baseUrl, data.loadStart, loadEnd, prefix);
+  logBenchmark('benchmark (load window)', benchLoad, null);
+
+  // Extended window: include drain after load (E2E pending → 0)
+  const benchDrain = fetchBenchmark(data.baseUrl, data.loadStart, untilNow, prefix);
+  logBenchmark('benchmark (load + drain)', benchDrain, null);
 
   if (peak && latest && peak.tx_per_sec <= latest.tx_per_sec * 1.05) {
     console.log('gợi ý: peak ≈ latest — có thể đã chạm trần pipeline (~' + Math.round(peak.tx_per_sec) + ' tx/s)');

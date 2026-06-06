@@ -163,6 +163,8 @@ func main() {
 		DB:                   postgresDB,
 		CommitPeerMultiaddrs: commitPeerP2P,
 	}
+	apiServer.InitSubmitRecorder()
+	defer apiServer.CloseSubmitRecorder()
 
 	http.HandleFunc("/api/tx/deploy", apiServer.HandleDeployContract)
 	http.HandleFunc("/api/deploy-example", apiServer.HandleDeployExampleAsset)
@@ -174,10 +176,17 @@ func main() {
 	http.HandleFunc("/api/state", apiServer.HandleGetState)
 	http.HandleFunc("/api/block", apiServer.HandleGetBlock)
 	http.HandleFunc("/api/metrics/throughput", apiServer.HandleThroughputMetrics)
+	http.HandleFunc("/api/metrics/benchmark", apiServer.HandleBenchmarkMetrics)
+	http.HandleFunc("/api/metrics/e2e", apiServer.HandleE2EMetrics)
 	http.HandleFunc("/api/explorer/stream", apiServer.HandleExplorerStream)
 
 	port := ":8080"
 	fmt.Printf("🌐 Core Node API Server đang chạy tại http://localhost%s\n", port)
+	if os.Getenv("CORE_RECORD_SUBMIT") == "0" {
+		fmt.Println("📊 Submit recording tắt (CORE_RECORD_SUBMIT=0) — benchmark submit metrics = 0")
+	} else {
+		fmt.Println("📊 Submit recording bật — GET /api/metrics/benchmark (tắt: CORE_RECORD_SUBMIT=0)")
+	}
 
 	// Handle graceful shutdown
 	sigChan := make(chan os.Signal, 1)

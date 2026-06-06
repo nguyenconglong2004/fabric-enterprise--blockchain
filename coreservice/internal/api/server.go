@@ -37,6 +37,8 @@ type APIServer struct {
 	// Format: addr1,addr2,addr3
 	// Env: COMMIT_PEER_P2P.
 	CommitPeerMultiaddrs string
+
+	submitRecorder *storage.SubmitRecorder
 }
 
 // resolveContractSchema: schema saved at deploy (LevelDB / Postgres) overrides builtin map in core/contract_schema.go.
@@ -145,6 +147,7 @@ func (s *APIServer) HandleSubmitTx(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "JSON gửi lên sai định dạng", http.StatusBadRequest)
 		return
 	}
+	submittedAt := time.Now().UTC()
 
 	if apiVerbose() {
 		fmt.Printf("\n📥 [API] Nhận được giao dịch: %s gọi contract '%s'\n", tx.Txid, tx.ContractName)
@@ -191,6 +194,9 @@ func (s *APIServer) HandleSubmitTx(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.sendEndorsementAsync(tx)
+	if s.submitRecorder != nil {
+		s.submitRecorder.Record(tx.Txid, submittedAt)
+	}
 
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]interface{}{
@@ -562,6 +568,7 @@ func (s *APIServer) HandleListCommittedTransactions(w http.ResponseWriter, r *ht
 // HandleThroughputMetrics returns tx/s from ledger commit times (Postgres mirror).
 // GET /api/metrics/throughput?window=1&tx_prefix=k6-              (mode=latest, default)
 // GET /api/metrics/throughput?mode=peak&lookback=60&window=1    (max tx/s bucket in lookback)
+// GET /api/metrics/throughput?mode=window&since=...&until=...   (sustained over load window)
 // GET /api/metrics/throughput?mode=since&since=...
 func (s *APIServer) HandleThroughputMetrics(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
@@ -593,6 +600,15 @@ func (s *APIServer) HandleThroughputMetrics(w http.ResponseWriter, r *http.Reque
 	var err error
 
 	switch {
+	case mode == "window":
+		since, okSince := parseTimeQuery(r.URL.Query().Get("since"))
+		until, okUntil := parseTimeQuery(r.URL.Query().Get("until"))
+		if !okSince || !okUntil {
+			writeJSONError(w, http.StatusBadRequest, "mode=window requires since and until (RFC3339)")
+			return
+		}
+		metrics, err = s.DB.GetThroughputWindow(since, until, txPrefix)
+
 	case mode == "peak":
 		lookbackSec := 60
 		if raw := r.URL.Query().Get("lookback"); raw != "" {
