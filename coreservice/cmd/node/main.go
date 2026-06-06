@@ -140,8 +140,10 @@ func main() {
 		firstCP := strings.TrimSpace(strings.Split(commitPeerP2P, ",")[0])
 		if err := transport.WarmCommitPeer(firstCP); err != nil {
 			fmt.Printf("⚠️  Warm commit peer dial: %v\n", err)
+		} else if network.SignPoolEnabled() {
+			fmt.Println("✅ Commit peer sign pool bật (warm conn, CORE_SIGN_POOL=0 để tắt)")
 		} else {
-			fmt.Println("✅ Commit peer P2P warmed (first tx-sign faster)")
+			fmt.Println("✅ Commit peer P2P warmed (sign pool tắt)")
 		}
 	} else {
 		fmt.Println("⚠️  Chưa cấu CommitPeerP2P — /api/tx/submit sẽ thất bại khi sign transaction.")

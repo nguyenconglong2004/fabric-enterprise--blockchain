@@ -43,6 +43,22 @@ function sweepStages() {
   return stages;
 }
 
+function parseDurationSec(s) {
+  const m = String(s).match(/^(\d+(?:\.\d+)?)(ms|s|m|h)?$/);
+  if (!m) return 20;
+  const n = parseFloat(m[1]);
+  switch (m[2] || 's') {
+    case 'ms':
+      return n / 1000;
+    case 'm':
+      return n * 60;
+    case 'h':
+      return n * 3600;
+    default:
+      return n;
+  }
+}
+
 function buildScenarios() {
   switch (SCENARIO) {
     case 'maxpush':
@@ -82,8 +98,13 @@ function buildScenarios() {
   }
 }
 
+// k6 default teardownTimeout=60s — LEDGER_WAIT=60s alone would abort before metrics.
+const _ledgerWaitSec = parseDurationSec(LEDGER_WAIT);
+const _teardownSec = Math.ceil(_ledgerWaitSec + 120);
+
 export const options = {
   scenarios: buildScenarios(),
+  teardownTimeout: `${_teardownSec}s`,
   thresholds: {
     submit_ok: ['count>0'],
   },
@@ -133,22 +154,6 @@ function isSuccess(body) {
     return j.status === 'success' && j.tx_id;
   } catch {
     return false;
-  }
-}
-
-function parseDurationSec(s) {
-  const m = String(s).match(/^(\d+(?:\.\d+)?)(ms|s|m|h)?$/);
-  if (!m) return 20;
-  const n = parseFloat(m[1]);
-  switch (m[2] || 's') {
-    case 'ms':
-      return n / 1000;
-    case 'm':
-      return n * 60;
-    case 'h':
-      return n * 3600;
-    default:
-      return n;
   }
 }
 
@@ -226,7 +231,7 @@ function fetchBenchmark(baseUrl, since, until, prefix) {
     `until=${encodeURIComponent(until)}`,
     `tx_prefix=${prefix}`,
   ].join('&');
-  const res = http.get(`${baseUrl}/api/metrics/benchmark?${q}`, { timeout: '15s' });
+  const res = http.get(`${baseUrl}/api/metrics/benchmark?${q}`, { timeout: '60s' });
   if (res.status !== 200) {
     console.error(`benchmark failed: ${res.status} ${res.body}`);
     return null;
@@ -271,7 +276,7 @@ export function teardown(data) {
   const latest = fetchMetrics(data.baseUrl, `window=1&tx_prefix=${prefix}`);
   const peak = fetchMetrics(
     data.baseUrl,
-    `mode=peak&lookback=240&window=1&tx_prefix=${prefix}`,
+    `mode=peak&lookback=90&window=1&tx_prefix=${prefix}`,
   );
 
   logMetrics('ledger latest (1s @ newest commit)', latest);

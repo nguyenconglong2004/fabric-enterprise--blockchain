@@ -51,6 +51,7 @@ type Transport struct {
 	Ctx  context.Context
 
 	membershipCh chan *MembershipView
+	signPool     *commitPeerSignPool
 }
 
 // NewTransport creates a new transport for Core Service
@@ -66,6 +67,7 @@ func NewTransport(ctx context.Context) (*Transport, error) {
 		Host:         h,
 		Ctx:          ctx,
 		membershipCh: make(chan *MembershipView, 1),
+		signPool:     newCommitPeerSignPool(h, ctx),
 	}
 	h.SetStreamHandler(protocol.ID(orderProtocolMain), t.handleMainProtocolStream)
 	return t, nil
@@ -189,9 +191,15 @@ func (t *Transport) SendEndorsement(leaderAddr peer.AddrInfo, tx interface{}) er
 	return nil
 }
 
-// SignTransactionViaCommitPeer opens a libp2p stream to the committing peer,
-// sends the transaction JSON, and merges the signed transaction from the response.
+// SignTransactionViaCommitPeer signs via commit peer (warm connection pool by default).
 func (t *Transport) SignTransactionViaCommitPeer(commitPeerMultiaddr string, tx *core.Transaction) error {
+	if SignPoolEnabled() && t.signPool != nil {
+		return t.signPool.Sign(commitPeerMultiaddr, tx)
+	}
+	return t.signTransactionViaCommitPeerDirect(commitPeerMultiaddr, tx)
+}
+
+func (t *Transport) signTransactionViaCommitPeerDirect(commitPeerMultiaddr string, tx *core.Transaction) error {
 	commitPeerMultiaddr = strings.TrimSpace(commitPeerMultiaddr)
 	if commitPeerMultiaddr == "" {
 		return fmt.Errorf("empty commit peer multiaddr")
@@ -249,6 +257,9 @@ func (t *Transport) WarmCommitPeer(commitPeerMultiaddr string) error {
 	commitPeerMultiaddr = strings.TrimSpace(commitPeerMultiaddr)
 	if commitPeerMultiaddr == "" {
 		return nil
+	}
+	if SignPoolEnabled() && t.signPool != nil {
+		return t.signPool.Warm(commitPeerMultiaddr)
 	}
 	addrInfo, err := peer.AddrInfoFromString(commitPeerMultiaddr)
 	if err != nil {
