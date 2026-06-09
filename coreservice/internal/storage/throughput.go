@@ -18,7 +18,7 @@ type ThroughputMetrics struct {
 	BlocksPerSec    float64    `json:"blocks_per_sec"`
 }
 
-const ledgerCommitTime = "COALESCE(l.ledger_committed_at, l.committed_at)"
+const ledgerCommitTime = "l.committed_at"
 
 // GetThroughputLatest counts tx/blocks in (latest_commit - window, latest_commit],
 // where latest_commit is the newest ledger commit time (optionally filtered by txid prefix).
