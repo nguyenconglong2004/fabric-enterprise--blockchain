@@ -36,8 +36,8 @@ func (rn *RaftNode) processTx(tx types.Transaction) (string, error) {
 	poolSize := len(rn.TxPool)
 	rn.TxPoolMu.Unlock()
 
-	rn.Logger.Printf("[%s] Received tx %s (pool size: %d)",
-		rn.Transport.ID().ShortString(), tx.Txid, poolSize)
+	// No per-tx logging on the ingest hot path (see HandleEndorsementStream note):
+	// the shared log.Logger mutex serializes against the commit path at high TPS.
 	rn.Emitter.TxPoolChanged(rn.Transport.ID(), poolSize)
 
 	return tx.Txid, nil
@@ -125,10 +125,12 @@ func (rn *RaftNode) HandleTxRequest(msg types.Message) {
 			Data:      tx,
 			Timestamp: time.Now(),
 		}
-		if err := rn.Transport.SendMessage(senderID, ackMsg); err != nil {
-			rn.Logger.Printf("[%s] Failed to send tx ack to %s: %v",
-				rn.Transport.ID().ShortString(), senderID.ShortString(), err)
-		}
+		go func() {
+			if err := rn.Transport.SendMessage(senderID, ackMsg); err != nil {
+				rn.Logger.Printf("[%s] Failed to send tx ack to %s: %v",
+					rn.Transport.ID().ShortString(), senderID.ShortString(), err)
+			}
+		}()
 	}
 }
 
@@ -230,12 +232,18 @@ func (rn *RaftNode) waitForBlockAcks(entry types.LogEntry) {
 
 	blockID := entry.Block.BlockID()
 
-	timeout := time.After(5 * time.Second)
-	ticker := time.NewTicker(100 * time.Millisecond)
-	defer ticker.Stop()
-
 	rn.Logger.Printf("[%s] Waiting for block ACKs (need %d/%d)",
 		rn.Transport.ID().ShortString(), majority, totalCount)
+
+	// Fast path: self-count alone satisfies majority (single-node cluster).
+	if len(acks) >= majority {
+		rn.Logger.Printf("[%s] Self majority for block %s (%d/%d)",
+			rn.Transport.ID().ShortString(), blockID, len(acks), majority)
+		rn.commitBlock(entry)
+		return
+	}
+
+	timeout := time.After(5 * time.Second)
 
 	for {
 		select {
@@ -249,14 +257,6 @@ func (rn *RaftNode) waitForBlockAcks(entry types.LogEntry) {
 					rn.Transport.ID().ShortString(), len(acks), majority, blockID)
 			}
 			return
-
-		case <-ticker.C:
-			if len(acks) >= majority {
-				rn.Logger.Printf("[%s] Received majority ACKs (%d/%d) for block %s",
-					rn.Transport.ID().ShortString(), len(acks), majority, blockID)
-				rn.commitBlock(entry)
-				return
-			}
 
 		case msg := <-rn.BlockAckChan:
 			data, err := json.Marshal(msg.Data)
@@ -275,18 +275,22 @@ func (rn *RaftNode) waitForBlockAcks(entry types.LogEntry) {
 					acks[senderID] = true
 					rn.Logger.Printf("[%s] Received ACK from %s for block %s (%d/%d)",
 						rn.Transport.ID().ShortString(), senderID.ShortString(), blockID, len(acks), majority)
+					if len(acks) >= majority {
+						rn.Logger.Printf("[%s] Received majority ACKs (%d/%d) for block %s",
+							rn.Transport.ID().ShortString(), len(acks), majority, blockID)
+						rn.commitBlock(entry)
+						return
+					}
 				}
 			}
 		}
 	}
 }
 
-// ExecuteBlockTransactions logs committed transactions.
+// ExecuteBlockTransactions is a hook for per-tx execution on commit.
+// Per-tx logging removed: at 1000 tx/block it floods the shared log.Logger mutex
+// on the commit hot path. Re-add behind a debug flag if needed.
 func (rn *RaftNode) ExecuteBlockTransactions(block types.Block) error {
-	for _, tx := range block.Transactions {
-		rn.Logger.Printf("[%s] Block tx: %s (%d inputs, %d outputs)",
-			rn.Transport.ID().ShortString(), tx.Txid, len(tx.Vin), len(tx.Vout))
-	}
 	return nil
 }
 
@@ -587,32 +591,41 @@ func (rn *RaftNode) StartAutoProposeBlock(batchSize int) error {
 		}()
 
 		for {
-			// Use time.After to read the current interval on each tick (runtime-tunable).
-			select {
-			case <-stopChan:
-				return
-			case <-time.After(rn.Config.GetAutoProposalInterval()):
-			}
-
 			if !rn.IsLeader() {
 				rn.Logger.Printf("[%s] Auto-propose: stepped down from leader, stopping",
 					rn.Transport.ID().ShortString())
 				return
 			}
 
-			// Use current block size from config (also runtime-tunable)
+			// Read runtime-tunable config each iteration.
 			currentBatchSize := rn.Config.GetAutoProposalBlockSize()
+			interval := rn.Config.GetAutoProposalInterval()
 
 			rn.TxPoolMu.Lock()
 			poolSize := len(rn.TxPool)
 			rn.TxPoolMu.Unlock()
 
-			if poolSize == 0 {
-				continue
+			// Event-driven proposing: when a full batch is already queued, propose
+			// immediately (no interval wait). The interval is only a flush timeout
+			// for partial batches — under sustained high TPS the pool stays full so
+			// blocks are proposed back-to-back at the commit-RTT rate, removing the
+			// per-block interval tax that capped throughput. Still one block in-flight
+			// (no pipelining), so hash-chain / sync semantics are unchanged.
+			if poolSize < currentBatchSize {
+				// Not enough for a full block: wait up to `interval` for more tx,
+				// then flush whatever is available (or loop again if still empty).
+				select {
+				case <-stopChan:
+					return
+				case <-time.After(interval):
+				}
+				rn.TxPoolMu.Lock()
+				poolSize = len(rn.TxPool)
+				rn.TxPoolMu.Unlock()
+				if poolSize == 0 {
+					continue
+				}
 			}
-
-			rn.Logger.Printf("[%s] Auto-propose: proposing block with up to %d tx (pool: %d)",
-				rn.Transport.ID().ShortString(), currentBatchSize, poolSize)
 
 			if err := rn.ProposeBlock(currentBatchSize); err != nil {
 				rn.Logger.Printf("[%s] Auto-propose: ProposeBlock error: %v",
@@ -624,8 +637,6 @@ func (rn *RaftNode) StartAutoProposeBlock(batchSize int) error {
 			case <-stopChan:
 				return
 			case <-rn.blockCommittedNotify:
-				rn.Logger.Printf("[%s] Auto-propose: block committed, checking next batch",
-					rn.Transport.ID().ShortString())
 			case <-time.After(10 * time.Second):
 				rn.Logger.Printf("[%s] Auto-propose: commit timeout, continuing",
 					rn.Transport.ID().ShortString())

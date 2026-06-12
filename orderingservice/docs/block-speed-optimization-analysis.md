@@ -83,6 +83,10 @@ Xếp theo mức độ tác động (cao → thấp).
 
 ### 🔴 OPT-1 — Commit ngay khi đủ majority, bỏ độ trễ ticker 100ms
 
+> ✅ **Đã triển khai.** Ticker 100ms đã bị loại; `waitForBlockAcks` kiểm tra `len(acks) >= majority`
+> ngay trong nhánh nhận ACK và commit lập tức. Thêm fast-path self-majority (cluster 1 node) trước vòng lặp.
+> Xem [transaction.go:238-288](../source/internal/raft/transaction.go#L238-L288).
+
 **File/hàm:** `waitForBlockAcks` — [transaction.go:224-282](../source/internal/raft/transaction.go#L224-L282)
 
 **Vấn đề:** Khi ACK đến qua `case msg := <-rn.BlockAckChan`, code chỉ **thêm vào map `acks`** chứ
@@ -103,6 +107,17 @@ commit lập tức rồi `return`. Khi đó ticker chỉ còn là cơ chế fall
 ---
 
 ### 🔴 OPT-2 — Pipeline block proposal (bỏ tuần tự "propose → chờ commit → propose")
+
+> ✅ **Đã triển khai mức tối thiểu an toàn (event-driven, KHÔNG pipeline).** Loop auto-propose bỏ
+> `time.After(interval)` vô điều kiện đầu vòng. Khi `len(TxPool) >= batchSize` → propose **ngay**, không
+> chờ interval; interval chỉ còn là flush-timeout cho batch lẻ. Vẫn **1 block in-flight** (chờ
+> `blockCommittedNotify`) → hash-chain/sync không đổi, không cần SYNC-1/2/5.
+>
+> Kết quả đo: trước fix ~7.2 blocks/s (139ms/block, bị 100ms interval chặn) → bỏ tax interval, nhịp đóng
+> block bám theo commit-RTT (~vài chục ms) khi pool đầy. Xem [transaction.go](../source/internal/raft/transaction.go) `StartAutoProposeBlock`.
+>
+> **Chưa làm (pipeline thật):** nhiều block in-flight (PrevHash lấy từ entry cuối RaftLog thay vì
+> committed hash) — đòi SYNC-1/SYNC-2/SYNC-5 trước. Chỉ cần khi trần commit-RTT × 1-in-flight không đủ.
 
 **File/hàm:** `StartAutoProposeBlock` — [transaction.go:563-637](../source/internal/raft/transaction.go#L563-L637),
 cụ thể đoạn [transaction.go:617-632](../source/internal/raft/transaction.go#L617-L632)
@@ -135,6 +150,23 @@ mỗi chu kỳ block ≈ `AutoProposeInterval (100ms) + RTT đồng thuận`. Th
 ---
 
 ### 🔴 OPT-3 — Tái sử dụng stream libp2p (loại bỏ tạo stream mới mỗi message)
+
+> ✅ **Đã triển khai cho đường tải nóng (endorsement).** Đây là **cổ chai trần ~5600 tx/s đo được** ở
+> test 10k TPS: loadgen mở **1 stream/tx** (32 worker × open/close) → ~10000 stream/s, orderer không
+> accept kịp → stream bị reset/drop, ~40% tx **mất âm thầm** (`sent` thành công cục bộ nhưng orderer chưa
+> đọc). Triệu chứng: `sent=96971` nhưng `commit` tổng chỉ `57252`, drain không xả (pool không backlog),
+> avg chỉ 741 tx/block (pool đói, không bao giờ đầy 1000).
+>
+> Fix:
+> - **Orderer** `HandleEndorsementStream` ([endorsement.go](../source/internal/raft/endorsement.go)) đọc
+>   **nhiều tx/stream** trong vòng lặp `for { decoder.Decode(&tx) }` tới khi stream đóng (tương thích
+>   ngược sender cũ 1 tx/stream).
+> - **Loadgen** mỗi worker giữ **1 stream lâu dài**, `json.Encoder.Encode` mọi tx
+>   ([sender.go](../source/pkg/loadgen/sender.go) `openEndorsementStream` + `workerFn`). 10000 stream/s
+>   → 32 stream. Backpressure yamux window thay cho drop ⇒ `sent` ≈ thực nhận, không mất tx.
+>
+> **Chưa làm:** áp dụng tương tự cho `SendMessage`/`BroadcastMessage` (proposal/ack/commit giữa các node)
+> — kèm ràng buộc SYNC-2 (đúng thứ tự trên stream lâu dài). Đường này tải thấp hơn endorsement nên ưu tiên sau.
 
 **File/hàm:** `Transport.SendMessage` — [transport.go:97-110](../source/internal/network/transport.go#L97-L110),
 `Transport.BroadcastMessage` — [transport.go:130-147](../source/internal/network/transport.go#L130-L147),
@@ -181,6 +213,25 @@ với xử lý ACK/commit → head-of-line blocking, kéo dài thời gian đón
 - Tách kênh riêng cho message liên quan đồng thuận (proposal/ack/commit) ưu tiên xử lý, hoặc
 - Worker pool cho `HandleTxRequest` (chỉ append vào TxPool, có thể song song với mutex `TxPoolMu`).
 
+> ✅ **Đã triển khai (một phần).** Trong `handleStream` ([node.go:187-201](../source/internal/raft/node.go#L187-L201)):
+> - `MsgBlockProposalAck` bypass `MessageChan` → đẩy thẳng `BlockAckChan` (non-blocking).
+> - `MsgTxRequest` bypass `MessageChan` → gọi `HandleTxRequest` inline ngay trên goroutine của stream
+>   (mỗi stream đã là 1 goroutine riêng; append `TxPool` được `TxPoolMu` bảo vệ).
+>
+> Hệ quả: ở TPS cao, `MessageChan` không còn bị tx flood làm đầy → các handleStream goroutine không
+> còn block tại `rn.MessageChan <- msg`, giải phóng scheduler/libp2p mux → ACK/commit/heartbeat được
+> xử lý kịp trong cửa sổ `waitForBlockAcks` (5s) ngay trong lúc load. Đồng thời tx-ack gửi về client
+> đã chuyển sang async ([transaction.go:128-133](../source/internal/raft/transaction.go#L128-L133)) để
+> không chặn đường nạp tx.
+>
+> Còn lại (chưa làm): tách hẳn kênh ưu tiên cho consensus + worker pool có giới hạn cho tx, và OPT-3
+> (persistent stream) để cắt chi phí mở/đóng stream mỗi tx ở tầng mạng.
+>
+> ⚠️ **Đính chính quan trọng:** loadgen gửi tx qua **endorsement protocol** (`SendEndorsement` →
+> `HandleEndorsementStream` [endorsement.go](../source/internal/raft/endorsement.go)), **KHÔNG** qua
+> `MsgTxRequest`/`MessageChan`. Do đó bypass `MsgTxRequest` ở `handleStream` **không** ảnh hưởng đường tải
+> của loadgen (chỉ ảnh hưởng tx forward giữa node). Bottleneck thực đo được nằm ở **OPT-8** bên dưới.
+
 ---
 
 ### 🟠 OPT-6 — `MerkleRoot` băm trên `Txid` (string) thay vì tái dùng
@@ -204,6 +255,36 @@ giữa chừng (node chết/join), ngưỡng majority có thể lệch → chờ
 
 **Cải thiện:** Tính lại majority động khi đánh giá, hoặc chốt theo snapshot membership đính kèm proposal
 để leader và follower nhất quán quorum.
+
+---
+
+### 🔴 OPT-8 — Bỏ logging trên hot-path (cổ chai đo được thực tế ở cmd/server)
+
+> ✅ **Đã triển khai.**
+
+**File/hàm:** `HandleEndorsementStream` [endorsement.go](../source/internal/raft/endorsement.go),
+`processTx` [transaction.go:33](../source/internal/raft/transaction.go#L33),
+`ExecuteBlockTransactions` [transaction.go](../source/internal/raft/transaction.go)
+
+**Vấn đề (triệu chứng quan sát):** Ở 5000 TPS / 20-30s, ingest chạy bình thường (sent≈99.5k–149.5k,
+failed=0) nhưng **commit gần như đứng yên trong lúc load** (chỉ 1 block ~71 tx), rồi **xả ồ ạt
+~1200-1600 tx/s ngay khi load dừng**. Ingest không chậm, chỉ commit kẹt ⇒ điểm tranh chấp nằm ở tài
+nguyên **ingest và commit dùng chung**.
+
+Tài nguyên đó là **một `log.Logger` duy nhất** (`*log.Logger` serialize mọi `Printf` qua 1 mutex + I/O
+console qua readline). Leader log **3 dòng/tx** trên đường nạp:
+- `HandleEndorsementStream`: "Received endorsement for tx ..." và "Endorsement tx ... added to TxPool"
+- `processTx`: "Received tx ... (pool size: N)"
+
+→ 5000 TPS × 3 = **15000 lượt ghi log/s** giữ mutex logger. Đường commit (`waitForBlockAcks`,
+`commitBlock`, `BroadcastMessage`, và `ExecuteBlockTransactions` log **mỗi tx trong block** = 1000
+dòng/block) phải lấy **cùng mutex** → bị block sau dòng log tx. Load dừng → áp lực log giảm → commit xả.
+
+**Cải thiện (đã làm):** Xóa toàn bộ log per-tx trên hot-path (3 dòng ingest + vòng lặp log trong
+`ExecuteBlockTransactions`). Giữ log ở mức block (Proposing/Committing/Accepted ~1 dòng/block).
+
+**Còn lại / production:** chuyển sang logger bất đồng bộ (ring buffer + 1 goroutine flush) hoặc leveled
+logging tắt được ở mức tx; cân nhắc OPT-3 để cắt 5000 stream-connect/s ở tầng libp2p.
 
 ---
 
@@ -281,12 +362,14 @@ trước khi `AppendBlock`. Rẻ và chặn sớm phân nhánh.
 
 | Bước | Hạng mục | Lợi ích | Rủi ro đồng bộ phải kèm |
 |---|---|---|---|
-| 1 | **OPT-1** commit ngay khi đủ majority | -tới 100ms/block, gần như free | không |
+| 0 | **OPT-8** bỏ logging hot-path ✅ | gỡ cổ chai thực tế ở 5000 TPS (commit kẹt → xả khi load dừng) | không |
+| 1 | **OPT-1** commit ngay khi đủ majority ✅ | -tới 100ms/block, gần như free | không |
 | 2 | **OPT-4** bỏ marshal 2 lần | giảm CPU đường nóng | không |
-| 3 | **OPT-3** persistent stream + đọc nhiều msg/stream | giảm cổ chai mạng lớn nhất | bật được SYNC-2 (đúng thứ tự) |
-| 4 | **OPT-5** tách kênh message nóng | bỏ head-of-line blocking | không |
+| 3 | **OPT-3** persistent stream + đọc nhiều msg/stream (endorsement ✅) | gỡ trần ingest ~5600 tx/s | nội node: cần SYNC-2 |
+| 4 | **OPT-5** tách kênh message nóng ✅ (bypass tx+ack khỏi MessageChan) | bỏ head-of-line blocking | không |
 | 5 | **SYNC-1 + SYNC-5** phát hiện gap commit + verify hash-chain | an toàn nền tảng | (bắt buộc trước bước 6) |
-| 6 | **OPT-2** pipeline proposal | tăng throughput nhiều lần | cần SYNC-1, SYNC-2, SYNC-5 |
+| 6a | **OPT-2** event-driven (1 in-flight, bỏ interval tax) ✅ | bỏ trần ~7 blocks/s do interval | không |
+| 6b | **OPT-2** pipeline thật (nhiều in-flight) | tăng throughput nhiều lần | cần SYNC-1, SYNC-2, SYNC-5 |
 | 7 | **SYNC-4** persistence (WAL) | an toàn production | nền tảng dài hạn |
 | 8 | **OPT-6 / OPT-7** merkle parallel ngưỡng thấp, majority động | tinh chỉnh | không |
 

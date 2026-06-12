@@ -184,6 +184,25 @@ func (rn *RaftNode) handleStream(s network.Stream) {
 		return
 	}
 
+	// Bypass MessageChan for consensus ACKs to avoid HOL blocking during tx floods.
+	if msg.Type == types.MsgBlockProposalAck {
+		select {
+		case rn.BlockAckChan <- msg:
+		default:
+			rn.Logger.Printf("[%s] Block ACK channel full, dropping ACK", rn.Transport.ID().ShortString())
+		}
+		return
+	}
+
+	// Bypass MessageChan for tx ingest. Each stream already runs in its own
+	// goroutine, so handling the tx inline (TxPool append is guarded by TxPoolMu)
+	// keeps the shared MessageChan from filling up during high-TPS floods, which
+	// would otherwise starve consensus ACK/commit/heartbeat processing.
+	if msg.Type == types.MsgTxRequest {
+		rn.HandleTxRequest(msg)
+		return
+	}
+
 	rn.MessageChan <- msg
 }
 

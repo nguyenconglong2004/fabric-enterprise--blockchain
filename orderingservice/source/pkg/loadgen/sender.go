@@ -2,11 +2,14 @@ package loadgen
 
 import (
 	"context"
+	"encoding/json"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/libp2p/go-libp2p/core/protocol"
 
 	netpkg "raft-order-service/internal/network"
 	"raft-order-service/internal/types"
@@ -18,6 +21,18 @@ func SendEndorsement(transport *netpkg.Transport, leader peer.AddrInfo, tx types
 		return err
 	}
 	return transport.SendEndorsement(leader.ID, tx)
+}
+
+// openEndorsementStream opens one long-lived endorsement stream to the leader.
+// Workers reuse a single stream for all their tx (OPT-3) instead of opening one
+// stream per tx, which at high TPS saturates the orderer's stream-accept path and
+// silently drops tx (sent succeeds locally but the stream is reset before the
+// orderer reads it). The orderer reads many tx per stream in HandleEndorsementStream.
+func openEndorsementStream(ctx context.Context, transport *netpkg.Transport, leader peer.AddrInfo) (network.Stream, error) {
+	if err := transport.Host.Connect(ctx, leader); err != nil {
+		return nil, err
+	}
+	return transport.Host.NewStream(ctx, leader.ID, protocol.ID(netpkg.EndorsementProtocolID))
 }
 
 // SendStats tracks submission outcomes.
@@ -52,13 +67,26 @@ func RunSender(
 	var wg sync.WaitGroup
 	workerFn := func() {
 		defer wg.Done()
+
+		// One persistent endorsement stream per worker, reused for every tx.
+		s, err := openEndorsementStream(ctx, transport, leader)
+		if err != nil {
+			// Couldn't open the stream: drain this worker's jobs as failures.
+			for range jobs {
+				atomic.AddInt64(&stats.Failed, 1)
+			}
+			return
+		}
+		defer s.Close()
+		enc := json.NewEncoder(s)
+
 		for j := range jobs {
 			tx, err := NewSmartContractTx(j.seq, opts)
 			if err != nil {
 				atomic.AddInt64(&stats.Failed, 1)
 				continue
 			}
-			if err := SendEndorsement(transport, leader, tx); err != nil {
+			if err := enc.Encode(tx); err != nil {
 				atomic.AddInt64(&stats.Failed, 1)
 				continue
 			}

@@ -1,5 +1,7 @@
 # Loadgen — benchmark thuần Ordering Service
 
+> Hướng dẫn chi tiết (flow, đo tốc độ, tham số): **[LOADGEN_GUIDE.md](./LOADGEN_GUIDE.md)**
+
 Tool gửi **smart-contract transaction** trực tiếp tới orderer qua libp2p protocol `/raft-order-service/endorsement/1.0.0` (cùng đường Core Service dùng), **không** qua WASM / Commit Peer.
 
 ---

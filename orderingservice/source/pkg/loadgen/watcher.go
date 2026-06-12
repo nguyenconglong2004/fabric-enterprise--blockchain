@@ -13,39 +13,64 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-// CommitStats aggregates block-committed events from the orchestrator WebSocket.
+type commitEvent struct {
+	at      time.Time
+	txCount int
+}
+
+// CommitStats aggregates committed blocks (deliver stream or orchestrator WS).
 type CommitStats struct {
-	BlocksCommitted int64
-	TxCommitted     int64
-	FirstCommitAt   time.Time
-	LastCommitAt    time.Time
-	mu              sync.Mutex
+	mu     sync.Mutex
+	events []commitEvent
+	nowFn  func() time.Time
+}
+
+func (s *CommitStats) now() time.Time {
+	if s.nowFn != nil {
+		return s.nowFn()
+	}
+	return time.Now().UTC()
 }
 
 func (s *CommitStats) record(txCount int, at time.Time) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.BlocksCommitted++
-	s.TxCommitted += int64(txCount)
-	if s.FirstCommitAt.IsZero() {
-		s.FirstCommitAt = at
-	}
-	s.LastCommitAt = at
+	s.events = append(s.events, commitEvent{at: at, txCount: txCount})
 }
 
-// Snapshot returns a copy of current stats.
+// Snapshot returns totals over all recorded events.
 func (s *CommitStats) Snapshot() (blocks, txs int64, first, last time.Time) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.BlocksCommitted, s.TxCommitted, s.FirstCommitAt, s.LastCommitAt
+	for _, e := range s.events {
+		blocks++
+		txs += int64(e.txCount)
+		if first.IsZero() || e.at.Before(first) {
+			first = e.at
+		}
+		if last.IsZero() || e.at.After(last) {
+			last = e.at
+		}
+	}
+	return blocks, txs, first, last
 }
 
-// WatchOrchestratorWS subscribes to orchestrator /ws/events and counts block-committed events.
-// wsURL example: ws://localhost:8080/ws/events
-func WatchOrchestratorWS(ctx context.Context, wsURL string, stats *CommitStats) error {
-	if stats == nil {
-		stats = &CommitStats{}
+// CountInWindow returns blocks and txs committed within [start, end] inclusive.
+func (s *CommitStats) CountInWindow(start, end time.Time) (blocks, txs int64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, e := range s.events {
+		if e.at.Before(start) || e.at.After(end) {
+			continue
+		}
+		blocks++
+		txs += int64(e.txCount)
 	}
+	return blocks, txs
+}
+
+// WatchOrchestratorWS subscribes to orchestrator /ws/events (optional; orchestrator only).
+func WatchOrchestratorWS(ctx context.Context, wsURL string, stats *CommitStats) error {
 	u, err := url.Parse(wsURL)
 	if err != nil {
 		return fmt.Errorf("parse ws url: %w", err)
@@ -96,11 +121,18 @@ func WatchOrchestratorWS(ctx context.Context, wsURL string, stats *CommitStats) 
 		if err := json.Unmarshal(ev.Data, &payload); err != nil {
 			continue
 		}
-		stats.record(payload.TxCount, time.Now().UTC())
+		stats.record(payload.TxCount, stats.now())
 	}
 }
 
-// PrintSummary logs send and commit throughput.
+func rate(blocks, txs int64, sec float64) (blocksPerSec, txPerSec float64) {
+	if sec < 0.001 {
+		sec = 0.001
+	}
+	return float64(blocks) / sec, float64(txs) / sec
+}
+
+// PrintSummary logs send rate and orderer block commit rates.
 func PrintSummary(
 	label string,
 	loadStart, loadEnd time.Time,
@@ -115,35 +147,57 @@ func PrintSummary(
 
 	fmt.Println()
 	fmt.Printf("========== %s ==========\n", label)
+	fmt.Printf("--- Ingest (loadgen send) ---\n")
 	fmt.Printf("Load window: %s → %s (%.1fs)\n", loadStart.Format(time.RFC3339), loadEnd.Format(time.RFC3339), loadSec)
 	fmt.Printf("Sent:        %d  Failed: %d  Send rate: %.1f tx/s\n", sent, failed, float64(sent)/loadSec)
 
 	if commit != nil {
-		blocks, txs, first, last := commit.Snapshot()
-		if blocks > 0 && !first.IsZero() && !last.IsZero() {
-			commitSec := last.Sub(first).Seconds()
-			if commitSec <= 0 {
-				commitSec = 1
-			}
-			fmt.Printf("Blocks committed (WS): %d  (%.2f blocks/s over commit span)\n", blocks, float64(blocks)/commitSec)
-			fmt.Printf("Tx committed (WS):     %d  (%.1f tx/s over commit span)\n", txs, float64(txs)/commitSec)
-			if blocks > 0 {
-				fmt.Printf("Avg tx/block:          %.1f\n", float64(txs)/float64(blocks))
-			}
+		loadBlocks, loadTxs := commit.CountInWindow(loadStart, loadEnd)
+		drainBlocks, drainTxs := commit.CountInWindow(loadStart, drainEnd)
+
+		fmt.Printf("\n--- Orderer block commit (deliver) ---\n")
+		if loadBlocks > 0 {
+			bps, tps := rate(loadBlocks, loadTxs, loadSec)
+			fmt.Printf("During load (%0.1fs):  %d blocks, %d tx  →  %.2f blocks/s, %.1f tx/s\n",
+				loadSec, loadBlocks, loadTxs, bps, tps)
+			fmt.Printf("Avg tx/block (load):   %.1f\n", float64(loadTxs)/float64(loadBlocks))
 		} else {
-			fmt.Println("Blocks committed (WS): (no events — is orchestrator running with --ws?)")
+			fmt.Println("During load:           (no blocks — orderer not committing or deliver not connected)")
 		}
+
+		totalSec := drainEnd.Sub(loadStart).Seconds()
+		if totalSec < 0.001 {
+			totalSec = 0.001
+		}
+		if drainBlocks > loadBlocks {
+			bps, tps := rate(drainBlocks, drainTxs, totalSec)
+			fmt.Printf("Load + drain (%0.1fs): %d blocks, %d tx  →  %.2f blocks/s, %.1f tx/s (sustained over full run)\n",
+				totalSec, drainBlocks, drainTxs, bps, tps)
+		} else if drainBlocks > 0 && loadBlocks == 0 {
+			bps, tps := rate(drainBlocks, drainTxs, totalSec)
+			fmt.Printf("Load + drain (%0.1fs): %d blocks, %d tx  →  %.2f blocks/s, %.1f tx/s\n",
+				totalSec, drainBlocks, drainTxs, bps, tps)
+		}
+
+		_, _, first, last := commit.Snapshot()
+		if !first.IsZero() && !last.IsZero() && last.After(first) {
+			span := last.Sub(first).Seconds()
+			allBlocks, allTxs, _, _ := commit.Snapshot()
+			bps, tps := rate(allBlocks, allTxs, span)
+			fmt.Printf("Peak span (first→last commit): %.2fs  →  %.2f blocks/s, %.1f tx/s\n", span, bps, tps)
+		}
+	} else {
+		fmt.Println("\n--- Orderer block commit: disabled ---")
 	}
 
 	if !drainEnd.IsZero() && drainEnd.After(loadEnd) {
-		drainSec := drainEnd.Sub(loadEnd).Seconds()
-		fmt.Printf("Drain wait: %.1fs after load\n", drainSec)
+		fmt.Printf("\nDrain wait: %.1fs after load (included in load+drain commit window)\n", drainEnd.Sub(loadEnd).Seconds())
 	}
 	fmt.Println("================================")
 }
 
 // StartProgressLogger prints periodic send/commit counters.
-func StartProgressLogger(ctx context.Context, interval time.Duration, sent, failed *int64, commit *CommitStats) {
+func StartProgressLogger(ctx context.Context, interval time.Duration, sent, failed *int64, commit *CommitStats, loadStart time.Time) {
 	if interval <= 0 {
 		interval = 5 * time.Second
 	}
@@ -161,15 +215,22 @@ func StartProgressLogger(ctx context.Context, interval time.Duration, sent, fail
 				f := atomic.LoadInt64(failed)
 				line := fmt.Sprintf("[loadgen] sent=%d failed=%d", s, f)
 				if commit != nil {
-					_, txs, _, _ := commit.Snapshot()
-					line += fmt.Sprintf(" committed_tx=%d", txs)
-					if !lastAt.IsZero() && txs > lastTx {
-						dt := now.Sub(lastAt).Seconds()
-						if dt > 0 {
-							line += fmt.Sprintf(" commit_rate=%.0f tx/s", float64(txs-lastTx)/dt)
+					_, loadTxs := commit.CountInWindow(loadStart, now.UTC())
+					_, allTxs, _, _ := commit.Snapshot()
+					line += fmt.Sprintf(" commit_tx=%d", allTxs)
+					if !loadStart.IsZero() {
+						sec := now.Sub(loadStart).Seconds()
+						if sec > 0 {
+							line += fmt.Sprintf(" commit_sustained=%.0f tx/s", float64(loadTxs)/sec)
 						}
 					}
-					lastTx = txs
+					if !lastAt.IsZero() && allTxs > lastTx {
+						dt := now.Sub(lastAt).Seconds()
+						if dt > 0 {
+							line += fmt.Sprintf(" commit_instant=%.0f tx/s", float64(allTxs-lastTx)/dt)
+						}
+					}
+					lastTx = allTxs
 					lastAt = now
 				}
 				log.Println(line)

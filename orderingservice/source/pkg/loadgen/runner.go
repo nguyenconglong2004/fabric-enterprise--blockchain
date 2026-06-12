@@ -79,12 +79,19 @@ func Run(ctx context.Context, opts Options) (*Result, error) {
 		ClientPubKey: opts.ClientPubKey,
 	}
 
-	var commitStats *CommitStats
+	commitStats := &CommitStats{}
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
+	// Deliver stream: block commit from orderer (works with cmd/server).
+	go func() {
+		if err := WatchDeliver(runCtx, transport, leaderAI, commitStats); err != nil && runCtx.Err() == nil {
+			fmt.Printf("⚠️  deliver watch: %v\n", err)
+		}
+	}()
+
+	// Optional: orchestrator WebSocket (if both enabled, events may double-count — prefer deliver only).
 	if opts.OrchestratorWS != "" {
-		commitStats = &CommitStats{}
 		go func() {
 			if err := WatchOrchestratorWS(runCtx, opts.OrchestratorWS, commitStats); err != nil && runCtx.Err() == nil {
 				fmt.Printf("⚠️  orchestrator WS: %v\n", err)
@@ -93,12 +100,12 @@ func Run(ctx context.Context, opts Options) (*Result, error) {
 	}
 
 	sendStats := &SendStats{}
-	StartProgressLogger(runCtx, opts.ProgressEvery, &sendStats.Sent, &sendStats.Failed, commitStats)
+	loadStart := time.Now().UTC()
+	StartProgressLogger(runCtx, opts.ProgressEvery, &sendStats.Sent, &sendStats.Failed, commitStats, loadStart)
 
 	fmt.Printf("→ Load: %d tx/s × %s (%d workers) prefix=%s contract=%s\n",
 		opts.TPS, opts.Duration, opts.Workers, opts.TxPrefix, txOpts.ContractName)
 
-	loadStart := time.Now().UTC()
 	loadCtx, loadCancel := context.WithTimeout(runCtx, opts.Duration)
 	RunSender(loadCtx, transport, leaderAI, txOpts, opts.TPS, opts.Workers, sendStats)
 	loadCancel()
