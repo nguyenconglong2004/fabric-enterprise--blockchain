@@ -60,7 +60,7 @@ func (s *APIServer) HandleBenchmarkMetrics(w http.ResponseWriter, r *http.Reques
 		since = until.Add(-time.Duration(lookbackSec) * time.Second)
 	}
 
-	metrics, err := s.DB.GetBenchmarkMetrics(since, until, txPrefix)
+	metrics, err := s.DB.GetBenchmarkMetrics(since, until, txPrefix, s.CommitMetricsClient)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -99,6 +99,7 @@ func (s *APIServer) HandleBenchmarkMetrics(w http.ResponseWriter, r *http.Reques
 		"meets_submit_sustained_5000": metrics.MeetsSubmitSustained5000,
 		"meets_commit_sustained_5000": metrics.MeetsCommitSustained5000,
 		"meets_latency_p95_under_1s":  metrics.MeetsLatencyP95Under1s,
+		"commit_data_source":          metrics.CommitDataSource,
 	}
 
 	w.Header().Set("Content-Type", "application/json")

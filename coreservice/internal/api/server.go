@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -14,6 +15,7 @@ import (
 
 	"coreservice/internal/core"
 	"coreservice/internal/discovery"
+	"coreservice/internal/metrics/commitpeer"
 	"coreservice/internal/network"
 	"coreservice/internal/storage"
 	"coreservice/internal/vm"
@@ -38,7 +40,8 @@ type APIServer struct {
 	// Env: COMMIT_PEER_P2P.
 	CommitPeerMultiaddrs string
 
-	submitRecorder *storage.SubmitRecorder
+	submitRecorder     *storage.SubmitRecorder
+	CommitMetricsClient *commitpeer.Client
 }
 
 // resolveContractSchema: schema saved at deploy (LevelDB / Postgres) overrides builtin map in core/contract_schema.go.
@@ -565,7 +568,7 @@ func (s *APIServer) HandleListCommittedTransactions(w http.ResponseWriter, r *ht
 	})
 }
 
-// HandleThroughputMetrics returns tx/s from ledger commit times (Postgres mirror).
+// HandleThroughputMetrics returns tx/s from commit peer API (preferred) or Postgres mirror.
 // GET /api/metrics/throughput?window=1&tx_prefix=k6-              (mode=latest, default)
 // GET /api/metrics/throughput?mode=peak&lookback=60&window=1    (max tx/s bucket in lookback)
 // GET /api/metrics/throughput?mode=window&since=...&until=...   (sustained over load window)
@@ -573,16 +576,6 @@ func (s *APIServer) HandleListCommittedTransactions(w http.ResponseWriter, r *ht
 func (s *APIServer) HandleThroughputMetrics(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Only GET supported", http.StatusMethodNotAllowed)
-		return
-	}
-
-	if s.DB == nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusServiceUnavailable)
-		json.NewEncoder(w).Encode(map[string]string{
-			"status": "error",
-			"error":  "PostgreSQL not connected",
-		})
 		return
 	}
 
@@ -596,50 +589,99 @@ func (s *APIServer) HandleThroughputMetrics(w http.ResponseWriter, r *http.Reque
 	}
 
 	mode := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("mode")))
+	if mode == "" {
+		mode = "latest"
+	}
+	commitSource := "postgres_mirror"
+
 	var metrics *storage.ThroughputMetrics
 	var err error
 
-	switch {
-	case mode == "window":
-		since, okSince := parseTimeQuery(r.URL.Query().Get("since"))
-		until, okUntil := parseTimeQuery(r.URL.Query().Get("until"))
-		if !okSince || !okUntil {
-			writeJSONError(w, http.StatusBadRequest, "mode=window requires since and until (RFC3339)")
+	if s.CommitMetricsClient != nil && s.CommitMetricsClient.Enabled() {
+		q := url.Values{}
+		q.Set("tx_prefix", txPrefix)
+		q.Set("window", strconv.Itoa(windowSec))
+		q.Set("mode", mode)
+		if since := r.URL.Query().Get("since"); since != "" {
+			q.Set("since", since)
+		}
+		if until := r.URL.Query().Get("until"); until != "" {
+			q.Set("until", until)
+		}
+		if lookback := r.URL.Query().Get("lookback"); lookback != "" {
+			q.Set("lookback", lookback)
+		}
+		cm, cpErr := s.CommitMetricsClient.Throughput(q)
+		if cpErr == nil {
+			commitSource = "commit_peer_api"
+			metrics = &storage.ThroughputMetrics{
+				WindowSeconds:   cm.WindowSeconds,
+				LookbackSeconds: cm.LookbackSeconds,
+				WindowStart:     cm.WindowStart,
+				WindowEnd:       cm.WindowEnd,
+				TxCommitted:     cm.TxCommitted,
+				BlocksCommitted: cm.BlocksCommitted,
+				TxPerSec:        cm.TxPerSec,
+				BlocksPerSec:    cm.BlocksPerSec,
+			}
+		} else {
+			err = cpErr
+		}
+	}
+
+	if metrics == nil {
+		if s.DB == nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			json.NewEncoder(w).Encode(map[string]string{
+				"status": "error",
+				"error":  throughputErrMsg(err),
+			})
 			return
 		}
-		metrics, err = s.DB.GetThroughputWindow(since, until, txPrefix)
 
-	case mode == "peak":
-		lookbackSec := 60
-		if raw := r.URL.Query().Get("lookback"); raw != "" {
-			var parsed int
-			if _, parseErr := fmt.Sscanf(raw, "%d", &parsed); parseErr == nil && parsed > 0 {
-				lookbackSec = parsed
+		switch {
+		case mode == "window":
+			since, okSince := parseTimeQuery(r.URL.Query().Get("since"))
+			until, okUntil := parseTimeQuery(r.URL.Query().Get("until"))
+			if !okSince || !okUntil {
+				writeJSONError(w, http.StatusBadRequest, "mode=window requires since and until (RFC3339)")
+				return
 			}
-		}
-		metrics, err = s.DB.GetThroughputPeak(lookbackSec, windowSec, txPrefix)
+			metrics, err = s.DB.GetThroughputWindow(since, until, txPrefix)
 
-	case mode == "since" || r.URL.Query().Get("since") != "":
-		mode = "since"
-		since := time.Now().Add(-time.Duration(windowSec) * time.Second)
-		if raw := r.URL.Query().Get("since"); raw != "" {
-			if t, parseErr := time.Parse(time.RFC3339, raw); parseErr == nil {
-				since = t
-			} else if t, parseErr := time.Parse(time.RFC3339Nano, raw); parseErr == nil {
-				since = t
-			} else if ms, parseErr := strconv.ParseInt(raw, 10, 64); parseErr == nil && ms > 0 {
-				if ms > 1_000_000_000_000 {
-					since = time.UnixMilli(ms)
-				} else {
-					since = time.Unix(ms, 0)
+		case mode == "peak":
+			lookbackSec := 60
+			if raw := r.URL.Query().Get("lookback"); raw != "" {
+				var parsed int
+				if _, parseErr := fmt.Sscanf(raw, "%d", &parsed); parseErr == nil && parsed > 0 {
+					lookbackSec = parsed
 				}
 			}
-		}
-		metrics, err = s.DB.GetThroughputSince(since, txPrefix)
+			metrics, err = s.DB.GetThroughputPeak(lookbackSec, windowSec, txPrefix)
 
-	default:
-		mode = "latest"
-		metrics, err = s.DB.GetThroughputLatest(windowSec, txPrefix)
+		case mode == "since" || r.URL.Query().Get("since") != "":
+			mode = "since"
+			since := time.Now().Add(-time.Duration(windowSec) * time.Second)
+			if raw := r.URL.Query().Get("since"); raw != "" {
+				if t, parseErr := time.Parse(time.RFC3339, raw); parseErr == nil {
+					since = t
+				} else if t, parseErr := time.Parse(time.RFC3339Nano, raw); parseErr == nil {
+					since = t
+				} else if ms, parseErr := strconv.ParseInt(raw, 10, 64); parseErr == nil && ms > 0 {
+					if ms > 1_000_000_000_000 {
+						since = time.UnixMilli(ms)
+					} else {
+						since = time.Unix(ms, 0)
+					}
+				}
+			}
+			metrics, err = s.DB.GetThroughputSince(since, txPrefix)
+
+		default:
+			mode = "latest"
+			metrics, err = s.DB.GetThroughputLatest(windowSec, txPrefix)
+		}
 	}
 
 	if err != nil {
@@ -653,14 +695,15 @@ func (s *APIServer) HandleThroughputMetrics(w http.ResponseWriter, r *http.Reque
 	}
 
 	resp := map[string]interface{}{
-		"status":           "success",
-		"mode":             mode,
-		"tx_prefix":        txPrefix,
-		"window_seconds":   metrics.WindowSeconds,
-		"tx_committed":     metrics.TxCommitted,
-		"blocks_committed": metrics.BlocksCommitted,
-		"tx_per_sec":       metrics.TxPerSec,
-		"blocks_per_sec":   metrics.BlocksPerSec,
+		"status":             "success",
+		"mode":               mode,
+		"tx_prefix":          txPrefix,
+		"commit_data_source": commitSource,
+		"window_seconds":     metrics.WindowSeconds,
+		"tx_committed":       metrics.TxCommitted,
+		"blocks_committed":   metrics.BlocksCommitted,
+		"tx_per_sec":         metrics.TxPerSec,
+		"blocks_per_sec":     metrics.BlocksPerSec,
 	}
 	if metrics.WindowStart != nil {
 		resp["window_start"] = metrics.WindowStart.UTC().Format(time.RFC3339Nano)
@@ -675,6 +718,13 @@ func (s *APIServer) HandleThroughputMetrics(w http.ResponseWriter, r *http.Reque
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(resp)
+}
+
+func throughputErrMsg(err error) string {
+	if err != nil {
+		return err.Error()
+	}
+	return "PostgreSQL not connected and commit peer metrics unavailable"
 }
 
 // HandleExplorerStream streams explorer updates via SSE.

@@ -4,7 +4,10 @@ import (
 	"database/sql"
 	"fmt"
 	"math"
+	"sort"
 	"time"
+
+	"coreservice/internal/metrics/commitpeer"
 )
 
 // BenchmarkMetrics aggregates submit, commit, and E2E latency for an explicit time window.
@@ -39,10 +42,20 @@ type BenchmarkMetrics struct {
 	MeetsSubmitSustained5000 bool `json:"meets_submit_sustained_5000"`
 	MeetsCommitSustained5000 bool `json:"meets_commit_sustained_5000"`
 	MeetsLatencyP95Under1s   bool `json:"meets_latency_p95_under_1s"`
+
+	// CommitDataSource is "commit_peer_api" or "postgres_mirror".
+	CommitDataSource string `json:"commit_data_source,omitempty"`
+}
+
+// SubmitSample is one recorded Core accept for E2E join.
+type SubmitSample struct {
+	Txid        string
+	SubmittedAt time.Time
 }
 
 // GetBenchmarkMetrics computes metrics for [windowStart, windowEnd].
-func (p *PostgresDB) GetBenchmarkMetrics(windowStart, windowEnd time.Time, txidPrefix string) (*BenchmarkMetrics, error) {
+// When commitClient is configured, commit + E2E use commit peer ground truth (no Postgres mirror lag).
+func (p *PostgresDB) GetBenchmarkMetrics(windowStart, windowEnd time.Time, txidPrefix string, commitClient *commitpeer.Client) (*BenchmarkMetrics, error) {
 	if p == nil || p.db == nil {
 		return nil, fmt.Errorf("postgres not connected")
 	}
@@ -66,11 +79,24 @@ func (p *PostgresDB) GetBenchmarkMetrics(windowStart, windowEnd time.Time, txidP
 	if err := p.fillSubmitWindow(m, windowStart, windowEnd, txidPrefix); err != nil {
 		return nil, err
 	}
-	if err := p.fillCommitWindow(m, windowStart, windowEnd, txidPrefix); err != nil {
-		return nil, err
-	}
-	if err := p.fillE2EWindow(m, windowStart, windowEnd, txidPrefix); err != nil {
-		return nil, err
+
+	useCommitPeer := commitClient != nil && commitClient.Enabled()
+	if useCommitPeer {
+		m.CommitDataSource = "commit_peer_api"
+		if err := p.fillCommitWindowFromPeer(m, commitClient, windowStart, windowEnd, txidPrefix); err != nil {
+			return nil, err
+		}
+		if err := p.fillE2EFromPeer(m, commitClient, windowStart, windowEnd, txidPrefix); err != nil {
+			return nil, err
+		}
+	} else {
+		m.CommitDataSource = "postgres_mirror"
+		if err := p.fillCommitWindow(m, windowStart, windowEnd, txidPrefix); err != nil {
+			return nil, err
+		}
+		if err := p.fillE2EWindow(m, windowStart, windowEnd, txidPrefix); err != nil {
+			return nil, err
+		}
 	}
 
 	m.MeetsSubmitSustained5000 = m.SubmitTxPerSecSustained >= 5000
@@ -154,6 +180,111 @@ func (p *PostgresDB) fillCommitWindow(m *BenchmarkMetrics, start, end time.Time,
 		return fmt.Errorf("commit peak: %w", err)
 	}
 	m.CommitTxPerSecPeak = float64(peak)
+	return nil
+}
+
+func (p *PostgresDB) fillCommitWindowFromPeer(m *BenchmarkMetrics, client *commitpeer.Client, start, end time.Time, prefix string) error {
+	cm, err := client.CommitWindow(start, end, prefix)
+	if err != nil {
+		return fmt.Errorf("commit peer window: %w", err)
+	}
+	m.CommitCount = cm.CommitCount
+	m.CommitTxPerSecSustained = cm.CommitTxPerSecSustained
+	m.CommitTxPerSecPeak = cm.CommitTxPerSecPeak
+	m.BlocksCommitted = cm.BlocksCommitted
+	m.BlocksPerSecSustained = cm.BlocksPerSecSustained
+	m.AvgTxPerBlock = cm.AvgTxPerBlock
+	return nil
+}
+
+func (p *PostgresDB) listSubmitSamples(start, end time.Time, prefix string) ([]SubmitSample, error) {
+	query := `
+		SELECT txid, submitted_at
+		FROM core_service.tx_submit_times s
+		WHERE s.submitted_at >= $1 AND s.submitted_at <= $2
+		  AND ($3 = '' OR s.txid LIKE $3 || '%')
+		ORDER BY submitted_at
+	`
+	rows, err := p.db.Query(query, start, end, prefix)
+	if err != nil {
+		return nil, fmt.Errorf("list submit samples: %w", err)
+	}
+	defer rows.Close()
+
+	out := make([]SubmitSample, 0, 256)
+	for rows.Next() {
+		var s SubmitSample
+		if err := rows.Scan(&s.Txid, &s.SubmittedAt); err != nil {
+			return nil, fmt.Errorf("scan submit sample: %w", err)
+		}
+		s.SubmittedAt = s.SubmittedAt.UTC()
+		out = append(out, s)
+	}
+	return out, rows.Err()
+}
+
+func (p *PostgresDB) fillE2EFromPeer(m *BenchmarkMetrics, client *commitpeer.Client, start, end time.Time, prefix string) error {
+	samples, err := p.listSubmitSamples(start, end, prefix)
+	if err != nil {
+		return err
+	}
+	if len(samples) == 0 {
+		return nil
+	}
+
+	txids := make([]string, len(samples))
+	for i, s := range samples {
+		txids[i] = s.Txid
+	}
+	commits, err := client.LookupCommits(txids)
+	if err != nil {
+		return fmt.Errorf("commit peer lookup: %w", err)
+	}
+
+	latencies := make([]float64, 0, len(samples))
+	secCounts := map[int64]int64{}
+	var pending int64
+
+	for _, s := range samples {
+		at, ok := commits[s.Txid]
+		if !ok {
+			pending++
+			continue
+		}
+		ms := at.Sub(s.SubmittedAt).Seconds() * 1000
+		if ms < 0 {
+			ms = 0
+		}
+		latencies = append(latencies, ms)
+		sec := at.Truncate(time.Second).Unix()
+		secCounts[sec]++
+	}
+
+	m.E2EPending = pending
+	m.E2ECompleted = int64(len(latencies))
+	if len(latencies) == 0 {
+		return nil
+	}
+
+	sort.Float64s(latencies)
+	var sum float64
+	for _, v := range latencies {
+		sum += v
+	}
+	m.LatencyMsMin = latencies[0]
+	m.LatencyMsMax = latencies[len(latencies)-1]
+	m.LatencyMsAvg = sum / float64(len(latencies))
+	m.LatencyMsP50 = percentileSorted(latencies, 50)
+	m.LatencyMsP95 = percentileSorted(latencies, 95)
+	m.LatencyMsP99 = percentileSorted(latencies, 99)
+
+	var peak int64
+	for _, c := range secCounts {
+		if c > peak {
+			peak = c
+		}
+	}
+	m.E2ETxPerSecPeak = float64(peak)
 	return nil
 }
 

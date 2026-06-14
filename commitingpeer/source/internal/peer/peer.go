@@ -14,6 +14,7 @@ import (
 
 	"commiting-peer/internal/deliver"
 	"commiting-peer/internal/discovery"
+	"commiting-peer/internal/metrics"
 	"commiting-peer/internal/storage"
 	"commiting-peer/internal/types"
 	"commiting-peer/internal/validation"
@@ -278,6 +279,14 @@ func (p *CommittingPeer) handleBlock(block types.Block) {
 
 	committedAt := time.Now().UTC()
 	log.Printf("[peer] committed block hash=%s txs=%d", hashHex, len(block.Transactions))
+
+	txids := make([]string, 0, len(block.Transactions))
+	for _, tx := range block.Transactions {
+		if tx.Txid != "" {
+			txids = append(txids, tx.Txid)
+		}
+	}
+	metrics.DefaultRecorder.RecordBlock(hashHex, txids, committedAt)
 
 	// Explorer mirror only — does not affect commit success.
 	p.enqueueLedgerMirror(block, hashHex, blockNumber, committedAt)

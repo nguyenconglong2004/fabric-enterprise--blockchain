@@ -15,6 +15,7 @@ import (
 	"commiting-peer/internal/crypto"
 	"commiting-peer/internal/deliver"
 	"commiting-peer/internal/discovery"
+	"commiting-peer/internal/metrics"
 	peerpkg "commiting-peer/internal/peer"
 	"commiting-peer/internal/storage"
 	"commiting-peer/internal/validation"
@@ -170,6 +171,22 @@ func main() {
 	if err := peer.Start(ctx, ordererAddr, deliverFrom); err != nil {
 		fmt.Printf("Error starting peer: %v\n", err)
 		return
+	}
+
+	metricsAddr := strings.TrimSpace(os.Getenv("COMMIT_PEER_METRICS_ADDR"))
+	if metricsAddr == "0" {
+		fmt.Println("📊 Commit metrics HTTP tắt (COMMIT_PEER_METRICS_ADDR=0)")
+	} else {
+		if metricsAddr == "" {
+			metricsAddr = ":8081"
+		}
+		metrics.StartHTTPServer(ctx, metricsAddr, metrics.DefaultRecorder)
+		metricsHost := metricsAddr
+		if strings.HasPrefix(metricsHost, ":") {
+			metricsHost = "127.0.0.1" + metricsHost
+		}
+		fmt.Printf("📊 Commit metrics API: http://%s/metrics/throughput (tắt: COMMIT_PEER_METRICS_ADDR=0)\n", metricsHost)
+		fmt.Printf("   Core env: export COMMIT_PEER_METRICS_URL=http://%s\n", metricsHost)
 	}
 
 	syncAddr := deliverClient.GetAddress()

@@ -13,6 +13,7 @@ import (
 
 	"coreservice/internal/api"
 	"coreservice/internal/discovery"
+	"coreservice/internal/metrics/commitpeer"
 	"coreservice/internal/network"
 	"coreservice/internal/state"
 	"coreservice/internal/storage"
@@ -164,6 +165,16 @@ func main() {
 		OrderDiscovery:       orderDiscovery,
 		DB:                   postgresDB,
 		CommitPeerMultiaddrs: commitPeerP2P,
+	}
+	metricsURL := strings.TrimSpace(os.Getenv("COMMIT_PEER_METRICS_URL"))
+	if metricsURL == "" {
+		metricsURL = strings.TrimSpace(os.Getenv("COMMIT_PEER_METRICS_HTTP"))
+	}
+	if metricsURL != "" {
+		apiServer.CommitMetricsClient = commitpeer.NewClient(metricsURL)
+		fmt.Printf("📊 Commit metrics qua API: %s (commit_data_source=commit_peer_api)\n", metricsURL)
+	} else if commitPeerP2P != "" {
+		fmt.Println("ℹ️  Gợi ý: export COMMIT_PEER_METRICS_URL=http://127.0.0.1:8081 để E2E/commit dùng commit peer API (không lag mirror)")
 	}
 	apiServer.InitSubmitRecorder()
 	defer apiServer.CloseSubmitRecorder()
