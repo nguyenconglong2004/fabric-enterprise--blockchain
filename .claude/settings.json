@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(rtk wc *)",
+      "Bash(iconv -f latin1 -t utf-8 bibtex2.log)",
+      "Bash(iconv -f latin1 -t utf-8 final.log)",
+      "Bash(rm -f build.log build2.log final.log bibtex.log bibtex2.log)",
+      "Bash(latexmk -c)",
+      "Bash(rtk ls *)"
+    ]
+  }
+}

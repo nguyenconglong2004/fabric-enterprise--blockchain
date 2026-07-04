@@ -136,3 +136,7 @@
 15:22:29.304558 version@stat F·[2 1] S·3KiB[2KiB 1KiB] Sc·[0.50 0.00]
 15:22:29.311299 db@janitor F·5 G·0
 15:22:29.311299 db@open done T·9.5591ms
+=============== Jun 30, 2026 (+07) ===============
+23:32:04.926912 log@legend F·NumFile S·FileSize N·Entry C·BadEntry B·BadBlock Ke·KeyError D·DroppedEntry L·Level Q·SeqNum T·TimeElapsed
+23:32:04.968367 CURRENT: missing target file: MANIFEST-000030
+23:32:04.970021 CURRENT.bak: missing target file: MANIFEST-000028

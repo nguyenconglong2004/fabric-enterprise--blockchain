@@ -27,12 +27,193 @@ Thứ tự khởi động: **Postgres → Orderer → Commit peer → Core → d
 | Go 1.21+ | Orderer, commit peer, Core |
 | [TinyGo](https://tinygo.org/getting-started/install/) | Build WASM `bench_ping` |
 | [k6](https://grafana.com/docs/k6/latest/set-up/install-k6/) | Load test |
+| Node.js 18+ | Build frontend orchestrator |
+| PowerShell 7+ hoặc Git Bash | Chạy lệnh trên Windows (xem mục 2.1) |
 
-Trên macOS/Linux, trước benchmark tăng file descriptor:
+Trên **macOS/Linux**, trước benchmark tăng file descriptor:
 
 ```bash
 ulimit -n 65536
 ```
+
+Trên **Windows** không cần `ulimit` (mục 2.1).
+
+---
+
+## 2.1 Chạy trên Windows
+
+Hướng dẫn dùng **PowerShell** từ thư mục gốc repo (vd. `C:\...\fabric-enterprise--blockchain`). Có thể dùng **Git Bash** cho các lệnh `bash`/`./script.sh` nếu quen hơn.
+
+### Cài đặt
+
+| Công cụ | Cách cài (gợi ý) |
+|---------|------------------|
+| Docker Desktop | [docker.com/products/docker-desktop](https://www.docker.com/products/docker-desktop/) — bật WSL2 backend |
+| Go | [go.dev/dl](https://go.dev/dl/) — MSI Windows amd64 |
+| Node.js | [nodejs.org](https://nodejs.org/) LTS |
+| TinyGo | [tinygo.org/getting-started/install/windows](https://tinygo.org/getting-started/install/windows/) — thêm `tinygo` vào `PATH` |
+| k6 | `winget install k6` hoặc `choco install k6` |
+| jq (tùy chọn) | `winget install jqlang.jq` — không bắt buộc, có thể đọc JSON thô |
+
+Kiểm tra nhanh:
+
+```powershell
+docker compose version
+go version
+node -v
+tinygo version
+k6 version
+```
+
+### Cửa sổ terminal
+
+Chạy **song song** (mỗi dịch vụ một tab Windows Terminal):
+
+| Tab | Dịch vụ | Ghi chú |
+|-----|---------|---------|
+| 1 | Postgres (Docker) | Chạy một lần, để nền |
+| 2 | Orderer orchestrator | UI + API orderer |
+| 3 | Commit peer | Prompt nhập multiaddr orderer |
+| 4 | Core Service | HTTP API cho k6 |
+| 5 | k6 | Chạy sau khi deploy contract |
+
+### Xung đột cổng `:8080`
+
+Orchestrator và Core **cùng mặc định cổng 8080**. Khi chạy full stack trên một máy:
+
+- **Orchestrator** → cổng khác, vd. `:9090`
+- **Core** → giữ `:8080` (k6 gọi `BASE_URL=http://localhost:8080`)
+
+```powershell
+cd orderingservice\source
+.\orchestrator.exe --addr :9090
+# UI orderer: http://localhost:9090
+```
+
+Tune auto-propose (nếu cần) qua API orderer:
+
+```powershell
+curl.exe -X PATCH http://localhost:9090/api/nodes/6000/config `
+  -H "Content-Type: application/json" `
+  -d '{\"auto_propose_interval_ms\": 100, \"auto_propose_block_size\": 1000}'
+```
+
+### Postgres — migration trên Windows
+
+Thay `docker exec ... < file` (bash) bằng pipe PowerShell:
+
+```powershell
+Get-Content migrations\002_tx_submit_times.sql -Raw |
+  docker exec -i fabric-postgres psql -U fabric -d blockchain
+```
+
+### Ordering Service
+
+```powershell
+cd orderingservice\source\web
+npm install
+npm run build
+cd ..
+go build -o orchestrator.exe .\cmd\orchestrator
+.\orchestrator.exe --addr :9090
+```
+
+Tạo node trên UI (`http://localhost:9090`), ghi multiaddr P2P đầy đủ.
+
+### Committing Peer
+
+```powershell
+cd commitingpeer\source
+go mod tidy
+go build -o ..\peer.exe .\cmd\peer
+cd ..
+.\peer.exe
+```
+
+### Core Service — biến môi trường (PowerShell)
+
+```powershell
+$env:ORDER_SERVICE_PEER = "/ip4/127.0.0.1/tcp/6000/p2p/12D3KooW..."
+$env:COMMIT_PEER_P2P    = "/ip4/127.0.0.1/tcp/12345/p2p/12D3KooW..."
+$env:POSTGRES_URL       = "postgres://fabric:fabric123@localhost:5432/blockchain?sslmode=disable"
+
+cd coreservice\cmd\node
+go run main.go
+```
+
+Tắt ghi submit time: `$env:CORE_RECORD_SUBMIT = "0"`.
+
+**Git Bash** (tương đương `export`):
+
+```bash
+export ORDER_SERVICE_PEER="/ip4/127.0.0.1/tcp/6000/p2p/12D3KooW..."
+export COMMIT_PEER_P2P="/ip4/127.0.0.1/tcp/12345/p2p/12D3KooW..."
+export POSTGRES_URL="postgres://fabric:fabric123@localhost:5432/blockchain?sslmode=disable"
+cd coreservice/cmd/node && go run main.go
+```
+
+### Build WASM `bench_ping`
+
+**Cách 1 — TinyGo trực tiếp (PowerShell):**
+
+```powershell
+cd coreservice\contracts
+tinygo build -o bench_ping/my_contract.wasm -target wasi -no-debug -scheduler=none ./bench_ping
+```
+
+**Cách 2 — Git Bash** (build cả 3 contract):
+
+```bash
+cd coreservice/contracts
+bash build_wasm.sh
+```
+
+### Deploy contract
+
+Dùng `curl.exe` (tránh alias `curl` của PowerShell). Đường dẫn file: từ **thư mục gốc repo**:
+
+```powershell
+curl.exe -X POST http://localhost:8080/api/tx/deploy `
+  -F "contract_name=bench_ping" `
+  -F "file=@coreservice/contracts/bench_ping/my_contract.wasm"
+```
+
+Kiểm tra (không cần `jq`):
+
+```powershell
+curl.exe -s http://localhost:8080/api/contracts
+```
+
+### Chạy k6
+
+Không cần `ulimit`. Nếu k6 báo thiếu tài nguyên hoặc lỗi socket, giảm `RATE` / `MAX_VUS` trước.
+
+```powershell
+cd orderingservice\k6
+
+k6 run `
+  -e RATE=5000 `
+  -e DURATION=60s `
+  -e MAX_VUS=7000 `
+  -e CONTRACT=bench_ping `
+  -e TX_PREFIX=k6-rfp- `
+  -e LEDGER_WAIT=60s `
+  submit-tx.js
+```
+
+Một dòng (copy-paste dễ hơn):
+
+```powershell
+k6 run -e RATE=5000 -e DURATION=60s -e MAX_VUS=7000 -e CONTRACT=bench_ping -e TX_PREFIX=k6-rfp- -e LEDGER_WAIT=60s submit-tx.js
+```
+
+### Checklist Windows
+
+- [ ] Docker Desktop đang chạy  
+- [ ] Orchestrator `--addr :9090`, Core `:8080`  
+- [ ] Multiaddr orderer / commit peer copy đủ port + PeerID  
+- [ ] `bench_ping` deploy thành công (`/api/contracts`)  
+- [ ] k6 chạy từ `orderingservice\k6` với `TX_PREFIX` riêng  
 
 ---
 
@@ -72,9 +253,11 @@ Khuyến nghị dùng **Web UI orchestrator** (xem [orderingservice/README.md](.
 ```bash
 cd orderingservice/source/web && npm install && npm run build
 cd .. && go build -o orchestrator ./cmd/orchestrator
-./orchestrator
-# Mở http://localhost:8080 (UI orderer — khác port Core API sau này)
+./orchestrator --addr :9090
+# UI orderer: http://localhost:9090 — Core API vẫn :8080 (xem mục 2.1 Windows)
 ```
+
+Windows: dùng `orchestrator.exe` và `--addr :9090` (mục 2.1).
 
 Tạo ít nhất **1 node** (port P2P vd. `6000`). Ghi lại multiaddr đầy đủ:
 
@@ -91,9 +274,9 @@ Tạo ít nhất **1 node** (port P2P vd. `6000`). Ghi lại multiaddr đầy đ
 ```bash
 cd commitingpeer/source
 go mod tidy
-go build -o ../peer ./cmd/peer
+go build -o ../peer ./cmd/peer    # Windows: -o ../peer.exe
 cd ..
-./peer
+./peer                            # Windows: .\peer.exe
 ```
 
 Khi prompt:
@@ -159,6 +342,8 @@ cd coreservice/contracts
 
 Cần TinyGo. Script build cả `example_asset`, `demo_inventory`, `bench_ping`.
 
+**Windows:** Git Bash `bash build_wasm.sh`, hoặc TinyGo trực tiếp (mục 2.1).
+
 ### 7.2 Deploy lên Core
 
 ```bash
@@ -194,7 +379,7 @@ cd orderingservice/k6
 ### 8.1 Benchmark RFP (steady 5000/s × 60s)
 
 ```bash
-ulimit -n 65536
+ulimit -n 65536   # bỏ qua trên Windows (mục 2.1)
 
 k6 run \
   -e RATE=5000 \
@@ -278,13 +463,15 @@ Field `meets_*` trong JSON benchmark map trực tiếp các ngưỡng trên.
 ## 10. Checklist nhanh
 
 - [ ] `docker compose up -d postgres` (+ migration nếu DB cũ)  
-- [ ] Orderer chạy, multiaddr đúng  
+- [ ] Orderer chạy (`--addr :9090` nếu Core cùng máy), multiaddr đúng  
 - [ ] Commit peer connect orderer, mirror Postgres  
 - [ ] Core: `ORDER_SERVICE_PEER` + `COMMIT_PEER_P2P`  
-- [ ] `./build_wasm.sh` + deploy `bench_ping`  
-- [ ] `ulimit -n 65536`  
+- [ ] Build WASM + deploy `bench_ping`  
+- [ ] `ulimit -n 65536` (macOS/Linux; Windows bỏ qua)  
 - [ ] k6 với `TX_PREFIX` riêng + `LEDGER_WAIT` đủ dài  
 - [ ] Query benchmark với **đúng** `since`/`until` từ teardown  
+
+**Windows:** xem checklist riêng mục 2.1.
 
 ---
 

@@ -1,0 +1,324 @@
+\chapter{Các công trình liên quan}
+\label{chap:related-work}
+
+Chương này khảo sát nền tảng lý thuyết và các công trình tiền đề mà khóa luận
+dựa vào hoặc lấy cảm hứng. Chúng tôi đi từ những khái niệm nền tảng nhất (sổ cái
+phân tán, hàm băm, cây Merkle) đến các hệ thống blockchain tiêu biểu (Bitcoin,
+Ethereum, Hyperledger Fabric), rồi tới các thuật toán đồng thuận, công nghệ máy
+ảo hợp đồng thông minh và hạ tầng mạng ngang hàng. Cuối chương, chúng tôi định
+vị hệ thống của khóa luận trong bức tranh tổng thể đó.
+
+\section{Sổ cái phân tán và hàm băm mật mã}
+\label{sec:dlt-hash}
+
+Cốt lõi của mọi blockchain là một \textbf{sổ cái phân tán}: một danh sách các
+bản ghi (giao dịch) được nhóm thành các \textit{block} (khối), trong đó mỗi
+block chứa ``dấu vân tay'' mật mã của block liền trước. Dấu vân tay này được
+tính bằng một \textbf{hàm băm mật mã} (cryptographic hash function) --- một hàm
+biến dữ liệu có độ dài tùy ý thành một chuỗi bit có độ dài cố định, với ba thuộc
+tính then chốt: kháng tiền ảnh (preimage resistance), kháng tiền ảnh thứ hai, và
+kháng va chạm (collision resistance). Một thay đổi dù chỉ một bit ở dữ liệu đầu
+vào cũng làm thay đổi hoàn toàn giá trị băm, và về mặt tính toán là không khả
+thi để đảo ngược.
+
+Vì mỗi block tham chiếu tới hash của block trước, việc sửa đổi một block cũ sẽ
+làm thay đổi hash của nó, kéo theo phải tính lại toàn bộ các block sau --- điều
+khiến dữ liệu trở nên gần như \textbf{bất biến}. Đây chính là cơ chế ``chuỗi''
+(chain) trong từ ``blockchain''. Hệ thống trong khóa luận sử dụng SHA-256 (cụ
+thể là double-SHA256, giống Bitcoin)~\cite{fips180,nakamoto2008bitcoin} cho hash
+block.
+
+\subsection{Cây Merkle}
+
+Để tóm tắt toàn bộ các giao dịch trong một block thành một giá trị duy nhất,
+blockchain sử dụng \textbf{cây Merkle}~\cite{merkle1979} (Merkle tree, hay hash
+tree). Trong cấu trúc này, các giao dịch là lá; mỗi nút trong là hash của hai
+nút con ghép lại; và nút gốc --- \textit{Merkle root} --- tóm tắt toàn bộ cây.
+Cây Merkle mang lại hai lợi ích: (1)~bất kỳ thay đổi nào ở một giao dịch đều làm
+thay đổi Merkle root, nên root đóng vai trò bằng chứng toàn vẹn; và (2)~người ta
+có thể chứng minh một giao dịch thuộc về block mà chỉ cần cung cấp $O(\log n)$
+hash trên đường từ lá đến gốc, thay vì tải toàn bộ block --- cơ sở cho các
+``light client'' (máy khách nhẹ). Hệ thống của khóa luận tính Merkle root từ
+danh sách \texttt{txid} của các giao dịch và đưa vào header của block.
+
+\section{Bitcoin và mô hình UTXO}
+\label{sec:bitcoin-utxo}
+
+Bitcoin~\cite{nakamoto2008bitcoin} là blockchain đầu tiên giải quyết được bài
+toán ``chi tiêu hai lần'' (double-spending) trong môi trường không cần tin cậy,
+thông qua cơ chế đồng thuận Proof-of-Work và một cấu trúc dữ liệu giao dịch độc
+đáo: mô hình \textbf{UTXO} (Unspent Transaction Output --- đầu ra giao dịch chưa
+tiêu).
+
+Thay vì lưu ``số dư tài khoản'' như ngân hàng truyền thống, Bitcoin lưu một tập
+hợp các ``tờ tiền'' chưa tiêu. Mỗi giao dịch gồm:
+
+\begin{itemize}
+  \item Các \textbf{đầu vào} (inputs, ký hiệu \texttt{Vin}): tham chiếu và
+  ``tiêu'' các UTXO đã tồn tại từ trước.
+  \item Các \textbf{đầu ra} (outputs, ký hiệu \texttt{Vout}): tạo ra các UTXO
+  mới, gán cho người nhận.
+\end{itemize}
+
+Số dư của một địa chỉ chính là tổng giá trị các UTXO mà địa chỉ đó kiểm soát. Mô
+hình UTXO có ưu điểm về khả năng song song hóa kiểm tra giao dịch và tính riêng
+tư, nhưng kém trực quan hơn mô hình tài khoản (account model) khi biểu diễn
+trạng thái phức tạp. Hệ thống của khóa luận \textbf{hỗ trợ mô hình UTXO}: world
+state ở Committing Peer được tổ chức như một tập UTXO, và CLI client đóng vai trò
+một ví UTXO đầy đủ.
+
+\section{Ethereum, mô hình tài khoản và hợp đồng thông minh}
+\label{sec:ethereum}
+
+Ethereum~\cite{buterin2014ethereum,wood2014ethereum} mở rộng ý tưởng blockchain
+từ một hệ thống thanh toán thành một ``máy tính thế giới'' (world computer) có
+khả năng lập trình. Đóng góp lớn nhất của Ethereum là \textbf{hợp đồng thông
+minh} (smart contract): các chương trình được lưu và thực thi trên blockchain,
+tự động chạy khi có giao dịch gọi tới.
+
+Ethereum sử dụng \textbf{mô hình tài khoản} (account-based model) thay cho UTXO:
+trạng thái toàn cục là một ánh xạ từ địa chỉ tài khoản đến số dư và bộ nhớ hợp
+đồng. Hợp đồng được biên dịch sang bytecode của \textit{Máy ảo Ethereum} (EVM)
+và thực thi theo mô hình \textbf{Order-Execute}: các giao dịch được sắp xếp
+trước (qua đồng thuận), sau đó \textit{mọi} node thực thi lại tuần tự để cập nhật
+trạng thái. Mô hình này đơn giản về mặt khái niệm nhưng hạn chế về hiệu năng và
+khả năng song song: mọi node phải chạy lại mọi hợp đồng, và một hợp đồng độc hại
+(ví dụ vòng lặp vô hạn) có thể gây nguy hiểm --- vấn đề mà Ethereum giải quyết
+bằng cơ chế ``gas'' tính phí cho từng bước tính toán.
+
+Hệ thống của khóa luận hỗ trợ hợp đồng thông minh (qua WebAssembly thay vì EVM)
+nhưng áp dụng mô hình thực thi khác --- Execute-Order-Validate của Fabric --- sẽ
+được phân tích ở phần sau.
+
+\section{Hyperledger Fabric và mô hình Execute--Order--Validate}
+\label{sec:fabric}
+
+Hyperledger Fabric~\cite{androulaki2018hyperledger} là nền tảng blockchain có
+cấp phép tiêu biểu cho doanh nghiệp, và là \textbf{nguồn cảm hứng kiến trúc
+chính} của khóa luận. Đóng góp quan trọng nhất của Fabric --- so với mô hình
+Order-Execute của Ethereum --- là kiến trúc \textbf{Execute--Order--Validate},
+tách quá trình xử lý một giao dịch thành ba pha độc lập:
+
+\begin{enumerate}
+  \item \textbf{Execute (Thực thi \& Xác nhận).} Giao dịch được gửi tới các
+  \textit{endorsing peer}; mỗi peer thực thi hợp đồng (\textit{chaincode})
+  trong môi trường cô lập và \textit{ký xác nhận} (endorse) kết quả, nhưng
+  \textbf{chưa} ghi vào sổ cái. Vì các peer thực thi độc lập, bước này có thể
+  được song song hóa.
+  \item \textbf{Order (Sắp xếp).} Các giao dịch đã có chữ ký xác nhận được gửi
+  tới \textit{ordering service}, nơi quyết định thứ tự toàn phần và gom chúng
+  thành block. Đáng chú ý, ordering service \textbf{không cần hiểu nội dung}
+  giao dịch --- nó chỉ sắp xếp, nên rất nhẹ và dễ mở rộng.
+  \item \textbf{Validate (Kiểm tra \& Ghi).} Các \textit{committing peer} nhận
+  block đã sắp xếp, kiểm tra chữ ký xác nhận có thỏa mãn chính sách endorsement
+  không, kiểm tra xung đột phiên bản (đọc-ghi), rồi mới ghi vĩnh viễn.
+\end{enumerate}
+
+Mô hình này mang lại ba lợi ích cốt lõi: (a)~\textbf{khả năng song song} ở pha
+thực thi; (b)~\textbf{tính module hóa}, cho phép thay thế cơ chế đồng thuận mà
+không ảnh hưởng tới logic nghiệp vụ; và (c)~\textbf{bảo mật theo lớp}, vì mỗi
+tầng chỉ thấy thông tin nó cần. Fabric thật sử dụng thư viện
+etcd/raft cho ordering service.
+
+Hệ thống của khóa luận \textbf{tái hiện trung thành} triết lý này: Core Service
+đóng vai trò endorsing peer/gateway (pha Execute), Ordering Service đóng vai trò
+ordering service (pha Order), và Committing Peer đóng vai trò committing peer
+(pha Validate). Điểm khác biệt học thuật quan trọng là chúng tôi
+\textbf{tự cài đặt thuật toán Raft từ đầu} thay vì dùng thư viện, và đơn giản
+hóa một số khía cạnh (ví dụ chính sách endorsement) để tập trung vào việc làm
+chủ cơ chế lõi. Bảng~\ref{tab:fabric-mapping} đối chiếu các vai trò.
+
+\begin{table}[H]
+\centering
+\caption{Đối chiếu vai trò giữa Hyperledger Fabric và hệ thống của khóa luận}
+\label{tab:fabric-mapping}
+\begin{tabular}{@{}p{4cm}p{4.5cm}p{3.5cm}@{}}
+\toprule
+\textbf{Vai trò trong Fabric} & \textbf{Thành phần trong dự án} & \textbf{Pha} \\
+\midrule
+Endorsing Peer / Gateway & Core Service & Execute \\
+Ordering Service (etcd/raft) & Ordering Service (Raft tự viết) & Order \\
+Committing Peer & Committing Peer & Validate \\
+Chaincode (Go/Java/Node) & Hợp đồng WASM (TinyGo) & Execute \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Bài toán đồng thuận và các thuật toán tiêu biểu}
+\label{sec:consensus}
+
+Đồng thuận (consensus) là bài toán trung tâm của hệ phân tán: làm thế nào để
+nhiều tiến trình, một số có thể bị lỗi, cùng thống nhất về một giá trị (hoặc một
+chuỗi giá trị) duy nhất. Kết quả bất khả thi FLP~\cite{fischer1985flp} chứng minh
+rằng trong một hệ bất đồng bộ hoàn toàn, không tồn tại thuật toán đồng thuận
+\textit{tất định} vừa luôn an toàn vừa luôn kết thúc khi có dù chỉ một tiến
+trình lỗi. Các thuật toán thực tế ``né'' kết quả này bằng cách dựa vào giả định
+thời gian (timeout) để đảm bảo tính kết thúc (liveness) trong khi luôn giữ tính
+an toàn (safety).
+
+\subsection{Paxos}
+
+Paxos~\cite{lamport1998paxos} của Leslie Lamport là thuật toán đồng thuận tất
+định đầu tiên được chứng minh đúng đắn, và là nền tảng lý thuyết cho nhiều hệ
+thống. Tuy nhiên, Paxos nổi tiếng là \textit{khó hiểu} và khó hiện thực đúng,
+đặc biệt khi mở rộng thành Multi-Paxos để đồng thuận một chuỗi giá trị.
+
+\subsection{Raft}
+\label{sec:raft-related}
+
+Raft~\cite{ongaro2014raft} được Ongaro và Ousterhout thiết kế với mục tiêu
+tường minh là \textit{dễ hiểu} (understandability) mà vẫn tương đương Paxos về
+năng lực. Raft phân rã bài toán đồng thuận thành ba bài toán con tách biệt:
+
+\begin{itemize}
+  \item \textbf{Bầu lãnh đạo (Leader Election):} tại mỗi thời điểm, chọn một
+  node làm \textit{Leader}; các node khác là \textit{Follower}. Thời gian được
+  chia thành các \textit{term} (nhiệm kỳ), mỗi term có tối đa một Leader. Raft
+  chuẩn dùng \textbf{timeout ngẫu nhiên}: Follower nào hết giờ chờ trước sẽ trở
+  thành \textit{Candidate} và xin phiếu bầu.
+  \item \textbf{Nhân bản log (Log Replication):} chỉ Leader nhận lệnh từ client,
+  ghi vào log của mình, rồi sao chép cho Follower. Khi một entry được sao chép
+  tới \textbf{đa số} (majority) node, nó được coi là đã \textit{commit}.
+  \item \textbf{An toàn (Safety):} một loạt ràng buộc (chỉ bầu cho candidate có
+  log đủ mới, chỉ commit entry của term hiện tại...) đảm bảo không có hai Leader
+  hợp lệ cùng term và log không bị rẽ nhánh.
+\end{itemize}
+
+Khái niệm \textbf{quorum đa số} ($\lfloor N/2 \rfloor + 1$ trên tổng $N$ node)
+là then chốt: vì hai tập đa số bất kỳ luôn giao nhau ở ít nhất một node, không
+thể có hai quyết định mâu thuẫn được commit. Nhờ vậy Raft chịu được tối đa
+$\lfloor (N-1)/2 \rfloor$ node lỗi dừng. Raft là loại đồng thuận
+\textbf{chịu lỗi dừng} (Crash Fault Tolerant --- CFT), giả định các node không
+có hành vi độc hại, chỉ có thể dừng hoặc chậm.
+
+Khóa luận \textbf{tự cài đặt Raft} nhưng thay cơ chế bầu cử bằng timeout ngẫu
+nhiên bằng một biến thể \textbf{bầu lãnh đạo theo độ ưu tiên} (xem
+Chương~\ref{chap:methodology}), nhằm loại bỏ hiện tượng chia phiếu và đạt hội tụ
+xác định.
+
+\subsection{PBFT và đồng thuận chịu lỗi Byzantine}
+
+Trong môi trường mà các node có thể có hành vi \textit{tùy ý} (kể cả độc hại) ---
+bài toán Tướng Byzantine~\cite{lamport1982byzantine} --- người ta cần các thuật
+toán \textbf{chịu lỗi Byzantine} (Byzantine Fault Tolerant --- BFT).
+PBFT~\cite{castro1999pbft} của Castro và Liskov là thuật toán BFT thực tế đầu
+tiên, chịu được tối đa $\lfloor (N-1)/3 \rfloor$ node độc hại với chi phí truyền
+thông $O(N^2)$ thông điệp mỗi vòng. So với CFT, BFT an toàn hơn trong môi trường
+ít tin cậy nhưng đắt hơn nhiều về truyền thông và phức tạp hơn khi hiện thực.
+
+Cachin và Vukoli\'c~\cite{cachin2017blockchain} đã khảo sát một cách hệ thống
+các giao thức đồng thuận trong bối cảnh blockchain, chỉ ra rằng việc lựa chọn
+CFT hay BFT phụ thuộc vào mô hình tin cậy của ứng dụng. Với một blockchain có
+cấp phép trong nội bộ một liên minh doanh nghiệp đã định danh và chịu ràng buộc
+pháp lý, mô hình CFT (như Raft) thường là đủ và được ưa chuộng vì hiệu năng cao
+--- đây cũng là lựa chọn của Fabric (với Raft) và của khóa luận này.
+
+\begin{table}[H]
+\centering
+\caption{So sánh các thuật toán đồng thuận}
+\label{tab:consensus-compare}
+\begin{tabular}{@{}p{2.4cm}p{2.2cm}p{2.6cm}p{3.4cm}@{}}
+\toprule
+\textbf{Thuật toán} & \textbf{Mô hình lỗi} & \textbf{Số node lỗi chịu được} & \textbf{Ghi chú} \\
+\midrule
+Paxos & Crash & $\lfloor(N-1)/2\rfloor$ & Khó hiểu, nền tảng lý thuyết \\
+Raft & Crash & $\lfloor(N-1)/2\rfloor$ & Dễ hiểu; dùng trong dự án \\
+PBFT & Byzantine & $\lfloor(N-1)/3\rfloor$ & Chi phí $O(N^2)$ \\
+PoW (Bitcoin) & Byzantine & $<50\%$ sức tính & Tốn năng lượng \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{WebAssembly cho hợp đồng thông minh}
+\label{sec:wasm-related}
+
+Việc lựa chọn công nghệ thực thi hợp đồng thông minh ảnh hưởng trực tiếp tới ba
+yêu cầu: tính xác định, tính cô lập và khả năng đa ngôn ngữ.
+\textbf{WebAssembly} (WASM)~\cite{haas2017wasm,wasmspec} là một định dạng mã máy
+ảo dạng stack, ban đầu được thiết kế cho trình duyệt web nhưng nhanh chóng trở
+thành lựa chọn phổ biến cho các môi trường thực thi phía máy chủ và blockchain.
+WASM thỏa cả ba yêu cầu: nó chạy trong một bộ nhớ tuyến tính cô lập (sandbox), có
+ngữ nghĩa thực thi xác định, và có thể được biên dịch từ nhiều ngôn ngữ bậc cao
+(Rust, Go, C/C++, AssemblyScript...).
+
+Nhiều nền tảng blockchain hiện đại đã chuyển sang WASM: Polkadot dùng WASM cho
+runtime, CosmWasm đưa hợp đồng WASM vào hệ sinh thái Cosmos, và Ethereum từng
+nghiên cứu eWASM như một thay thế cho EVM. Để giao tiếp với hệ điều hành chủ,
+WASM phía máy chủ thường dùng \textbf{WASI} (WebAssembly System
+Interface)~\cite{wasi} --- một tập giao diện hệ thống chuẩn hóa.
+
+Hệ thống của khóa luận biên dịch hợp đồng viết bằng Go sang WASM bằng
+\textbf{TinyGo}, và thực thi bằng \textbf{wazero} --- một runtime WASM thuần Go
+không phụ thuộc thư viện C, giúp đơn giản hóa việc build và triển khai. Giữa host
+và contract có một giao diện hàm (ABI) quy ước để cấp phát bộ nhớ, truyền payload
+và ghi world state, sẽ được mô tả chi tiết ở Chương~\ref{chap:methodology}.
+
+\section{Mạng ngang hàng và lưu trữ}
+\label{sec:p2p-storage}
+
+\subsection{libp2p}
+
+Các thành phần của một blockchain phân tán cần giao tiếp an toàn và linh hoạt.
+Thay vì dùng HTTP/gRPC thông thường, hệ thống của khóa luận dùng
+\textbf{libp2p}~\cite{libp2p} --- ngăn xếp mạng module hóa được tách ra từ dự án
+IPFS~\cite{benet2014ipfs} và cũng là nền mạng của Ethereum 2.0. libp2p cung cấp:
+(a)~\textbf{định danh mật mã} (PeerID suy ra từ khóa công khai); (b)~\textbf{địa
+chỉ tự mô tả} (multiaddr) như \texttt{/ip4/127.0.0.1/tcp/6000/p2p/12D3Koo...};
+(c)~\textbf{ghép kênh} (stream multiplexing) cho phép nhiều ``làn'' dữ liệu song
+song trên một kết nối; và (d)~\textbf{thương lượng giao thức} qua các Protocol
+ID. Những đặc tính này đặc biệt phù hợp với giao tiếp consensus, nơi cần gửi
+nhiều loại thông điệp (heartbeat, đề xuất block, ACK...) một cách hiệu quả.
+
+\subsection{LevelDB và lưu trữ nhúng}
+
+Để lưu world state cần một cơ sở dữ liệu vừa nhanh vừa nhẹ.
+\textbf{LevelDB}~\cite{leveldb} là một thư viện lưu trữ key-value nhúng, chạy
+ngay trong tiến trình (không cần server riêng), dựa trên cấu trúc LSM-tree
+(log-structured merge-tree) cho phép ghi tuần tự nhanh. Quan trọng nhất với
+blockchain, LevelDB hỗ trợ \textbf{ghi theo lô nguyên tử} (atomic batch): nhiều
+thao tác ghi/xóa hoặc được áp dụng toàn bộ, hoặc không gì cả --- thuộc tính then
+chốt để cập nhật world state UTXO một cách nhất quán theo từng block.
+
+\section{Đánh giá hiệu năng blockchain}
+\label{sec:bench-related}
+
+Việc đánh giá hiệu năng một blockchain có cấp phép đòi hỏi phương pháp luận cẩn
+thận. BLOCKBENCH~\cite{dinh2017blockbench} là một trong những khung đánh giá đầu
+tiên cho private blockchain, đề xuất đo throughput và độ trễ ở nhiều lớp khác
+nhau của hệ thống. Một bài học quan trọng là cần phân biệt rõ \textit{nơi} đo:
+độ trễ mà client cảm nhận (HTTP) khác với độ trễ ghi sổ thực sự (end-to-end).
+
+Khi tốc độ gửi giao dịch vượt quá tốc độ xử lý bền vững của hệ thống, hàng đợi
+giao dịch tích lũy thành \textbf{backlog} và độ trễ tăng vọt --- hiện tượng có
+thể giải thích bằng \textbf{định luật Little}~\cite{little1961law}: số lượng
+công việc trung bình trong hệ thống bằng tốc độ đến nhân với thời gian lưu trú
+trung bình ($L = \lambda W$). Khóa luận áp dụng cách đo ba lớp (k6 đo HTTP,
+submit đo lúc chấp nhận, commit đo lúc ghi sổ) và dùng định luật Little để lý
+giải hành vi backlog ở điểm bão hòa.
+
+\section{Định vị của khóa luận}
+\label{sec:positioning}
+
+Từ khảo sát trên, có thể định vị hệ thống của khóa luận như sau:
+
+\begin{itemize}
+  \item \textbf{Về kiến trúc:} tái hiện mô hình Execute--Order--Validate của
+  Hyperledger Fabric~\cite{androulaki2018hyperledger}, nhưng đơn giản hóa để tập
+  trung vào việc làm chủ cơ chế lõi.
+  \item \textbf{Về đồng thuận:} tự cài đặt Raft~\cite{ongaro2014raft} từ đầu (so
+  với Fabric dùng thư viện etcd/raft), với biến thể bầu lãnh đạo theo độ ưu tiên
+  --- một đóng góp mang tính học thuật, đánh đổi tính tổng quát lấy tính đơn
+  giản và hội tụ xác định.
+  \item \textbf{Về hợp đồng thông minh:} dùng WebAssembly~\cite{haas2017wasm}
+  (giống Polkadot/CosmWasm) thay vì EVM, với runtime thuần Go.
+  \item \textbf{Về mô hình giao dịch:} hỗ trợ cả UTXO (giống
+  Bitcoin~\cite{nakamoto2008bitcoin}) lẫn hợp đồng thông minh ghi world state
+  (giống Ethereum~\cite{buterin2014ethereum}).
+\end{itemize}
+
+Khác biệt cốt lõi so với việc sử dụng lại một nền tảng có sẵn nằm ở
+\textit{mục tiêu}: khóa luận không hướng tới một sản phẩm thương mại sẵn sàng
+vận hành, mà hướng tới việc \textbf{làm chủ tri thức nền tảng} thông qua việc tự
+hiện thực từng lớp. Chính vì vậy, báo cáo dành phần lớn dung lượng cho việc lý
+giải các quyết định thiết kế và các điểm đánh đổi, đặc biệt ở tầng đồng thuận ---
+nội dung được trình bày chi tiết trong Chương~\ref{chap:methodology}.

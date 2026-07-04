@@ -1,0 +1,1073 @@
+\chapter{Phương pháp và Thiết kế hệ thống}
+\label{chap:methodology}
+
+Chương này trình bày chi tiết phương pháp luận thiết kế và toàn bộ kiến trúc của
+hệ thống. Chúng tôi bắt đầu từ cái nhìn tổng thể về kiến trúc bốn thành phần và
+mô hình Execute--Order--Validate, sau đó đặc tả mô hình dữ liệu chung, rồi đi
+sâu vào thiết kế của từng thành phần theo đúng hành trình của một giao dịch:
+Core Service (cổng vào và thực thi), Ordering Service (đồng thuận Raft ---
+trọng tâm), Committing Peer (kiểm tra và ghi sổ), và Blockchain Explorer (giao
+diện). Cuối chương trình bày cơ sở dữ liệu PostgreSQL và phương pháp đo lường
+hiệu năng.
+
+\section{Tổng quan kiến trúc}
+\label{sec:architecture-overview}
+
+\subsection{Triết lý thiết kế: tách ba trách nhiệm}
+
+Hệ thống được tổ chức theo triết lý \textbf{Execute--Order--Validate} của
+Hyperledger Fabric (đã giới thiệu ở Mục~\ref{sec:fabric}), trong đó ba trách
+nhiệm cốt lõi của việc xử lý một giao dịch được tách thành ba tiến trình độc
+lập:
+
+\begin{table}[H]
+\centering
+\caption{Ba tầng trách nhiệm và ranh giới của chúng}
+\label{tab:three-tiers}
+\begin{tabular}{@{}p{2.6cm}p{3.4cm}p{3.6cm}p{3.2cm}@{}}
+\toprule
+\textbf{Tầng} & \textbf{Thành phần} & \textbf{Làm gì} & \textbf{Không làm gì} \\
+\midrule
+Execute & Core Service & Chạy hợp đồng, xin endorsement & Không quyết định thứ tự \\
+Order & Ordering Service (Raft) & Quyết định thứ tự, gom block & Không chạy hợp đồng, không xét nội dung \\
+Validate & Committing Peer & Kiểm tra \& ghi vĩnh viễn & Không sắp xếp lại thứ tự \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Việc tách tiến trình mang lại bốn lợi ích thực tiễn: (1)~\textbf{chịu lỗi} ---
+Ordering Service gồm nhiều node, chết một node vẫn chạy nhờ Raft; (2)~\textbf{mở
+rộng độc lập} --- cần thêm sức tính hợp đồng thì thêm Core Service, cần ghi
+nhanh hơn thì thêm Committing Peer; (3)~\textbf{bảo mật theo lớp} --- mỗi tầng
+chỉ thấy thông tin nó cần, ví dụ Ordering Service không cần biết nội dung giao
+dịch; và (4)~\textbf{phản ánh đúng thực tế doanh nghiệp}, giống mô hình mà ngành
+tài chính và chuỗi cung ứng đang dùng.
+
+\subsection{Sơ đồ tổng thể}
+
+Hệ thống gồm bốn thành phần chạy độc lập, giao tiếp với nhau qua mạng ngang hàng
+\texttt{libp2p}, cùng một cơ sở dữ liệu PostgreSQL đóng vai trò bản sao tra cứu.
+Hình~\ref{fig:overall-arch} mô tả kiến trúc và các luồng giao tiếp chính.
+
+\begin{figure}[H]
+\centering
+\begin{lstlisting}[basicstyle=\ttfamily\scriptsize,numbers=none,backgroundcolor=\color{white}]
+            +-----------------------------------------------+
+            |   NGUOI DUNG (trinh duyet - Blockchain Explorer) |
+            +------------------------+----------------------+
+                                     | HTTP (REST + SSE)
+                                     v
+   +-------------------------------------------------------------+
+   |  CORE SERVICE (Go)                          cong :8080       |
+   |  - Nhan giao dich (/api/tx/submit)                          |
+   |  - Chay smart contract WASM (wazero) -- "execute thu"       |
+   |  - Xin Committing Peer ky endorsement                       |
+   |  - Luu ma contract + world state cuc bo (LevelDB)           |
+   +----+--------------------------------------------+-----------+
+        | libp2p: endorsement                        | libp2p: tx-sign
+        v                                            v
+  +--------------------------------+      +----------------------------+
+  | ORDERING SERVICE (Go) -- RAFT  |      | COMMITTING PEER (ky)       |
+  | - Leader gom tx -> block       |      | ky endorsement (Ed25519)   |
+  | - Dong thuan Raft (majority)   |      +----------------------------+
+  | - Cat block (1000 tx / 100 ms) |
+  +----+---------------------------+
+       | libp2p: deliver (stream block)
+       v
+   +-------------------------------------------------------------+
+   |  COMMITTING PEER (Go)                       metrics :8081    |
+   |  - Nhan block da sap xep                                    |
+   |  - Kiem tra hop le (hash, merkle root, endorsement)         |
+   |  - Ghi block -> file append-only (chain.block)              |
+   |  - Cap nhat world state UTXO (LevelDB)                      |
+   |  - Mirror block sang PostgreSQL (bat dong bo)               |
+   +----+--------------------------------------------------------+
+        | ghi mirror
+        v
+   +-------------------------------------------------------------+
+   |  POSTGRESQL (:5432) -- chi de TRA CUU & DO LUONG            |
+   |  schema: core_service / order_service / commit_peer         |
+   +-------------------------------------------------------------+
+\end{lstlisting}
+\caption{Kiến trúc tổng thể và các luồng giao tiếp chính của hệ thống.}
+\label{fig:overall-arch}
+\end{figure}
+
+\textbf{Một điểm thiết kế quan trọng:} PostgreSQL \textbf{không} nằm trong luồng
+đồng thuận. Nó chỉ là bản sao (mirror) để Explorer tra cứu và để đo
+throughput/latency. Sổ cái ``thật'' nằm ở file \texttt{chain.block} và LevelDB
+của Committing Peer. Nếu PostgreSQL chết, blockchain vẫn chạy bình thường --- một
+quyết định kiến trúc giúp tốc độ ghi sổ không bị phụ thuộc vào tốc độ của một cơ
+sở dữ liệu ngoài.
+
+\subsection{Hành trình của một giao dịch}
+\label{sec:tx-journey}
+
+Để hiểu cách các thành phần phối hợp, ta theo dõi hành trình end-to-end của một
+giao dịch gọi hợp đồng \texttt{demo\_inventory} để đăng ký 100 sản phẩm:
+
+\begin{enumerate}
+  \item \textbf{Tạo \& gửi:} Người dùng điền form trên Explorer; frontend mã hóa
+  dữ liệu thành payload nhị phân (hex) và gửi \texttt{POST /api/tx/submit} tới
+  Core Service. Giao dịch gồm \texttt{txid}, \texttt{contract\_name},
+  \texttt{function\_name}, \texttt{payload}.
+  \item \textbf{Execute thử:} Core Service nạp WASM của hợp đồng, chạy hàm kiểm
+  tra với payload. Thành công thì tiếp tục; thất bại trả lỗi ngay.
+  \item \textbf{Xin endorsement:} Core mở stream \texttt{tx-sign} tới Committing
+  Peer; peer ký Ed25519 và trả lại giao dịch kèm chữ ký xác nhận.
+  \item \textbf{Gửi đi sắp xếp:} Core hỏi Discovery ai là Leader của cluster
+  Raft, rồi gửi giao dịch (đã endorse) qua stream \texttt{endorsement} tới
+  Leader; đồng thời ghi thời điểm gửi để đo latency.
+  \item \textbf{Đồng thuận \& cắt block:} Leader gom giao dịch vào TxPool; khi
+  đủ 1000 giao dịch \textit{hoặc} sau 100\,ms, cắt một block, tính hash + Merkle
+  root, gửi đề xuất cho Follower. Khi đa số Follower ACK, Leader commit block.
+  \item \textbf{Giao block:} Block vừa commit được phát tỏa (fan-out) qua stream
+  \texttt{deliver} tới mọi Committing Peer.
+  \item \textbf{Kiểm tra \& ghi:} Committing Peer kiểm tra hash, Merkle root,
+  endorsement; nếu hợp lệ thì ghi block vào \texttt{chain.block} và cập nhật
+  world state UTXO trong LevelDB (một thao tác ghi nguyên tử).
+  \item \textbf{Mirror \& hiển thị:} Committing Peer ghi bản sao sang PostgreSQL
+  bất đồng bộ; Core đọc lại và đẩy cập nhật về trình duyệt qua SSE để Explorer
+  hiển thị gần như tức thì.
+\end{enumerate}
+
+\section{Mô hình dữ liệu}
+\label{sec:data-model}
+
+Trước khi đi vào từng thành phần, cần thống nhất các cấu trúc dữ liệu được dùng
+xuyên suốt hệ thống.
+
+\subsection{Giao dịch (Transaction)}
+
+Hệ thống hỗ trợ \textbf{đồng thời hai mô hình} giao dịch: mô hình hợp đồng thông
+minh (gọi hàm, ghi world state) và mô hình UTXO (Vin/Vout). Cấu trúc
+\texttt{Transaction} (trong \texttt{coreservice/internal/core/model.go}) phản
+ánh cả hai:
+
+\begin{lstlisting}[language=Go,caption={Cấu trúc Transaction và Endorsement},captionpos=b]
+type EndorsementEntry struct {
+    PublicKey string   // khoa cong khai cua peer xac nhan
+    Signature string   // chu ky
+}
+
+type Transaction struct {
+    Txid         string
+    ContractName string
+    FunctionName string
+    Payload      []byte             // nhi phan, JSON ma hoa hex
+    Endorsements []EndorsementEntry // mang chu ky xac nhan
+    Signature    string             // (legacy) phan chieu endorsement cuoi
+    SenderPubKey string             // (legacy) khoa cua endorser cuoi
+    Vin          []VIN              // ho tro UTXO: dau vao
+    Vout         []VOUT             // ho tro UTXO: dau ra
+    Version      uint32
+    LockTime     uint32
+}
+\end{lstlisting}
+
+Hai trường \texttt{Signature} và \texttt{SenderPubKey} là kiểu cũ (một chữ ký);
+hệ thống mới ưu tiên mảng \texttt{Endorsements[]} để hỗ trợ \textit{nhiều} chữ
+ký xác nhận. Khi serialize JSON, \texttt{Payload} được mã hóa hex thông qua các
+hàm \texttt{MarshalJSON}/\texttt{UnmarshalJSON} tùy chỉnh, nhằm biểu diễn dữ
+liệu nhị phân an toàn trong JSON.
+
+\subsection{Block}
+
+Một block tóm tắt một tập giao dịch đã được sắp xếp, với một header kiểu Bitcoin:
+
+\begin{itemize}
+  \item \texttt{Timestamp}: thời điểm tạo block.
+  \item \texttt{PrevHash}: hash của block trước (nối chuỗi).
+  \item \texttt{MerkleRoot}: gốc cây Merkle tính từ danh sách \texttt{txid}.
+  \item \texttt{Nonce}: giá trị phụ trong header.
+  \item \texttt{Hash}: double-SHA256 của header --- ``dấu vân tay'' của block.
+  \item \texttt{Transactions}: danh sách giao dịch trong block.
+\end{itemize}
+
+Block hash được tính bằng \textbf{double-SHA256} của header (giống Bitcoin), và
+phải được tính \textit{y hệt} ở cả ba thành phần sinh/kiểm tra block (Ordering
+Service khi tạo, Committing Peer khi kiểm tra) để đảm bảo nhất quán.
+
+\subsection{World State và mô hình UTXO}
+
+\textbf{World state} là ảnh chụp trạng thái hiện tại của hệ thống, tính được từ
+toàn bộ lịch sử block. Trong khi chuỗi block là lịch sử bất biến (chỉ thêm),
+world state là bản đồ key$\rightarrow$value có thể ghi đè. Với mô hình UTXO,
+world state là một \textit{tập các UTXO chưa tiêu}, với lược đồ key:
+\[
+\texttt{utxo:}\langle\texttt{txid}\rangle\texttt{:}\langle\texttt{vout\_index}\rangle
+\;\longrightarrow\; \text{JSON của VOUT}
+\]
+Khi áp dụng một block, mỗi \texttt{VIN} sẽ \textit{xóa} một UTXO (đánh dấu đã
+tiêu), mỗi \texttt{VOUT} sẽ \textit{tạo} một UTXO mới --- toàn bộ trong một thao
+tác ghi nguyên tử (xem Mục~\ref{sec:cp-storage}).
+
+\subsection{Log entry của Raft}
+
+Ở tầng đồng thuận, mỗi đơn vị nhân bản là một \texttt{LogEntry} bao bọc một
+block:
+
+\begin{lstlisting}[language=Go,caption={Cấu trúc LogEntry trong Raft},captionpos=b]
+type LogEntry struct {
+    Index        int64   // vi tri trong log
+    PrevLogIndex int64   // index cua entry lien truoc (kiem tra lien tuc)
+    Term         int64   // term khi tao
+    Type         string  // "BLOCK_PROPOSING"
+    Block        Block   // block thuc su
+}
+\end{lstlisting}
+
+Trường \texttt{PrevLogIndex} cho phép Follower kiểm tra log có \textbf{liên tục}
+hay không (không bị nhảy cóc) trước khi chấp nhận entry mới --- đây là cốt lõi
+đảm bảo an toàn của Raft.
+
+\section{Core Service --- Cổng vào và Tầng tính toán}
+\label{sec:core-service}
+
+\subsection{Vai trò}
+
+\textbf{Core Service} (\texttt{coreservice/}, viết bằng Go, cổng HTTP
+\texttt{:8080}) là cổng vào và đồng thời là tầng tính toán của hệ thống, tương
+ứng vai trò Endorsing Peer/Gateway trong Fabric. Mọi giao dịch của người dùng
+đều đi qua đây đầu tiên. Ba nhiệm vụ chính: (1)~thực thi hợp đồng thông minh
+WASM trong sandbox cô lập để ``chạy thử''; (2)~điều phối endorsement và gửi giao
+dịch tới Leader của Ordering Service; (3)~phục vụ REST API, SSE realtime và tổng
+hợp số liệu benchmark.
+
+Core Service gần như \textit{không trạng thái} (stateless) đối với sổ cái:
+trạng thái chốt cuối nằm ở Committing Peer; Core chỉ giữ bản cache cục bộ (mã
+contract, world state demo) và đọc lại từ PostgreSQL khi cần hiển thị.
+
+\subsection{Luồng khởi động}
+
+Khi chạy (\texttt{cmd/node/main.go}), Core Service thực hiện tuần tự: (1)~dựng
+libp2p host lắng nghe \texttt{/ip4/0.0.0.0/tcp/0}; (2)~kết nối PostgreSQL với
+thử lại 10 lần --- nếu thất bại vẫn chạy ở chế độ hạn chế; (3)~mở hai instance
+LevelDB (\texttt{contract\_db} và \texttt{ledger\_db}), thử lại 3 lần và xóa file
+LOCK nếu kẹt; (4)~tạo \texttt{WasmEngine} với pool module; (5)~nhập địa chỉ
+Orderer \& Committing Peer rồi làm ấm kết nối; (6)~đăng ký route HTTP và chạy
+server; (7)~chờ tín hiệu dừng để tắt mượt.
+
+\subsection{Máy ảo hợp đồng thông minh WASM}
+\label{sec:wasm-engine}
+
+\subsubsection{Giao diện hàm (ABI) giữa host và contract}
+
+Contract WASM và Core Service ``nói chuyện'' qua một số hàm quy ước. Contract
+xuất ra hai loại hàm cho host gọi: \texttt{allocate(size) -> ptr} để cấp phát bộ
+nhớ trong vùng tuyến tính của contract, và \texttt{verify\_tx(ptr, size)} (hoặc
+\texttt{execute(ptr, size)}) là hàm chính trả về \texttt{1} (thành công) hoặc
+\texttt{0} (thất bại). Ngược lại, host cung cấp cho contract hàm
+\texttt{PutState(keyPtr, keySize, valPtr, valSize)} để ghi một cặp
+key$\rightarrow$value vào world state. Hình~\ref{fig:wasm-abi} minh họa luồng gọi.
+
+\begin{figure}[H]
+\centering
+\begin{lstlisting}[basicstyle=\ttfamily\footnotesize,numbers=none,backgroundcolor=\color{white}]
+HOST (Core Service)                    CONTRACT (WASM)
+   |  allocate(len(payload))  ---------->  cap phat, tra ptr
+   |  ghi payload vao ptr
+   |  verify_tx(ptr, len)     ---------->  giai ma JSON, xu ly
+   |                          <----------  PutState(key,val) (neu can ghi)
+   |  nhan status (0/1)       <----------  return 1
+\end{lstlisting}
+\caption{Giao diện hàm (ABI) giữa host và contract WASM.}
+\label{fig:wasm-abi}
+\end{figure}
+
+\subsubsection{Tối ưu hiệu năng: cache và pool}
+
+Chạy WASM ``từ đầu'' mỗi giao dịch rất chậm vì phải biên dịch và khởi tạo module.
+\texttt{WasmEngine} (\texttt{internal/vm/engine.go}) dùng hai kỹ thuật:
+
+\begin{enumerate}
+  \item \textbf{Cache module đã biên dịch:} hàm \texttt{getOrCompile()} biên
+  dịch WASM một lần rồi giữ lại bản đã compile.
+  \item \textbf{Pool module dựng sẵn:} với mỗi contract, dựng sẵn $N$ sandbox
+  (mặc định 16, tối đa 32, biến \texttt{WASM\_POOL\_SIZE}) trong một channel có
+  đệm. Mỗi giao dịch lấy một sandbox rảnh ra dùng rồi trả lại --- tránh chi phí
+  khởi tạo lặp lại và cho phép xử lý song song nhiều giao dịch.
+\end{enumerate}
+
+Đây là mẫu thiết kế \textit{object pool} kinh điển để giảm độ trễ khởi tạo.
+
+\subsubsection{Biên dịch contract}
+
+Contract viết bằng Go được biên dịch sang WASM bằng TinyGo:
+\begin{lstlisting}[language=bash,numbers=none,caption={Lệnh biên dịch contract},captionpos=b]
+tinygo build -o my_contract.wasm -target wasi -no-debug -scheduler=none ./
+\end{lstlisting}
+Trong đó \texttt{-target wasi} nhắm runtime phía máy chủ, và
+\texttt{-scheduler=none} bỏ bộ lập lịch goroutine cho nhẹ và xác định hơn.
+
+\subsubsection{Hợp đồng mẫu}
+
+Dự án cung cấp ba hợp đồng mẫu phục vụ trình diễn và đo lường:
+
+\begin{table}[H]
+\centering
+\caption{Ba hợp đồng mẫu}
+\label{tab:sample-contracts}
+\begin{tabular}{@{}p{2.8cm}p{3.4cm}p{5cm}@{}}
+\toprule
+\textbf{Contract} & \textbf{Đầu vào (JSON)} & \textbf{Hành vi} \\
+\midrule
+example\_asset & \{id, color, action\} & \texttt{action=="create"} $\rightarrow$ \texttt{PutState("Asset\_\{id\}")} \\
+demo\_inventory & \{op, sku, qty\} & \texttt{op=="register"} và \texttt{qty>=0} $\rightarrow$ \texttt{PutState("Inv\_\{sku\}")} \\
+bench\_ping & \{v\} & Chỉ kiểm tra định dạng, \textbf{không ghi state} --- đo throughput thuần \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Hợp đồng \texttt{bench\_ping} cố ý không ghi gì để đo ``trần'' tốc độ pipeline
+mà không bị nghẽn ở tầng lưu trữ.
+
+\subsection{Mật mã và quá trình endorsement}
+\label{sec:core-crypto}
+
+Hệ thống dùng chữ ký số \textbf{Ed25519}~\cite{bernstein2012ed25519,rfc8032} ---
+hệ chữ ký trên đường cong Edwards xoắn, nhanh, an toàn và xác định, với khóa 32
+byte và chữ ký 64 byte. Hàm \texttt{SignTransaction} ghép
+\texttt{txID + contractName + payload} thành thông điệp rồi ký. Luồng xử lý
+\texttt{POST /api/tx/submit} như sau:
+
+\begin{lstlisting}[numbers=left,caption={Luồng xử lý submit giao dịch},captionpos=b]
+1. Giai ma JSON Transaction
+2. engine.Execute()        -> chay contract WASM (validate)
+       | that bai -> tra loi ngay
+       v thanh cong
+3. signTxViaCommitPeer()   -> mo stream tx-sign toi Committing Peer
+       |   Committing Peer ky Ed25519, them 1 EndorsementEntry
+       v
+4. sendEndorsementAsync()  -> gui giao dich (da endorse) toi Leader orderer
+5. SubmitRecorder ghi tx_submit_times (do latency)
+6. Tra JSON: preview chu ky + so endorsement
+\end{lstlisting}
+
+Việc tách ``execute thử'' rồi mới ký chính là hiện thực mô hình
+Execute--Order--Validate: Core chạy thử để đảm bảo hợp lệ trước khi tốn công sắp
+xếp; Committing Peer ký xác nhận tạo bằng chứng mật mã; và khi block tới
+Committing Peer để ghi, nó \textit{kiểm tra lại} các endorsement so với danh
+sách khóa tin cậy. Nhờ vậy, một giao dịch gian lận (không có endorsement hợp lệ)
+sẽ bị loại ở bước ghi, dù có lọt qua tầng sắp xếp. Bước 4 có thể chạy
+\textbf{bất đồng bộ} (\texttt{CORE\_ASYNC\_ENDORSE=1}) để trả lời người dùng
+nhanh hơn.
+
+\subsection{Mạng libp2p và Discovery}
+\label{sec:core-network}
+
+Mọi giao tiếp của Core với orderer và committing peer đều qua \textbf{stream}
+libp2p, phân loại bằng Protocol ID (xem Bảng~\ref{tab:protocols}). Hai cơ chế
+quan trọng cho hiệu năng và độ tin cậy:
+
+\textbf{Connection pool ấm:} mở kết nối mới mỗi lần ký rất tốn (bắt tay TCP +
+libp2p). Core giữ sẵn một \textit{kết nối ấm} tới Committing Peer
+(\texttt{CORE\_SIGN\_POOL}, mặc định bật); mỗi lần ký chỉ mở một \textit{stream}
+mới trên kết nối sẵn có, rẻ hơn nhiều. Có cơ chế thử lại 2 lần và tự kết nối
+lại nếu hỏng.
+
+\textbf{Discovery --- tìm Leader:} Ordering Service có nhiều node và Leader có
+thể đổi. \texttt{Discovery Client} khởi tạo với danh sách bootstrap (vài
+multiaddr orderer), gọi \texttt{Refresh()} để lấy \textit{membership view}
+(danh sách thành viên + ai là Leader) và cache lại (TTL ${\sim}8$ giây). Khi
+phát hiện Leader cũ lỗi, \texttt{Invalidate()} xóa cache nóng và tạm dùng bản
+tốt cuối (\texttt{lastGood}) trong cửa sổ failover ${\sim}2$ phút. Cơ chế cache
++ failover này giúp Core chịu được việc Leader đổi mà không cần khởi động lại.
+
+\subsection{Lưu trữ}
+
+Core dùng hai loại lưu trữ. \textbf{LevelDB} (nhúng cục bộ) mở hai instance:
+\texttt{ContractDB} lưu bytecode WASM và schema UI của contract, \texttt{LedgerDB}
+lưu world state demo. \textbf{PostgreSQL} là bản sao chỉ-đọc của sổ cái Committing
+Peer, phục vụ hiển thị Explorer, lưu danh mục contract và đo benchmark.
+
+Một chi tiết tối ưu đáng chú ý là \texttt{SubmitRecorder}
+(\texttt{storage/submit\_recorder.go}): để đo E2E latency cần ghi thời điểm
+submit của từng giao dịch, nhưng gọi DB cho \textit{mỗi} giao dịch ở 5000 TPS sẽ
+làm sập DB. Giải pháp là \textbf{batch INSERT qua channel}: mỗi giao dịch chấp
+nhận đẩy \texttt{(txid, submitted\_at)} vào một channel đệm lớn (${\sim}65$k);
+một goroutine nền gom nhiều bản ghi rồi \texttt{INSERT} hàng loạt hoặc xả định
+kỳ. Đây là mẫu \textit{batching} kinh điển để giảm số lần gọi I/O.
+
+\subsection{REST API và realtime}
+
+Core mở HTTP server tại \texttt{:8080} với các nhóm endpoint chính trong
+Bảng~\ref{tab:core-api}.
+
+\begin{table}[H]
+\centering
+\caption{Các endpoint chính của Core Service}
+\label{tab:core-api}
+\begin{tabular}{@{}p{4.6cm}p{1.6cm}p{5.2cm}@{}}
+\toprule
+\textbf{Route} & \textbf{Method} & \textbf{Mục đích} \\
+\midrule
+/api/tx/deploy & POST & Tải lên contract WASM (multipart) \\
+/api/tx/submit & POST & Gửi giao dịch: chạy $\rightarrow$ ký $\rightarrow$ sắp xếp \\
+/api/contracts & GET & Liệt kê contract đã deploy \\
+/api/blocks & GET & Liệt kê block đã commit \\
+/api/transactions & GET & Liệt kê giao dịch đã commit \\
+/api/explorer/stream & GET (SSE) & Đẩy block/giao dịch mới realtime \\
+/api/metrics/benchmark & GET & Tổng hợp submit + commit + E2E latency \\
+/api/metrics/throughput & GET & Tốc độ commit theo cửa sổ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Endpoint \texttt{/api/explorer/stream} dùng \textbf{Server-Sent Events (SSE)} ---
+server đẩy dữ liệu một chiều xuống trình duyệt qua một kết nối HTTP giữ mở. Khi
+có block/giao dịch mới, Core gửi sự kiện \texttt{ledger\_update}. SSE được chọn
+thay WebSocket vì luồng dữ liệu ở đây một chiều (server$\rightarrow$client), SSE
+đơn giản hơn và tự kết nối lại.
+
+\section{Ordering Service --- Đồng thuận Raft}
+\label{sec:ordering-service}
+
+Đây là phần học thuật trọng tâm của khóa luận: \textbf{một hiện thực Raft tự viết
+hoàn toàn} (không dùng thư viện), với biến thể bầu lãnh đạo theo độ ưu tiên.
+
+\subsection{Vai trò và lý do cần sắp xếp thứ tự}
+
+Trong hệ phân tán, nhiều giao dịch đến gần như đồng thời từ nhiều nguồn. Nếu mỗi
+node tự quyết thứ tự, các bản sao sổ cái sẽ khác nhau, dẫn tới mất nhất quán.
+Ordering Service đảm bảo \textbf{mọi node thấy cùng một thứ tự giao dịch duy
+nhất} --- gọi là \textit{total order} (thứ tự toàn phần). Đây là điều kiện tiên
+quyết để world state hội tụ giống nhau ở mọi nơi.
+
+\subsection{Raft của dự án khác Raft chuẩn ở đâu?}
+\label{sec:raft-diff}
+
+Dự án giữ tinh thần Raft~\cite{ongaro2014raft} nhưng thay đổi cơ chế bầu cử cho
+\textit{xác định và đơn giản hơn}. Bảng~\ref{tab:raft-vs-standard} tóm tắt các
+khác biệt.
+
+\begin{table}[H]
+\centering
+\caption{So sánh Raft chuẩn và Raft của dự án}
+\label{tab:raft-vs-standard}
+\begin{tabular}{@{}p{2.6cm}p{4.4cm}p{4.4cm}@{}}
+\toprule
+\textbf{Khía cạnh} & \textbf{Raft chuẩn} & \textbf{Dự án này} \\
+\midrule
+Bầu Leader & Timeout \textbf{ngẫu nhiên}, ai hết giờ trước thì ứng cử & \textbf{Theo độ ưu tiên}: node tham gia sớm hơn = ưu tiên cao hơn = được chọn xác định \\
+Trạng thái & Follower / Candidate / Leader & Follower / ClaimingLeader / Leader / Syncing \\
+Phiếu bầu & Mỗi node bầu cho một candidate & Follower \textbf{ACK} lời tuyên bố ``Tôi là Leader mới'' \\
+Nội dung log & Lệnh tùy ý & Mỗi entry chứa \textbf{một block} \\
+Lưu bền & Ghi đĩa (term, log) & \textbf{Toàn bộ trong RAM} (nhanh, nhưng mất khi crash) \\
+Thư viện & etcd/raft, hashicorp/raft & \textbf{Tự viết hoàn toàn} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Vì sao bầu theo độ ưu tiên?} Trong Raft chuẩn, nhiều node có thể cùng
+ứng cử và chia phiếu (split vote), buộc phải bầu lại, làm chậm hội tụ.
+Priority-based loại bỏ điều này vì luôn có một node ``đáng làm Leader nhất''
+được xác định trước; ai cũng biết trước thứ tự ưu tiên nên ít bất định, dễ suy
+luận và debug. Đánh đổi là thiết kế này thiên về tính đơn giản và tốc độ hội tụ
+hơn là tổng quát hóa.
+
+\subsection{Các trạng thái của node}
+
+Mỗi node ở một trong bốn trạng thái, chuyển đổi như Hình~\ref{fig:raft-states}.
+
+\begin{figure}[H]
+\centering
+\begin{lstlisting}[basicstyle=\ttfamily\footnotesize,numbers=none,backgroundcolor=\color{white}]
+   +----------+  het heartbeat timeout & minh uu tien cao nhat con song
+   | Follower | -------------------------------------------+
+   +----+-----+                                            v
+        | nhan heartbeat hop le              +-----------------+
+        |<---------------------------------- | ClaimingLeader  |
+        |                                    | (gui "I AM NEW  |
+        | phat hien tut lai / gap > 10s      |  LEADER", cho   |
+        v                                    |  da so ACK)     |
+   +----------+                              +--------+--------+
+   | Syncing  | <-- keo block tu peer khac            | du majority ACK
+   +----+-----+                                        v
+        | xong -> Follower                       +----------+
+        +--------------------------------------->|  Leader  |
+                                                 +----------+
+\end{lstlisting}
+\caption{Sơ đồ chuyển trạng thái của một node Raft trong dự án.}
+\label{fig:raft-states}
+\end{figure}
+
+\begin{itemize}
+  \item \textbf{Follower:} trạng thái mặc định; nghe heartbeat, nhận và ACK
+  block proposal.
+  \item \textbf{ClaimingLeader:} đang tự tuyên bố làm Leader, chờ thu đủ ACK đa
+  số.
+  \item \textbf{Leader:} gom giao dịch, cắt block, điều phối commit, gửi
+  heartbeat.
+  \item \textbf{Syncing:} đang kéo block bị thiếu từ peer khác.
+\end{itemize}
+
+\subsection{Quorum tính trên tổng số thành viên}
+\label{sec:quorum}
+
+Một quyết định an toàn then chốt: quorum đa số được tính trên \textbf{tổng số
+thành viên} (cả node sống lẫn chết), không chỉ trên số node đang sống:
+\begin{lstlisting}[language=Go,numbers=none]
+totalCount := Membership.GetTotalCount()  // ca song lan chet
+majority := totalCount/2 + 1
+\end{lstlisting}
+Lý do là để \textbf{chống split-brain} (não phân ly): nếu mạng chia đôi 50--50,
+không bên nào đạt quá bán trên tổng, nên không thể có hai Leader cùng commit ở
+hai phía. Đây là nguyên tắc an toàn nền tảng của Raft, dựa trên tính chất hai
+tập đa số bất kỳ luôn giao nhau.
+
+\subsection{Bầu lãnh đạo và heartbeat}
+\label{sec:leader-election}
+
+\subsubsection{Độ ưu tiên = thứ tự tham gia}
+
+Mỗi thành viên cluster có một \texttt{Priority} (số nguyên), gán theo thứ tự
+tham gia: tham gia càng sớm, số càng nhỏ, càng được ưu tiên. Hàm
+\texttt{GetHighestPriorityAliveNode()} trả về node sống có priority nhỏ nhất ---
+chính là ứng viên Leader hợp lệ.
+
+\subsubsection{Các hằng số thời gian}
+
+\begin{table}[H]
+\centering
+\caption{Các hằng số thời gian của tầng đồng thuận}
+\label{tab:timing}
+\begin{tabular}{@{}p{4cm}p{2cm}p{6cm}@{}}
+\toprule
+\textbf{Hằng số} & \textbf{Giá trị} & \textbf{Ý nghĩa} \\
+\midrule
+HeartbeatInterval & 2s & Leader gửi heartbeat nếu 2s chưa gửi block nào \\
+HeartbeatTimeout & 5s & Follower quá 5s không nghe Leader $\rightarrow$ bầu cử \\
+DetectionTimeout & 3s & Ngưỡng phát hiện (ticker chạy mỗi 1s) \\
+Cửa sổ chờ ACK & 10s & Thời gian thu ACK đa số khi tuyên bố Leader \\
+Hạn Leader kỳ vọng & 15s & Follower chờ node ưu tiên cao nhất ra tuyên bố \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Lưu ý: block proposal/commit cũng đóng vai trò heartbeat --- khi cluster đang
+bận cắt block thì không cần gửi heartbeat riêng (tiết kiệm mạng).
+
+\subsubsection{Quy trình bầu Leader}
+
+Khi Follower phát hiện Leader mất (qua vòng giám sát \texttt{monitorHeartbeat()}
+chạy mỗi 1 giây), quy trình bầu cử diễn ra như Hình~\ref{fig:election}.
+
+\begin{figure}[H]
+\centering
+\begin{lstlisting}[basicstyle=\ttfamily\footnotesize,numbers=none,backgroundcolor=\color{white}]
+Follower phat hien Leader chet
+        |
+        v
+selectNewLeader() -- minh la uu tien cao nhat? --+ Khong -> cho node kia (<=15s)
+        | Co                                     |
+        v                                        v
+ClaimingLeader: term++, broadcast "I AM NEW LEADER"
+        |
+        v
+thu ACK -- du majority YES? --+ Khong -> ve Follower
+        | Co
+        v
+   tro thanh Leader
+\end{lstlisting}
+\caption{Quy trình bầu lãnh đạo theo độ ưu tiên.}
+\label{fig:election}
+\end{figure}
+
+Cụ thể: (1)~\texttt{selectNewLeader()} đánh dấu Leader cũ chết, chọn node ưu
+tiên cao nhất còn sống; nếu chính mình là node đó thì chuyển sang
+\texttt{ClaimingLeader}, nếu không thì chờ node kia ra tuyên bố trong hạn 15s.
+(2)~\texttt{sendIAmNewLeaderAndWaitForAcks()} tăng term, phát
+\texttt{MsgIAmNewLeader} tới mọi thành viên, chờ tối đa 10s thu các
+\texttt{MsgLeaderClaimAck}. (3)~Follower trả YES/NO dựa trên ba điều kiện: người
+tuyên bố có đúng là node ưu tiên cao nhất còn sống không; \texttt{term} có
+$\geq$ \texttt{currentTerm} của mình không; và Leader hiện tại có thực sự đã
+``ôi'' (stale) không. (4)~\texttt{finishClaim()}: nếu thu được $\geq$ majority
+ACK YES thì trở thành Leader, ngược lại quay về Follower.
+
+\subsection{Nhân bản log và cắt block}
+\label{sec:block-cutting}
+
+Đây là ``đường nóng'' (hot path) quyết định throughput của hệ thống.
+
+\subsubsection{TxPool và vòng cắt block lai}
+
+Leader nhận giao dịch và gom vào một \textbf{TxPool} (hồ chứa trong RAM). Vòng
+cắt block (\texttt{StartAutoProposeBlock()}) hoạt động theo cơ chế \textbf{lai
+(hybrid)} vừa theo sự kiện vừa theo timeout:
+
+\begin{lstlisting}[numbers=none,caption={Vòng cắt block lai},captionpos=b]
+lap mai:
+   neu len(TxPool) >= AutoProposeBlockSize (1000):
+        -> cat block NGAY (khong cho)
+   nguoc lai:
+        -> cho toi da AutoProposeInterval (100ms) roi xa phan con lai
+   sau khi propose:
+        -> cho block truoc commit xong (hoac timeout 10s) moi propose tiep
+\end{lstlisting}
+
+\textbf{Đánh đổi kích thước lô:} block lớn $\rightarrow$ ít block hơn,
+throughput cao hơn (chi phí đồng thuận chia cho nhiều giao dịch); nhưng nếu tải
+thấp, phải chờ tới 100\,ms mới cắt $\rightarrow$ latency tăng. Cơ chế lai cân
+bằng: tải cao thì cắt ngay theo kích thước, tải thấp thì xả theo thời gian.
+
+\subsubsection{Đề xuất, ACK và commit}
+
+Khi cắt block, Leader: (1)~lấy $N$ giao dịch đầu từ TxPool, tính \textbf{Merkle
+root} từ các \texttt{txid} (với block $>1000$ tx, việc tính Merkle được song
+song hóa), tính \textbf{Hash} = double-SHA256 của header, đặt
+\texttt{PrevHash = lastCommittedHash}; (2)~tạo \texttt{LogEntry} với
+\texttt{Index}, \texttt{PrevLogIndex}, \texttt{Term}, append vào
+\texttt{RaftLog}; (3)~phát \texttt{MsgBlockProposal} tới mọi Follower. Follower
+kiểm tra người gửi là Leader, \texttt{term >= currentTerm}, và
+\textit{kiểm tra liên tục log} (\texttt{entry.PrevLogIndex == lastIndex} của
+mình); nếu khớp thì append và gửi \texttt{MsgBlockProposalAck}, nếu lệch thì từ
+chối (phải sync). Khi Leader đếm đủ majority ACK, nó \textbf{commit}: thêm block
+vào \texttt{OrderingBlock}, cập nhật \texttt{lastCommittedHash}, gọi
+\texttt{DeliverMgr.NotifyNewBlock()}, xóa giao dịch đã đóng block khỏi TxPool, và
+phát \texttt{MsgBlockCommit} cho Follower.
+
+\subsubsection{Các tối ưu tốc độ}
+\label{sec:opts}
+
+Một loạt tối ưu trên hot-path (theo \texttt{docs/block-speed-optimization-analysis.md})
+đã được thực hiện, tóm tắt trong Bảng~\ref{tab:opts}.
+
+\begin{table}[H]
+\centering
+\caption{Các tối ưu tốc độ trên đường nóng}
+\label{tab:opts}
+\begin{tabular}{@{}p{1.4cm}p{8.8cm}p{1.6cm}@{}}
+\toprule
+\textbf{Mã} & \textbf{Nội dung} & \textbf{Trạng thái} \\
+\midrule
+OPT-1 & Commit ngay khi đủ majority ACK (không chờ ticker) & Đã làm \\
+OPT-2 & Propose theo sự kiện (đủ batch $\rightarrow$ cắt ngay) & Đã làm \\
+OPT-3 & Stream endorsement bền (mỗi worker giữ 1 stream, gửi nhiều tx) & Đã làm \\
+OPT-5 & Tách kênh riêng cho hot-path (ACK $\rightarrow$ \texttt{BlockAckChan}) & Đã làm \\
+OPT-8 & Bỏ log theo từng tx trên hot-path, chỉ log theo block & Đã làm \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Kết quả quan sát: sau OPT-8, mỗi block có thể đạt $1000+$ tx ở tải bền vững
+(trước đó nghẽn ${\sim}71$ tx/block do tranh chấp khóa khi log từng tx). Các hạn
+chế còn lại gồm: vẫn \textbf{1 block in-flight} (propose $\rightarrow$ ACK
+$\rightarrow$ commit tuần tự, chưa pipeline) --- giới hạn throughput ở mức
+$1/\textit{RTT-commit}$; còn marshal/unmarshal lặp; và \textbf{không lưu bền} ---
+toàn bộ log/block trong RAM, crash là mất.
+
+\subsection{Giao block (Deliver) và Đồng bộ (Sync)}
+\label{sec:deliver-sync}
+
+\subsubsection{Deliver --- mô hình đăng ký \& phát tỏa}
+
+\texttt{DeliverManager} quản lý danh sách \textbf{subscriber} (mỗi Committing
+Peer là một subscriber). \texttt{subscribe()} tạo một channel có đệm (cap 64);
+\texttt{NotifyNewBlock(block)} gửi block tới mọi subscriber, và nếu subscriber
+chậm (channel đầy) thì block bị \textbf{bỏ qua không chặn} (non-blocking) để
+không làm nghẽn luồng commit --- peer chậm sẽ tự bắt kịp bằng sync. Khi một
+Committing Peer kết nối qua protocol \texttt{/raft-order-service/deliver/1.0.0},
+nó gửi \texttt{DeliverRequest\{FromIndex\}}; orderer gửi ngay tất cả block đã
+commit từ \texttt{FromIndex}, rồi \texttt{subscribe()} để stream tiếp block
+tương lai. Kết nối giữ mở lâu dài --- đây là \textit{streaming push}, peer không
+phải hỏi liên tục.
+
+\subsubsection{Sync --- đồng bộ bốn pha}
+
+Khi một orderer mới tham gia hoặc vừa hồi sinh, nó có thể thiếu nhiều block.
+\texttt{sync.go} lo việc ``đuổi kịp'' theo mô hình \textbf{pull (kéo)}. Sync gồm
+bốn pha:
+
+\begin{enumerate}
+  \item \textbf{Khám phá (${\sim}2$s):} phát \texttt{MsgSyncStatusRequest} kèm
+  \texttt{commitIndex} của mình; thu \texttt{MsgSyncStatusResponse} từ các peer
+  (gồm \texttt{commitIndex}, \texttt{commitHash}, \texttt{logLastIndex},
+  \texttt{leaderID}, phiên bản membership).
+  \item \textbf{Chọn nguồn:} nhóm các phản hồi theo cặp
+  \texttt{(commitIndex, commitHash)}; chọn nhóm có \textbf{nhiều phiếu nhất}
+  (đồng thuận mạnh nhất), hòa thì ưu tiên \texttt{commitIndex} cao hơn; ưu tiên
+  Leader trong nhóm thắng làm nguồn tải. Việc bỏ phiếu theo
+  \texttt{(commitIndex, commitHash)} đảm bảo node sync từ \textit{trạng thái đa
+  số đồng ý}, không bị một node lỗi đánh lừa.
+  \item \textbf{Tải block song song:} chia khoảng \texttt{[from..to]} thành các
+  shard (mỗi shard 64 block); tải các shard song song từ nhiều nguồn
+  (round-robin cân tải), thất bại thì thử nguồn kế.
+  \item \textbf{Xác minh \& cài đặt:} \texttt{verifyHashChain()} kiểm tra mỗi
+  block có \texttt{PrevHash} khớp \texttt{Hash} block trước, block cuối khớp
+  \texttt{commitHash} mục tiêu; sai thì sync thất bại và thử lại. Nếu đúng thì
+  append block, cài log entry, cập nhật \texttt{lastCommittedHash}, chuyển
+  Syncing $\rightarrow$ Follower.
+\end{enumerate}
+
+Về an toàn, node đang tự sync sẽ \textit{từ chối phục vụ} sync cho node khác để
+không lan truyền dữ liệu cũ.
+
+\subsection{Networking}
+\label{sec:ordering-network}
+
+Tầng vận chuyển (\texttt{transport.go}) bọc một libp2p host với các thao tác
+\texttt{SendMessage}, \texttt{BroadcastMessage} (gửi bất đồng bộ kèm callback xử
+lý lỗi để đánh dấu peer chết) và \texttt{NewStream}. Bảng~\ref{tab:protocols}
+liệt kê các Protocol ID dùng trong toàn hệ thống.
+
+\begin{table}[H]
+\centering
+\caption{Các Protocol ID libp2p dùng trong hệ thống}
+\label{tab:protocols}
+\begin{tabular}{@{}p{6.4cm}p{6cm}@{}}
+\toprule
+\textbf{Protocol ID} & \textbf{Mục đích} \\
+\midrule
+/raft-order-service/1.0.0 & Thông điệp consensus (heartbeat, bầu cử, membership) \\
+/raft-order-service/endorsement/1.0.0 & Core $\rightarrow$ Orderer: gửi tx đã endorse \\
+/raft-order-service/deliver/1.0.0 & Orderer $\rightarrow$ Committing Peer: stream block \\
+/raft-order-service/sync/1.0.0 & Đồng bộ block/log giữa các orderer \\
+/fabric-enterprise/commit-peer/tx-sign/1.0.0 & Core $\rightarrow$ Committing Peer: xin chữ ký \\
+/commiting-peer/sync/1.0.0 & Client $\rightarrow$ Committing Peer: truy vấn UTXO \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Hai tối ưu hot-path trên mạng đặc biệt quan trọng. \textbf{OPT-3 (stream
+endorsement bền):} thay vì mở một stream mới cho \textit{mỗi} giao dịch (gây
+${\sim}10.000$ lần mở stream/giây ở 5000 TPS), \texttt{HandleEndorsementStream()}
+đọc nhiều tx trong một vòng lặp \texttt{for \{ decoder.Decode(\&tx) \}} trên
+\textbf{một stream giữ mở}; loadgen workers cũng giữ một stream/worker. Đây là
+khác biệt lớn nhất giúp vượt nghẽn cổ chai mở stream. \textbf{OPT-5 (bỏ qua kênh
+chung):} \texttt{MsgBlockProposalAck} đi thẳng vào \texttt{BlockAckChan} riêng,
+tránh dồn mọi message qua một hàng đợi chung gây tranh chấp.
+
+\subsection{Công cụ bắn tải (loadgen) và client}
+
+Bộ máy bắn tải Go (\texttt{pkg/loadgen/}) bơm giao dịch ở tốc độ cao (mặc định
+5000 TPS) để đo hiệu năng, với tham số
+\texttt{-orderer <multiaddr> -tps 5000 -duration 30s -workers 16}. Nó tái dùng
+stream theo OPT-3 và theo dõi sự kiện block-commit để tính latency. CLI client
+(\texttt{cmd/client}) là một ví UTXO đầy đủ: sinh địa chỉ từ khóa Ed25519, theo
+dõi UTXO, tạo và ký giao dịch. Khác với loadgen (bắn thẳng tới orderer qua
+libp2p, đo throughput consensus thuần), công cụ k6 bắn HTTP tới Core Service
+(đo toàn pipeline submit và độ trễ HTTP từ góc nhìn client thật).
+
+\section{Committing Peer --- Kiểm tra và Ghi sổ}
+\label{sec:committing-peer}
+
+\subsection{Vai trò và kiến trúc pipeline}
+
+\textbf{Committing Peer} (\texttt{commitingpeer/}, Go, metrics \texttt{:8081})
+là trạm cuối của pipeline: nhận block đã sắp xếp, kiểm tra hợp lệ, rồi ghi vĩnh
+viễn. File \texttt{chain.block} và LevelDB ở đây mới là sổ cái thật. Quan trọng:
+Committing Peer \textbf{không} chạy thuật toán đồng thuận --- nó \textit{tin
+tưởng} rằng block từ Ordering Service đã là thứ tự cuối, việc của nó là kiểm tra
+tính hợp lệ mật mã rồi ghi.
+
+Bên trong, ba tầng được tách rời bằng channel để mỗi tầng chạy với tốc độ riêng
+(Hình~\ref{fig:cp-pipeline}).
+
+\begin{figure}[H]
+\centering
+\begin{lstlisting}[basicstyle=\ttfamily\footnotesize,numbers=none,backgroundcolor=\color{white}]
+ ORDERER --stream--> [deliver.Client] --blockChan(64)--> [commitLoop]
+                                                              |
+                          +-----------------------------------+
+                          v (validate)
+                   [validation.Engine]
+                          | hop le
+          +---------------+---------------+
+          v               v               v
+   [BlockStorage]   [WorldState]   [Postgres mirror]
+   (file, dong bo)  (LevelDB,      (async, khong chan)
+                     dong bo)
+\end{lstlisting}
+\caption{Kiến trúc đường ống ba tầng của Committing Peer.}
+\label{fig:cp-pipeline}
+\end{figure}
+
+\subsection{Nhận block và tự kết nối lại}
+
+Committing Peer dựng libp2p host, đăng ký nhận block qua
+\texttt{/raft-order-service/deliver/1.0.0}. Luồng \texttt{Subscribe()} parse
+multiaddr orderer, kết nối, mở stream, gửi \texttt{DeliverRequest\{FromIndex\}}
+(``tôi đã có tới block X, gửi tiếp từ X+1''), rồi một goroutine nền lặp
+\texttt{Decode(\&block)} và đẩy vào \texttt{blockChan}. Khi Leader đổi hoặc
+stream đứt, \texttt{deliverReconnectLoop()} khám phá orderer mới và kết nối lại
+với \texttt{fromIndex = lastCommittedBlock + 1} --- \textbf{không mất block nào}
+--- dùng exponential backoff (1s $\rightarrow$ tối đa 30s) để tránh dội kết nối.
+
+Committing Peer cũng đóng vai \textbf{endorser}: đăng ký handler
+\texttt{/fabric-enterprise/commit-peer/tx-sign/1.0.0}; khi Core gửi một giao
+dịch chưa ký, peer ký Ed25519 trên \texttt{txid + contractName + payload}, thêm
+một \texttt{EndorsementEntry}, rồi trả lại. Khóa công khai của nó nằm trong danh
+sách endorser tin cậy (\texttt{TRUSTED\_ENDORSER\_PUBLIC\_KEYS}).
+
+\subsection{Kiểm tra hợp lệ (Validation)}
+\label{sec:validation}
+
+Trước khi ghi, \texttt{ValidateBlock()} kiểm tra hai phần. \textbf{Toàn vẹn cấu
+trúc} (\texttt{verifyBlockIntegrity()}): tính lại Merkle root từ các \texttt{txid}
+và so với \texttt{MerkleRoot} của block; tính lại block hash (double-SHA256 của
+header) và so với \texttt{Hash}; lệch thì từ chối. Việc tính lại độc lập đảm bảo
+block không bị sửa đổi trên đường truyền, và hàm hash/merkle phải khớp y hệt cách
+Ordering Service tính. \textbf{Kiểm tra endorsement}
+(\texttt{validateEndorsedTx()}): với mỗi giao dịch smart-contract, phải có mảng
+\texttt{Endorsements[]} không rỗng, xác minh từng chữ ký bằng
+\texttt{VerifyTransaction}, và ít nhất một khóa endorser phải nằm trong tập tin
+cậy.
+
+\textbf{Phạm vi hiện tại (theo mã nguồn):} một số kiểm tra chưa được thực thi
+đầy đủ trên hot-path. Việc kiểm tra liên tục chuỗi (\texttt{PrevHash} của block
+khớp \texttt{Hash} block trước) hiện đang bị tắt ở engine --- block hash vẫn
+\textit{bao gồm} prevHash để toàn vẹn cấu trúc, nhưng liên kết chuỗi chỉ được
+xác minh đầy đủ ở luồng sync của orderer. Hàm \texttt{ValidateTransaction()} mức
+từng giao dịch hiện là \textit{stub} (kiểm tra double-spend UTXO, chữ ký input
+chưa thực thi đầy đủ). Đây là các điểm rủi ro được ghi nhận để cải thiện về bảo
+mật. Về tính kiên cường, một block không hợp lệ chỉ bị ghi log mà không làm sập
+pipeline --- peer tiếp tục xử lý block sau.
+
+\subsection{Lưu trữ: ba lớp}
+\label{sec:cp-storage}
+
+Committing Peer giữ ba lớp lưu trữ, mỗi lớp một mục đích (Bảng~\ref{tab:storage-layers}).
+
+\begin{table}[H]
+\centering
+\caption{Ba lớp lưu trữ của Committing Peer}
+\label{tab:storage-layers}
+\begin{tabular}{@{}p{2.6cm}p{2.8cm}p{4cm}p{2.6cm}@{}}
+\toprule
+\textbf{Lớp} & \textbf{Công nghệ} & \textbf{Đặc tính} & \textbf{Mục đích} \\
+\midrule
+Block storage & File append-only & Bất biến, ghi tuần tự & Sổ cái thật, kiểm toán \\
+World state & LevelDB & Ghi đè, atomic batch & Tra UTXO hiện tại \\
+Mirror & PostgreSQL & Index, JSONB, async & Explorer \& báo cáo \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Block storage:} chuỗi block lưu trong một file append-only
+(\texttt{chain.block}), mỗi block là một dòng JSON. File mở với cờ
+\texttt{O\_APPEND | O\_CREATE | O\_WRONLY}, \textbf{không bao giờ} truncate ---
+đảm bảo ``bất biến ở mức file''. Đọc lại dùng \texttt{bufio.Scanner} với buffer
+tới 16\,MB (chứa được block nhiều giao dịch).
+
+\textbf{World state:} UTXO set lưu trong LevelDB. Hàm \texttt{ApplyBlock()} cập
+nhật \textbf{nguyên tử}: với mỗi block tạo một \texttt{leveldb.Batch}, mỗi VIN là
+\texttt{batch.Delete}, mỗi VOUT là \texttt{batch.Put}, rồi \texttt{db.Write(batch)}
+--- một thao tác tất-cả-hoặc-không. Điều này quan trọng vì nếu ghi nửa chừng (xóa
+input nhưng chưa tạo output) rồi crash, world state sẽ sai.
+
+\textbf{PostgreSQL mirror:} bản sao bất đồng bộ, không nằm trong luồng commit.
+Block được coi là \textit{đã commit ngay khi ghi xong file + world state}; việc
+ghi PostgreSQL diễn ra sau, ở các worker nền (hàng đợi mặc định 512, số worker
+mặc định 2). Nếu hàng đợi đầy thì sinh goroutine ghi ngay (non-blocking).
+\textbf{Triết lý:} tốc độ commit blockchain không bị phụ thuộc vào tốc độ ghi
+PostgreSQL.
+
+\subsection{Metrics --- nguồn ground truth}
+
+Vì Committing Peer là nơi giao dịch được commit thật, nó là nguồn ``sự thật mặt
+đất'' tốt nhất để đo throughput và E2E latency. \texttt{recorder.go} ghi thời
+điểm commit \textit{ngay trong RAM} (map \texttt{txid $\rightarrow$ thời điểm}),
+không lệ thuộc độ trễ ghi PostgreSQL nên chính xác hơn khi benchmark. Server
+metrics tại \texttt{:8081} cung cấp \texttt{/metrics/throughput},
+\texttt{/metrics/benchmark} và \texttt{/metrics/commit-lookup}; Core Service gọi
+các endpoint này để tổng hợp benchmark E2E.
+
+\section{Blockchain Explorer --- Giao diện}
+\label{sec:explorer}
+
+\subsection{Tech stack và kiến trúc}
+
+\textbf{Blockchain Explorer} (\texttt{BlockchainExplorer-FrontEnd/}) là một ứng
+dụng web một trang (SPA) viết bằng React, có hai chức năng: khám phá (xem block
+và giao dịch đã commit theo thời gian thực) và gửi giao dịch mới. Nó nói chuyện
+với Core Service (HTTP \texttt{:8080}) qua proxy của Vite. Bảng~\ref{tab:frontend-stack}
+liệt kê các công nghệ chính.
+
+\begin{table}[H]
+\centering
+\caption{Công nghệ của Blockchain Explorer}
+\label{tab:frontend-stack}
+\begin{tabular}{@{}p{3.4cm}p{2.2cm}p{5.6cm}@{}}
+\toprule
+\textbf{Thư viện} & \textbf{Phiên bản} & \textbf{Vai trò} \\
+\midrule
+React & 18.3.1 & Framework UI (hooks) \\
+React Router DOM & 6.26.2 & Điều hướng client-side \\
+Vite & 5.4.1 & Build tool \& dev server (proxy \texttt{/api}) \\
+Material-UI (MUI) & 6.1.1 & Bộ component giao diện \\
+Tailwind CSS & 3.4.13 & CSS tiện ích \\
+CryptoJS & 4.1.1 & Băm SHA-256 (tạo txid phía client) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Ứng dụng dùng React Router với ba tuyến đường (\texttt{/transactions},
+\texttt{/transfer}, \texttt{/blocks}), tất cả render qua \texttt{Dashboard} với
+prop \texttt{section} khác nhau. Lớp gọi API (\texttt{src/api/client.js}) dùng
+URL tương đối được Vite proxy chuyển tới Core Service, tránh vướng CORS khi dev.
+
+\subsection{Mã hóa payload nhị phân}
+
+Payload của giao dịch cần nhỏ gọn và đúng kiểu để hợp đồng đọc. Frontend có hai
+cơ chế mã hóa, đều xuất ra chuỗi hex: (1)~\textbf{hệ nhị phân tùy biến}
+(\texttt{transactionTypes.js}) đóng gói từng trường thành byte (big-endian, với
+các kiểu STRING, UINT8/16/32/64, FLOAT/DOUBLE, BYTES, BOOLEAN, ADDRESS), tiết
+kiệm ${\sim}70\%$ so với JSON; và (2)~\textbf{hệ payload contract}
+(\texttt{transactionUtils.js}): JSON $\rightarrow$ UTF-8 $\rightarrow$ hex, để
+contract Go dùng \texttt{json.Unmarshal} đọc. Vì contract WASM hiện đọc payload
+bằng \texttt{json.Unmarshal}, form Transfer dùng cơ chế JSON-hex khi gửi tới
+contract. Hàm \texttt{coercePayloadFieldsBySchema} ép kiểu input HTML (luôn là
+chuỗi) về int/float đúng theo schema trước khi mã hóa.
+
+\subsection{Cập nhật realtime qua SSE}
+
+Explorer dùng SSE để hiện block/giao dịch mới ngay khi commit. Khi
+\texttt{Dashboard} mount, nó mở \texttt{EventSource('/api/explorer/stream')};
+nhận sự kiện \texttt{ledger\_update} (chứa \texttt{latest\_block} và
+\texttt{latest\_tx}) thì cập nhật (upsert) danh sách. Nếu SSE đứt, Dashboard
+chuyển sang \textbf{polling dự phòng} (gọi \texttt{/api/transactions} và
+\texttt{/api/blocks} mỗi 3000\,ms), và dừng polling khi SSE kết nối lại --- mẫu
+``ưu tiên đẩy, có lưới đỡ kéo''. Trạng thái kết nối được hiển thị bằng chấm màu
+(xanh/vàng/đỏ).
+
+\section{Cơ sở dữ liệu PostgreSQL}
+\label{sec:postgres}
+
+Cần nhấn mạnh lại: PostgreSQL \textbf{không} nằm trong luồng đồng thuận; sổ cái
+thật là \texttt{chain.block} + LevelDB ở Committing Peer. PostgreSQL là bản sao
+phục vụ hiển thị Explorer, lưu danh mục contract và đo benchmark. Dữ liệu được
+tách thành \textbf{ba schema} theo đúng ranh giới trách nhiệm của ba dịch vụ, như
+Bảng~\ref{tab:schemas}.
+
+\begin{table}[H]
+\centering
+\caption{Ba schema của cơ sở dữ liệu}
+\label{tab:schemas}
+\begin{tabular}{@{}p{3cm}p{3.4cm}p{5.4cm}@{}}
+\toprule
+\textbf{Schema} & \textbf{Ai ghi} & \textbf{Nội dung} \\
+\midrule
+core\_service & Core Service & Contract, thời điểm submit \\
+order\_service & Orderer (tùy chọn) & Giao dịch \& block đã sắp xếp \\
+commit\_peer & Committing Peer & Sổ cái đã commit (mirror) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Các bảng chính: \texttt{core\_service.smart\_contracts} (bytecode WASM +
+\texttt{payload\_schema} JSONB); \texttt{core\_service.tx\_submit\_times}
+(\texttt{txid} PRIMARY KEY, \texttt{submitted\_at}, index theo
+\texttt{submitted\_at DESC} để đo E2E); \texttt{commit\_peer.ledger}
+(\texttt{block\_hash} UNIQUE, \texttt{block\_number}, \texttt{block\_data} JSONB,
+\texttt{committed\_at}); và \texttt{commit\_peer.ledger\_transactions} (liên kết
+\texttt{block\_id} $\rightarrow$ \texttt{txid}, \texttt{tx\_data} JSONB, khóa
+ngoại \texttt{ON DELETE CASCADE}). Lưu ý UTXO world state \textbf{không} ở
+PostgreSQL --- nó nằm trên đĩa (LevelDB) tại Committing Peer. Các thao tác chèn
+dùng \texttt{ON CONFLICT DO NOTHING} để idempotent.
+
+\section{Phương pháp đo lường hiệu năng}
+\label{sec:measurement}
+
+\subsection{Ba lớp đo lường}
+
+Một giao dịch đi qua nhiều chặng; đo ở chặng khác nhau cho con số khác nhau.
+Khóa luận phân biệt rõ ba lớp đo (Bảng~\ref{tab:three-layers}).
+
+\begin{table}[H]
+\centering
+\caption{Ba lớp đo lường hiệu năng}
+\label{tab:three-layers}
+\begin{tabular}{@{}p{2.6cm}p{4.2cm}p{5cm}@{}}
+\toprule
+\textbf{Lớp} & \textbf{Nguồn} & \textbf{Đo cái gì} \\
+\midrule
+k6 (client) & Script \texttt{k6/submit-tx.js} & Độ trễ HTTP, Core có trả 200 không \\
+Submit (Core) & \texttt{core\_service.tx\_submit\_times} & Lúc Core \textit{chấp nhận} giao dịch \\
+Commit (ledger) & \texttt{commit\_peer.ledger*} & Lúc giao dịch \textit{đã ghi} sổ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{E2E latency} $= \texttt{committed\_at} - \texttt{submitted\_at}$ (ghép
+theo \texttt{txid}). Cần lưu ý \texttt{submit\_latency\_ms} của k6 (vài chục ms)
+\textbf{khác} \texttt{latency\_ms\_p95} E2E (có thể vài giây khi có backlog): một
+cái đo ``Core nhận'', một cái đo ``cả pipeline''.
+
+\subsection{Hai chỉ số cốt lõi}
+
+\textbf{Throughput (TPS):} số giao dịch/giây, phân biệt \textit{sustained} (bền
+vững --- trung bình cả cửa sổ) và \textit{peak} (đỉnh --- nhiều nhất trong một
+giây). \textbf{Latency (độ trễ):} đo bằng phân vị p50/p95/p99 (p95 nghĩa là 95\%
+giao dịch nhanh hơn giá trị này). Hai chỉ số này thường đánh đổi nhau.
+
+\subsection{Hiện tượng backlog và định luật Little}
+
+Khi \textbf{tốc độ gửi $>$ tốc độ commit bền vững}, giao dịch dồn vào TxPool và
+backlog tích lũy, làm E2E latency tăng dù Core chấp nhận nhanh --- biểu hiện kinh
+điển của hệ thống đạt \textbf{điểm bão hòa} (saturation). Hiện tượng này được lý
+giải bằng \textbf{định luật Little}~\cite{little1961law}: số việc tồn đọng trung
+bình $L = \lambda W$, với $\lambda$ là tốc độ đến và $W$ là thời gian lưu trú ---
+khi $\lambda$ vượt năng lực xử lý, $W$ (và do đó độ trễ) tăng không giới hạn.
+
+\subsection{Kết quả thực nghiệm tham khảo}
+
+Trong phép đo tham khảo (5000 req/s $\times$ 60s), hệ thống đạt các con số trong
+Bảng~\ref{tab:bench-results}.
+
+\begin{table}[H]
+\centering
+\caption{Kết quả benchmark tham khảo (5000 req/s, 60s)}
+\label{tab:bench-results}
+\begin{tabular}{@{}p{6cm}p{5cm}@{}}
+\toprule
+\textbf{Chỉ số} & \textbf{Giá trị} \\
+\midrule
+Submit sustained & ${\sim}4.691$/s (đỉnh ${\sim}5.017$/s) \\
+Commit sustained & ${\sim}3.921$/s (đỉnh ${\sim}6.000$/s) \\
+Trung bình tx/block & ${\sim}989$ (batch ${\sim}1.000$) \\
+E2E p95 & ${\sim}7,4$s (khi gửi $>$ commit $\rightarrow$ backlog) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Diễn giải:} Core nhận gần đủ 5000/s, nhưng commit ``trần'' ${\sim}3.900$/s
+bền vững, nên chênh lệch ${\sim}800$/s tạo backlog và đẩy p95 lên mức giây. Nguyên
+nhân gốc là giới hạn ``1 block in-flight'' (Mục~\ref{sec:opts}): chu trình
+propose $\rightarrow$ ACK $\rightarrow$ commit còn tuần tự, nên throughput bị
+chặn ở mức $1/\textit{RTT-commit}$. Đây chính là động lực cho hướng cải thiện
+quan trọng nhất: \textbf{pipeline nhiều block in-flight} --- sẽ được phân tích ở
+chương đề xuất cải thiện.
+
+\section{Tổng kết công nghệ}
+\label{sec:tech-summary}
+
+Bảng~\ref{tab:tech-problem} tổng kết ánh xạ giữa các vấn đề kỹ thuật và công
+nghệ được chọn để giải quyết, khép lại bức tranh thiết kế tổng thể.
+
+\begin{table}[H]
+\centering
+\caption{Ánh xạ ``vấn đề $\leftrightarrow$ công nghệ''}
+\label{tab:tech-problem}
+\begin{tabular}{@{}p{6.4cm}p{6cm}@{}}
+\toprule
+\textbf{Vấn đề} & \textbf{Công nghệ} \\
+\midrule
+Các node nói chuyện an toàn & libp2p + Ed25519 \\
+Đồng ý cùng một thứ tự giao dịch & Raft (tự cài) \\
+Chạy logic nghiệp vụ an toàn, đa ngôn ngữ & WASM (wazero + TinyGo) \\
+Lưu trạng thái nhanh, nhúng sẵn & LevelDB \\
+Dữ liệu không thể sửa & File append-only + hash chain \\
+Tra cứu \& báo cáo linh hoạt & PostgreSQL \\
+Hiển thị realtime cho người dùng & React + SSE \\
+Đo hiệu năng dưới tải & k6 + loadgen \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Toàn bộ hệ thống được hiện thực bằng Go (ba dịch vụ backend) và React (giao
+diện), giao tiếp qua libp2p, với Raft tự cài đặt làm trái tim đồng thuận. Thiết
+kế tách tầng Execute--Order--Validate, kết hợp các tối ưu hot-path và cơ chế
+mirror bất đồng bộ, cho phép hệ thống tiệm cận mục tiêu 5.000 TPS trong khi vẫn
+giữ được tính module hóa và khả năng chịu lỗi --- đồng thời bộc lộ rõ các điểm
+đánh đổi và hạn chế làm nền cho các đề xuất cải thiện ở những chương tiếp theo.
