@@ -49,46 +49,9 @@ Hệ thống gồm bốn thành phần chạy độc lập, giao tiếp với nh
 \texttt{libp2p}, cùng một cơ sở dữ liệu PostgreSQL đóng vai trò bản sao tra cứu.
 Hình~\ref{fig:overall-arch} mô tả kiến trúc và các luồng giao tiếp chính.
 
-\begin{figure}[H]
+\begin{figure}[H]{}
+\includegraphics[width=\textwidth]{Images/architecture.png}
 \centering
-\begin{lstlisting}[basicstyle=\ttfamily\scriptsize,numbers=none,backgroundcolor=\color{white}]
-            +-----------------------------------------------+
-            |   NGUOI DUNG (trinh duyet - Blockchain Explorer) |
-            +------------------------+----------------------+
-                                     | HTTP (REST + SSE)
-                                     v
-   +-------------------------------------------------------------+
-   |  CORE SERVICE (Go)                          cong :8080       |
-   |  - Nhan giao dich (/api/tx/submit)                          |
-   |  - Chay smart contract WASM (wazero) -- "execute thu"       |
-   |  - Xin Committing Peer ky endorsement                       |
-   |  - Luu ma contract + world state cuc bo (LevelDB)           |
-   +----+--------------------------------------------+-----------+
-        | libp2p: endorsement                        | libp2p: tx-sign
-        v                                            v
-  +--------------------------------+      +----------------------------+
-  | ORDERING SERVICE (Go) -- RAFT  |      | COMMITTING PEER (ky)       |
-  | - Leader gom tx -> block       |      | ky endorsement (Ed25519)   |
-  | - Dong thuan Raft (majority)   |      +----------------------------+
-  | - Cat block (1000 tx / 100 ms) |
-  +----+---------------------------+
-       | libp2p: deliver (stream block)
-       v
-   +-------------------------------------------------------------+
-   |  COMMITTING PEER (Go)                       metrics :8081    |
-   |  - Nhan block da sap xep                                    |
-   |  - Kiem tra hop le (hash, merkle root, endorsement)         |
-   |  - Ghi block -> file append-only (chain.block)              |
-   |  - Cap nhat world state UTXO (LevelDB)                      |
-   |  - Mirror block sang PostgreSQL (bat dong bo)               |
-   +----+--------------------------------------------------------+
-        | ghi mirror
-        v
-   +-------------------------------------------------------------+
-   |  POSTGRESQL (:5432) -- chi de TRA CUU & DO LUONG            |
-   |  schema: core_service / order_service / commit_peer         |
-   +-------------------------------------------------------------+
-\end{lstlisting}
 \caption{Kiến trúc tổng thể và các luồng giao tiếp chính của hệ thống.}
 \label{fig:overall-arch}
 \end{figure}
@@ -251,107 +214,320 @@ server; (7)~chờ tín hiệu dừng để tắt mượt.
 \subsection{Máy ảo hợp đồng thông minh WASM}
 \label{sec:wasm-engine}
 
-\subsubsection{Giao diện hàm (ABI) giữa host và contract}
+Khi Core nhận \texttt{POST /api/tx/submit}, bước đầu tiên là \textbf{simulate} logic
+hợp đồng trong \texttt{WasmEngine} (\texttt{internal/vm/engine.go}). Runtime dùng
+\textbf{wazero} (Go-native, không cần CGO) kèm WASI
+(\texttt{wasi\_snapshot\_preview1}). Bytecode đọc từ LevelDB
+(\texttt{data/contract\_db}, key = \texttt{contract\_name}). Nếu contract từ chối
+payload hoặc runtime lỗi, API trả HTTP 400 và dừng --- chưa ký endorsement, chưa
+gửi orderer. Phần dưới mô tả ABI, vòng đời một lần \texttt{Execute}, cơ chế cache/pool,
+quy trình biên dịch TinyGo, và ba contract mẫu.
 
-Contract WASM và Core Service ``nói chuyện'' qua một số hàm quy ước. Contract
-xuất ra hai loại hàm cho host gọi: \texttt{allocate(size) -> ptr} để cấp phát bộ
-nhớ trong vùng tuyến tính của contract, và \texttt{verify\_tx(ptr, size)} (hoặc
-\texttt{execute(ptr, size)}) là hàm chính trả về \texttt{1} (thành công) hoặc
-\texttt{0} (thất bại). Ngược lại, host cung cấp cho contract hàm
-\texttt{PutState(keyPtr, keySize, valPtr, valSize)} để ghi một cặp
-key$\rightarrow$value vào world state. Hình~\ref{fig:wasm-abi} minh họa luồng gọi.
+\textbf{Kiến trúc runtime.} Mỗi Core node giữ \textbf{một} \texttt{wazero.Runtime} dùng
+chung cho mọi contract. Lúc khởi tạo (\texttt{NewWasmEngine}): (i)~instantiate WASI
+(cho \texttt{print}, file descriptor tối thiểu); (ii)~đăng ký host module
+\texttt{env} export \texttt{PutState}; (iii)~tạo map \texttt{contractCache} và
+\texttt{pools}. \texttt{StateDB} tách hai LevelDB: \texttt{contract\_db} (bytecode
+WASM + metadata schema) và \texttt{ledger\_db} (key/value do \texttt{PutState} ghi
+khi simulate). Đây là state \textbf{cục bộ Core}, khác world state UTXO trên
+Committing Peer.
+
+\textbf{Giao diện host--contract (ABI).} Contract TinyGo và host thống nhất qua
+export/import WASM. Contract \textbf{xuất} (\texttt{//export}):
+\texttt{allocate(uint32 size) $\rightarrow$ uint32} cấp buffer trong linear memory;
+host ghi payload vào offset trả về. \texttt{verify\_tx(ptr, size) $\rightarrow$ uint32}
+(hoặc \texttt{execute}) là entry point, trả \texttt{1}/\texttt{0}. Contract
+\textbf{nhập} qua \texttt{//go:wasmimport env PutState}: host đọc
+\texttt{keyPtr/keySize}, \texttt{valPtr/valSize} từ RAM sandbox, gọi
+\texttt{StateDB.PutState}; trả \texttt{1} nếu ghi LevelDB OK, \texttt{0} nếu đọc
+memory lỗi hoặc DB lỗi.
+
+Trong contract, payload thường được đọc bằng \texttt{unsafe.Slice} trên con trỏ
+\texttt{ptr} (pattern \texttt{example\_asset}, \texttt{bench\_ping}). Key/value
+truyền sang \texttt{PutState} cũng là con trỏ offset trong linear memory --- host
+không nhận chuỗi Go trực tiếp. Hình~\ref{fig:wasm-abi} tóm tắt thứ tự gọi.
 
 \begin{figure}[H]
 \centering
-\begin{lstlisting}[basicstyle=\ttfamily\footnotesize,numbers=none,backgroundcolor=\color{white}]
-HOST (Core Service)                    CONTRACT (WASM)
-   |  allocate(len(payload))  ---------->  cap phat, tra ptr
-   |  ghi payload vao ptr
-   |  verify_tx(ptr, len)     ---------->  giai ma JSON, xu ly
-   |                          <----------  PutState(key,val) (neu can ghi)
-   |  nhan status (0/1)       <----------  return 1
-\end{lstlisting}
 \caption{Giao diện hàm (ABI) giữa host và contract WASM.}
 \label{fig:wasm-abi}
 \end{figure}
 
-\subsubsection{Tối ưu hiệu năng: cache và pool}
+\textbf{Luồng \texttt{Execute(ctx, tx)} từng bước.}
 
-Chạy WASM ``từ đầu'' mỗi giao dịch rất chậm vì phải biên dịch và khởi tạo module.
-\texttt{WasmEngine} (\texttt{internal/vm/engine.go}) dùng hai kỹ thuật:
+\textit{Bước A --- Nạp và biên dịch.} \texttt{getOrCompile(tx.ContractName)}:
+đọc RLock \texttt{contractCache}; hit thì trả \texttt{CompiledModule} (warm).
+Miss thì \texttt{GetContract} từ LevelDB, \texttt{CompileModule}, ghi cache dưới
+Lock. Cold start gồm I/O đĩa + biên dịch WASM; warm chỉ còn phần instantiate (rẻ
+hơn nhiều nhưng vẫn có chi phí nếu không có pool).
 
-\begin{enumerate}
-  \item \textbf{Cache module đã biên dịch:} hàm \texttt{getOrCompile()} biên
-  dịch WASM một lần rồi giữ lại bản đã compile.
-  \item \textbf{Pool module dựng sẵn:} với mỗi contract, dựng sẵn $N$ sandbox
-  (mặc định 16, tối đa 32, biến \texttt{WASM\_POOL\_SIZE}) trong một channel có
-  đệm. Mỗi giao dịch lấy một sandbox rảnh ra dùng rồi trả lại --- tránh chi phí
-  khởi tạo lặp lại và cho phép xử lý song song nhiều giao dịch.
-\end{enumerate}
+\textit{Bước B --- Lấy sandbox.} \texttt{acquireModule}: \texttt{poolFor} tạo pool
+lần đầu gặp contract --- vòng lặp $N =$ \texttt{WASM\_POOL\_SIZE} lần
+\texttt{InstantiateModule} (mặc định 16, max 32), đẩy vào channel có buffer $N$.
+\texttt{select} non-blocking: có slot rảnh thì lấy ngay; không thì tạo instance
+overflow (tên \texttt{contractName-<serial>}, serial tăng atomic). Mỗi instance
+cấu hình \texttt{WithStartFunctions("\_initialize")} để TinyGo/WASI init chạy
+trước khi gọi export.
 
-Đây là mẫu thiết kế \textit{object pool} kinh điển để giảm độ trễ khởi tạo.
+\textit{Bước C --- Đưa payload vào sandbox.} Nếu \texttt{len(tx.Payload)>0}: gọi
+\texttt{allocate(len)}, lấy \texttt{ptr} từ kết quả WASM, \texttt{Memory.Write}
+copy byte payload (đã decode từ hex JSON ở tầng API). Thiếu export \texttt{allocate}
+$\rightarrow$ lỗi ``thiếu hàm bắt buộc''. Payload rỗng vẫn gọi entry với
+\texttt{ptr=0, size=0} (contract phải tự xử lý).
 
-\subsubsection{Biên dịch contract}
+\textit{Bước D --- Gọi entry.} \texttt{FunctionName} từ tx, mặc định \texttt{execute}.
+Engine thử danh sách fallback: nếu yêu cầu \texttt{execute} mà không có export thì
+thử \texttt{verify\_tx}, và ngược lại --- tương thích contract cũ chỉ export một
+tên. \texttt{Call(ctx, ptr, payloadLen)}; WASM trap/panic $\rightarrow$ lỗi runtime;
+kết quả số \texttt{0} $\rightarrow$ lỗi nghiệp vụ (``bị Smart Contract từ chối'').
 
-Contract viết bằng Go được biên dịch sang WASM bằng TinyGo:
-\begin{lstlisting}[language=bash,numbers=none,caption={Lệnh biên dịch contract},captionpos=b]
-tinygo build -o my_contract.wasm -target wasi -no-debug -scheduler=none ./
-\end{lstlisting}
-Trong đó \texttt{-target wasi} nhắm runtime phía máy chủ, và
-\texttt{-scheduler=none} bỏ bộ lập lịch goroutine cho nhẹ và xác định hơn.
+\textit{Bước E --- Trả sandbox.} \texttt{defer release(runOK)}: nếu thành công,
+\texttt{runOK=true}, đẩy module lại channel; channel đầy thì \texttt{Close} instance
+(thừa sandbox sau burst). Nếu lỗi, \texttt{runOK=false}, luôn \texttt{Close} ---
+không recycle instance có thể ở trạng thái hỏng.
 
-\subsubsection{Hợp đồng mẫu}
+\textbf{Hai lớp tối ưu hiệu năng.}
 
-Dự án cung cấp ba hợp đồng mẫu phục vụ trình diễn và đo lường:
+\textit{(1) Compiled module cache} --- map in-memory theo tên contract, mutex
+đọc/ghi. Một bytecode chỉ compile một lần cho đến khi restart Core. Phù hợp khi
+cùng contract phục vụ hàng nghìn tx (benchmark \texttt{bench\_ping}).
+
+\textit{(2) Module pool} --- channel \texttt{chan api.Module} giữ sẵn $N$ instance
+đã link WASI + host \texttt{env}, tránh \texttt{InstantiateModule} lặp trên hot
+path. Cho phép xử lý song song tối đa $N$ tx đồng thời trên cùng contract (mỗi
+sandbox một linear memory riêng). Vượt $N$, engine vẫn phục vụ bằng instance tạm,
+nhưng latency tăng và có thể đóng bỏ sau khi dùng.
 
 \begin{table}[H]
 \centering
-\caption{Ba hợp đồng mẫu}
-\label{tab:sample-contracts}
-\begin{tabular}{@{}p{2.8cm}p{3.4cm}p{5cm}@{}}
+\caption{Tham số và gỡ lỗi WASM engine}
+\label{tab:wasm-env}
+\begin{tabular}{@{}p{3.4cm}p{2.4cm}p{5.8cm}@{}}
 \toprule
-\textbf{Contract} & \textbf{Đầu vào (JSON)} & \textbf{Hành vi} \\
+\textbf{Tham số} & \textbf{Mặc định} & \textbf{Ý nghĩa} \\
 \midrule
-example\_asset & \{id, color, action\} & \texttt{action=="create"} $\rightarrow$ \texttt{PutState("Asset\_\{id\}")} \\
-demo\_inventory & \{op, sku, qty\} & \texttt{op=="register"} và \texttt{qty>=0} $\rightarrow$ \texttt{PutState("Inv\_\{sku\}")} \\
-bench\_ping & \{v\} & Chỉ kiểm tra định dạng, \textbf{không ghi state} --- đo throughput thuần \\
+\texttt{WASM\_POOL\_SIZE} & 16 (max 32) & Số sandbox giữ sẵn / contract \\
+\texttt{CORE\_LOG} & tắt & \texttt{debug}: log cold/warm, WASM stdout/stderr \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-Hợp đồng \texttt{bench\_ping} cố ý không ghi gì để đo ``trần'' tốc độ pipeline
-mà không bị nghẽn ở tầng lưu trữ.
+\textbf{Biên dịch và triển khai contract.} Source nằm trong
+\texttt{coreservice/contracts/<ten>/main.go}. Build:
+\begin{lstlisting}[language=bash,numbers=none,caption={Bien dich WASM (TinyGo)},captionpos=b]
+cd coreservice/contracts && ./build_wasm.sh
+# hoac tung contract:
+tinygo build -o my_contract.wasm -target wasi -no-debug -scheduler=none ./
+\end{lstlisting}
+\texttt{-target wasi}: link WASI snapshot mà wazero hỗ trợ. \texttt{-target wasm}
+thuần (browser) kéo \texttt{gojs} --- host báo \texttt{module[gojs] not
+instantiated}. \texttt{-scheduler=none}: không spawn goroutine scheduler TinyGo
+trong module, giảm overhead và dễ lý giải trong sandbox. \texttt{-no-debug}: binary
+nhỏ hơn. Output \texttt{my\_contract.wasm} deploy qua \texttt{POST /api/tx/deploy}
+(multipart \texttt{contract\_name} + \texttt{file}) $\rightarrow$ lưu
+\texttt{contract\_db} + tùy chọn \texttt{payload\_schema} JSONB trên Postgres.
+
+\textbf{Payload trên wire.} Client (Explorer \texttt{Transfer}, k6) gửi
+\texttt{payload} là \textbf{chuỗi hex} của JSON UTF-8. Core decode hex
+$\rightarrow$ \texttt{[]byte} trong \texttt{Transaction.Payload} trước khi vào WASM.
+Contract dùng \texttt{encoding/json} parse struct (ví dụ \texttt{\{id, color,
+action\}}). \texttt{coercePayloadFieldsBySchema} phía frontend ép kiểu số trước
+khi stringify để \texttt{json.Unmarshal} sang \texttt{int} không lỗi.
+
+\textbf{Ba hợp đồng mẫu} (Bảng~\ref{tab:sample-contracts}).
+
+\begin{table}[H]
+\centering
+\caption{Ba hợp đồng mẫu trong repository}
+\label{tab:sample-contracts}
+\begin{tabular}{@{}p{2.6cm}p{3.2cm}p{5.6cm}@{}}
+\toprule
+\textbf{Contract} & \textbf{Payload JSON} & \textbf{Logic chính} \\
+\midrule
+example\_asset & id, color, action & \texttt{action=="create"}: key \texttt{Asset\_<id>}, value = raw JSON payload, qua \texttt{PutState} \\
+demo\_inventory & op, sku, qty & \texttt{op=="register"}, \texttt{qty>=0}: key \texttt{Inv\_<sku>} \\
+bench\_ping & v (string) & \texttt{size<=512}, \texttt{1<=len(v)<=128}; validate only, \textbf{khong} \texttt{PutState} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\texttt{bench\_ping} thiết kế cho benchmark throughput: không gọi host import, không
+ghi LevelDB --- đo trần HTTP + WASM + ký + orderer. \texttt{example\_asset} minh
+họa contract có side-effect: mọi trường hợp \texttt{action != "create"} hoặc
+\texttt{PutState} trả \texttt{0} đều reject (\texttt{return 0}). Cả ba export
+\texttt{allocate} + \texttt{verify\_tx}; engine resolve tên hàm tự động.
+
+\textbf{Vị trí trong pipeline và giới hạn.} WASM simulate chạy \textbf{một lần}
+tại Core trước endorsement. Committing Peer khi ghi block \textbf{không} gọi lại
+\texttt{WasmEngine} --- chỉ kiểm tra endorsement, Merkle, hash. Do đó:
+\texttt{PutState} trong simulate cập nhật \texttt{ledger\_db} Core (hữu ích demo/query
+cục bộ) nhưng \textbf{chưa} đồng bộ tự động sang sổ cái commit peer; state contract
+toàn mạng cần thiết kế thêm (ví dụ ghi state vào tx read-set/write-set, replay khi
+commit). UTXO world state thật vẫn do commit peer \texttt{ApplyBlock} trên LevelDB
+riêng. Tách bạch này quan trọng khi đọc kết quả Explorer: mirror Postgres phản
+ánh tx đã commit, không phải mọi key \texttt{PutState} cục bộ trên Core.
+
+\textbf{Tóm tắt chi phí theo pha.} Lần đầu deploy contract mới: compile + khởi tạo
+pool ($N$ instantiate). Steady-state cùng contract: chỉ \texttt{allocate} +
+\texttt{verify\_tx} + (tuỳ) \texttt{PutState} trên instance có sẵn --- đây là pha
+engine tối ưu nhằm vào. Đổi \texttt{WASM\_POOL\_SIZE} khi benchmark nhiều client
+song song: pool nhỏ $\rightarrow$ nhiều overflow/close; pool lớn (tới 32)
+$\rightarrow$ RAM cao hơn nhưng ít instantiate đột biến.
+
 
 \subsection{Mật mã và quá trình endorsement}
 \label{sec:core-crypto}
 
-Hệ thống dùng chữ ký số \textbf{Ed25519}~\cite{bernstein2012ed25519,rfc8032} ---
-hệ chữ ký trên đường cong Edwards xoắn, nhanh, an toàn và xác định, với khóa 32
-byte và chữ ký 64 byte. Hàm \texttt{SignTransaction} ghép
-\texttt{txID + contractName + payload} thành thông điệp rồi ký. Luồng xử lý
-\texttt{POST /api/tx/submit} như sau:
+Endorsement là lớp mật mã chứng minh một giao dịch smart-contract đã được ``chạy
+thử'' hợp lệ trước khi vào ordering. Trong kiến trúc này, \textbf{Core Service
+không tự ký} trên hot-path \texttt{POST /api/tx/submit}: sau
+\texttt{engine.Execute()} (WASM), Core ủy quyền ký cho \textbf{Committing Peer}
+qua libp2p, nhận tx đã có chữ ký, rồi chuyển tiếp orderer. Thuật toán ký
+(\textbf{Ed25519} hoặc \textbf{ML-DSA-44}) được chọn \textbf{tại commit peer}
+(\texttt{COMMIT\_PEER\_KEY\_ALGO}); Core giữ nguyên pipeline execute/relay và
+đảm bảo trường \texttt{algorithm} không mất trên JSON wire.
 
-\begin{lstlisting}[numbers=left,caption={Luồng xử lý submit giao dịch},captionpos=b]
-1. Giai ma JSON Transaction
-2. engine.Execute()        -> chay contract WASM (validate)
-       | that bai -> tra loi ngay
-       v thanh cong
-3. signTxViaCommitPeer()   -> mo stream tx-sign toi Committing Peer
-       |   Committing Peer ky Ed25519, them 1 EndorsementEntry
+\textbf{Hai scheme ký và vai trò từng tầng.}
+
+\textit{Ed25519}~\cite{bernstein2012ed25519,rfc8032} (mặc định): chữ ký trên đường
+cong Edwards, deterministic, khóa 32\,byte, chữ ký 64\,byte (128 ký tự hex trên
+wire). Phù hợp benchmark throughput --- ký và serialize nhanh, response HTTP nhỏ.
+
+\textit{ML-DSA-44} (FIPS\,204, post-quantum): triển khai trên commit peer qua
+\texttt{cloudflare/circl/sign/mldsa/mldsa44}. Khóa công khai 1312\,byte (2624 hex),
+chữ ký 2420\,byte (4840 hex). Core \textbf{không} gọi thư viện ML-DSA; chỉ thấy
+payload JSON phình to sau bước tx-sign và khi relay sang orderer/block. Thời gian
+\texttt{signTxViaCommitPeer()} tăng đáng kể so với Ed25519 --- nút thắt thường ở
+ký post-quantum, không phải \texttt{engine.Execute()}.
+
+Package \texttt{coreservice/internal/crypto} chỉ có helper \texttt{SignTransaction}/
+\texttt{VerifyTransaction} Ed25519 (dev/legacy). Production luôn
+\texttt{signTxViaCommitPeer()} $\rightarrow$ \texttt{Signer} pluggable trên commit
+peer (\texttt{internal/crypto/signer.go}).
+
+\begin{table}[H]
+\centering
+\caption{So sánh endorsement Ed25519 và ML-DSA-44 (góc nhìn Core)}
+\label{tab:core-algo-compare}
+\begin{tabular}{@{}lcc@{}}
+\toprule
+\textbf{Thuộc tính} & \textbf{Ed25519} & \textbf{ML-DSA-44} \\
+\midrule
+Cấu hình & \texttt{COMMIT\_PEER\_KEY\_ALGO=ed25519} & \texttt{mldsa-44} trên peer \\
+Tên wire \texttt{algorithm} & \texttt{ed25519} & \texttt{mldsa-44} \\
+Pubkey hex (điển hình) & 64 ký tự & 2624 ký tự \\
+Chữ ký hex (điển hình) & 128 ký tự & 4840 ký tự \\
+Ảnh hưởng Core execute & Không đổi & Không đổi \\
+Ảnh hưởng tx-sign / HTTP & Nhẹ & Nặng (ký + JSON lớn) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Thông điệp ký và cấu trúc \texttt{EndorsementEntry}.} Message layout thống
+nhất mọi tầng:
+\begin{center}
+\texttt{TxMessage = txid + contractName + string(payload)}
+\end{center}
+(\texttt{payload} là \texttt{[]byte} đã decode từ hex JSON). Mỗi endorsement:
+\texttt{public\_key}, \texttt{signature}, \texttt{algorithm}. Struct trong
+\texttt{internal/core/model.go}; serialize JSON với \texttt{payload} dạng hex.
+Mảng \texttt{endorsements[]} là format chính; \texttt{sender\_pubkey}/
+\texttt{signature} mirror entry cuối cho client cũ.
+
+Khi commit peer ký, handler tx-sign gắn \texttt{algorithm} rõ ràng
+(\texttt{ed25519} hoặc \texttt{mldsa-44}), self-verify trước khi trả Core. Core
+merge vào tx rồi \texttt{json.Encode} gửi orderer; struct \texttt{Endorsement} bên
+orderer cũng có field \texttt{algorithm} để block deliver tới commit peer không mất
+metadata. Nếu \texttt{algorithm} thiếu (relay cũ), validator commit peer suy luận
+từ độ dài hex (\texttt{InferAlgorithmFromWire}) --- tránh verify Ed25519 nhầm lên
+chữ ký ML-DSA.
+
+\textbf{Khóa tin cậy.} Commit peer validate block với
+\texttt{TRUSTED\_ENDORSER\_PUBLIC\_KEYS}: danh sách \texttt{algo:pubhex} hoặc hex
+thuần (mặc định hiểu Ed25519). Khi chạy ML-DSA, pubkey phải dạng
+\texttt{mldsa-44:<hex>} --- không dùng pubkey Ed25519 cũ. Core không kiểm tra
+chữ ký lúc submit; tin commit peer đã verify và chỉ ký khi self-check OK.
+
+\textbf{Luồng \texttt{POST /api/tx/submit}.}
+
+\begin{lstlisting}[numbers=left,caption={Luong xu ly submit (Core Service)},captionpos=b]
+1. Decode JSON Transaction (payload hex -> []byte)
+2. engine.Execute()              -> WASM simulate
+       | fail -> HTTP 400
+       v OK
+3. signTxViaCommitPeer()         -> libp2p tx-sign
+       |   peer: SignTx + EndorsementEntry{algorithm}
+       |   fail -> HTTP 502
        v
-4. sendEndorsementAsync()  -> gui giao dich (da endorse) toi Leader orderer
-5. SubmitRecorder ghi tx_submit_times (do latency)
-6. Tra JSON: preview chu ky + so endorsement
+4. sendEndorsementAsync()        -> orderer leader (libp2p)
+5. SubmitRecorder.Record()       -> tx_submit_times (async)
+6. HTTP 200 + signature preview + endorsement_count
 \end{lstlisting}
 
-Việc tách ``execute thử'' rồi mới ký chính là hiện thực mô hình
-Execute--Order--Validate: Core chạy thử để đảm bảo hợp lệ trước khi tốn công sắp
-xếp; Committing Peer ký xác nhận tạo bằng chứng mật mã; và khi block tới
-Committing Peer để ghi, nó \textit{kiểm tra lại} các endorsement so với danh
-sách khóa tin cậy. Nhờ vậy, một giao dịch gian lận (không có endorsement hợp lệ)
-sẽ bị loại ở bước ghi, dù có lọt qua tầng sắp xếp. Bước 4 có thể chạy
-\textbf{bất đồng bộ} (\texttt{CORE\_ASYNC\_ENDORSE=1}) để trả lời người dùng
-nhanh hơn.
+\textit{Bước 1--2.} \texttt{submittedAt := time.Now()} ghi nhận sớm cho metric.
+Decode body; \texttt{Execute(ctx, tx)} chạy WASM (mục~\ref{sec:wasm-engine}). Mọi
+lỗi contract $\rightarrow$ HTTP 400, không ký.
+
+\textit{Bước 3.} \texttt{signTxViaCommitPeer}: parse \texttt{COMMIT\_PEER\_P2P}
+(comma-separated multiaddr), thử tuần tự. \texttt{SignTransactionViaCommitPeer}:
+encode tx JSON $\rightarrow$ stream \texttt{/fabric-enterprise/commit-peer/tx-sign/1.0.0}
+$\rightarrow$ decode \texttt{\{ok, error, tx\}}. \textbf{Sign pool}
+(\texttt{CORE\_SIGN\_POOL}, mặc định bật): giữ TCP/libp2p ấm, mỗi request vẫn mở
+stream mới (một round-trip), timeout \texttt{CORE\_SIGN\_TIMEOUT} (15\,s). Tx trả
+về đã có \texttt{endorsements[0]} với \texttt{algorithm} khớp scheme peer đang
+chạy. Với ML-DSA, response body có thể ~8--10\,KB/tx chỉ riêng phần chữ ký --- ảnh
+hưởng bandwidth k6/Explorer nhưng không đổi logic API.
+
+\textit{Bước 4.} \texttt{sendEndorsementAsync}: nếu có orderer discovery,
+\texttt{discovery.SendEndorsement} gửi tx JSON (đã endorse) tới Raft leader qua
+\texttt{/raft-order-service/endorsement/1.0.0}. Mặc định \texttt{CORE\_ASYNC\_ENDORSE=1}:
+goroutine nền, HTTP 200 ngay sau bước 3. \texttt{CORE\_ENDORSE\_FALLBACK=1}: thử
+follower nếu leader từ chối. Lỗi gửi orderer \textbf{không} đổi HTTP response (đã
+200) --- tx có thể kẹt nếu async fail; benchmark cần theo dõi log orderer.
+
+\textit{Bước 5.} \texttt{SubmitRecorder}: channel buffer 65536, worker flush batch
+512 dòng / 50\,ms vào \texttt{core\_service.tx\_submit\_times}
+(\texttt{ON CONFLICT DO NOTHING}). Tắt bằng \texttt{CORE\_RECORD\_SUBMIT=0}. Queue
+đầy thì drop --- ưu tiên không chặn submit. Dùng join E2E với
+\texttt{committed\_at} (mirror hoặc API commit peer \texttt{:8081}).
+
+\textbf{Execute--Order--Validate trên Core.} Core = simulate + delegate sign +
+forward. Orderer không verify chữ ký endorsement (để commit peer làm). Commit peer
+khi ghi block gọi \texttt{VerifyEndorsement(txMessage, algorithm, sig, pub)} và
+so \texttt{algo:pubhex} với trusted set. Tx gian lận (execute lợi dụng lỗ hổng
+không có trong thiết kế hiện tại) vẫn cần endorsement hợp lệ từ khóa tin cậy ---
+thiếu hoặc sai algorithm/sig $\rightarrow$ \texttt{block rejected}.
+
+\textbf{Chuyển đổi scheme khi benchmark.} So sánh Ed25519 vs ML-DSA trên cùng Core:
+(i)~restart commit peer với \texttt{COMMIT\_PEER\_KEY\_ALGO} và file khóa tương ứng
+(\texttt{endorsement.key} / \texttt{endorsement.mldsa44.key}); (ii)~cập nhật
+\texttt{TRUSTED\_ENDORSER\_PUBLIC\_KEYS}; (iii)~không đổi Core/WASM/k6 contract.
+\texttt{engine.Execute()} và \texttt{TxMessage} giữ nguyên --- chỉ bước 3--4 và
+kích thước JSON thay đổi. Metric E2E vẫn hợp lệ vì \texttt{RecordBlock} commit peer
+không phụ thuộc algorithm.
+
+\begin{table}[H]
+\centering
+\caption{Biến môi trường endorsement trên Core Service}
+\label{tab:core-endorse-env}
+\begin{tabular}{@{}p{3.6cm}p{2.2cm}p{5.8cm}@{}}
+\toprule
+\textbf{Biến} & \textbf{Mặc định} & \textbf{Tác dụng} \\
+\midrule
+\texttt{COMMIT\_PEER\_P2P} & (bắt buộc) & Multiaddr peer ký; nhiều addr cách nhau dấu phẩy \\
+\texttt{CORE\_ASYNC\_ENDORSE} & \texttt{1} & Gửi orderer nền sau khi ký \\
+\texttt{CORE\_ENDORSE\_FALLBACK} & tắt & \texttt{1}: dial follower khi leader lỗi \\
+\texttt{CORE\_SIGN\_POOL} & bật & Kết nối libp2p ấm tới commit peer \\
+\texttt{CORE\_SIGN\_TIMEOUT} & \texttt{15s} & Timeout mỗi lần tx-sign \\
+\texttt{CORE\_RECORD\_SUBMIT} & bật & Ghi \texttt{tx\_submit\_times} (benchmark E2E) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Biến thuật toán (\texttt{COMMIT\_PEER\_KEY\_ALGO}, \texttt{TRUSTED\_ENDORSER\_PUBLIC\_KEYS})
+cấu hình trên \textbf{commit peer}, không trên Core --- Core chỉ cần
+\texttt{COMMIT\_PEER\_P2P} trỏ đúng peer đang chạy scheme mong muốn.
+
 
 \subsection{Mạng libp2p và Discovery}
 \label{sec:core-network}
@@ -472,22 +648,6 @@ Mỗi node ở một trong bốn trạng thái, chuyển đổi như Hình~\ref{
 
 \begin{figure}[H]
 \centering
-\begin{lstlisting}[basicstyle=\ttfamily\footnotesize,numbers=none,backgroundcolor=\color{white}]
-   +----------+  het heartbeat timeout & minh uu tien cao nhat con song
-   | Follower | -------------------------------------------+
-   +----+-----+                                            v
-        | nhan heartbeat hop le              +-----------------+
-        |<---------------------------------- | ClaimingLeader  |
-        |                                    | (gui "I AM NEW  |
-        | phat hien tut lai / gap > 10s      |  LEADER", cho   |
-        v                                    |  da so ACK)     |
-   +----------+                              +--------+--------+
-   | Syncing  | <-- keo block tu peer khac            | du majority ACK
-   +----+-----+                                        v
-        | xong -> Follower                       +----------+
-        +--------------------------------------->|  Leader  |
-                                                 +----------+
-\end{lstlisting}
 \caption{Sơ đồ chuyển trạng thái của một node Raft trong dự án.}
 \label{fig:raft-states}
 \end{figure}
@@ -555,21 +715,6 @@ chạy mỗi 1 giây), quy trình bầu cử diễn ra như Hình~\ref{fig:elect
 
 \begin{figure}[H]
 \centering
-\begin{lstlisting}[basicstyle=\ttfamily\footnotesize,numbers=none,backgroundcolor=\color{white}]
-Follower phat hien Leader chet
-        |
-        v
-selectNewLeader() -- minh la uu tien cao nhat? --+ Khong -> cho node kia (<=15s)
-        | Co                                     |
-        v                                        v
-ClaimingLeader: term++, broadcast "I AM NEW LEADER"
-        |
-        v
-thu ACK -- du majority YES? --+ Khong -> ve Follower
-        | Co
-        v
-   tro thanh Leader
-\end{lstlisting}
 \caption{Quy trình bầu lãnh đạo theo độ ưu tiên.}
 \label{fig:election}
 \end{figure}
@@ -626,36 +771,6 @@ chối (phải sync). Khi Leader đếm đủ majority ACK, nó \textbf{commit}:
 vào \texttt{OrderingBlock}, cập nhật \texttt{lastCommittedHash}, gọi
 \texttt{DeliverMgr.NotifyNewBlock()}, xóa giao dịch đã đóng block khỏi TxPool, và
 phát \texttt{MsgBlockCommit} cho Follower.
-
-\subsubsection{Các tối ưu tốc độ}
-\label{sec:opts}
-
-Một loạt tối ưu trên hot-path (theo \texttt{docs/block-speed-optimization-analysis.md})
-đã được thực hiện, tóm tắt trong Bảng~\ref{tab:opts}.
-
-\begin{table}[H]
-\centering
-\caption{Các tối ưu tốc độ trên đường nóng}
-\label{tab:opts}
-\begin{tabular}{@{}p{1.4cm}p{8.8cm}p{1.6cm}@{}}
-\toprule
-\textbf{Mã} & \textbf{Nội dung} & \textbf{Trạng thái} \\
-\midrule
-OPT-1 & Commit ngay khi đủ majority ACK (không chờ ticker) & Đã làm \\
-OPT-2 & Propose theo sự kiện (đủ batch $\rightarrow$ cắt ngay) & Đã làm \\
-OPT-3 & Stream endorsement bền (mỗi worker giữ 1 stream, gửi nhiều tx) & Đã làm \\
-OPT-5 & Tách kênh riêng cho hot-path (ACK $\rightarrow$ \texttt{BlockAckChan}) & Đã làm \\
-OPT-8 & Bỏ log theo từng tx trên hot-path, chỉ log theo block & Đã làm \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-Kết quả quan sát: sau OPT-8, mỗi block có thể đạt $1000+$ tx ở tải bền vững
-(trước đó nghẽn ${\sim}71$ tx/block do tranh chấp khóa khi log từng tx). Các hạn
-chế còn lại gồm: vẫn \textbf{1 block in-flight} (propose $\rightarrow$ ACK
-$\rightarrow$ commit tuần tự, chưa pipeline) --- giới hạn throughput ở mức
-$1/\textit{RTT-commit}$; còn marshal/unmarshal lặp; và \textbf{không lưu bền} ---
-toàn bộ log/block trong RAM, crash là mất.
 
 \subsection{Giao block (Deliver) và Đồng bộ (Sync)}
 \label{sec:deliver-sync}
@@ -749,6 +864,10 @@ dõi UTXO, tạo và ký giao dịch. Khác với loadgen (bắn thẳng tới o
 libp2p, đo throughput consensus thuần), công cụ k6 bắn HTTP tới Core Service
 (đo toàn pipeline submit và độ trễ HTTP từ góc nhìn client thật).
 
+% Committing Peer — section hoàn chỉnh cho báo cáo / luận văn
+% Paste vào main.tex: \input{docs/report-committing-peer}
+% Yêu cầu gói: float (hoặc [H] từ float), booktabs, listings, xcolor (cho lstlisting)
+
 \section{Committing Peer --- Kiểm tra và Ghi sổ}
 \label{sec:committing-peer}
 
@@ -766,19 +885,6 @@ Bên trong, ba tầng được tách rời bằng channel để mỗi tầng ch�
 
 \begin{figure}[H]
 \centering
-\begin{lstlisting}[basicstyle=\ttfamily\footnotesize,numbers=none,backgroundcolor=\color{white}]
- ORDERER --stream--> [deliver.Client] --blockChan(64)--> [commitLoop]
-                                                              |
-                          +-----------------------------------+
-                          v (validate)
-                   [validation.Engine]
-                          | hop le
-          +---------------+---------------+
-          v               v               v
-   [BlockStorage]   [WorldState]   [Postgres mirror]
-   (file, dong bo)  (LevelDB,      (async, khong chan)
-                     dong bo)
-\end{lstlisting}
 \caption{Kiến trúc đường ống ba tầng của Committing Peer.}
 \label{fig:cp-pipeline}
 \end{figure}
@@ -796,9 +902,69 @@ với \texttt{fromIndex = lastCommittedBlock + 1} --- \textbf{không mất block
 
 Committing Peer cũng đóng vai \textbf{endorser}: đăng ký handler
 \texttt{/fabric-enterprise/commit-peer/tx-sign/1.0.0}; khi Core gửi một giao
-dịch chưa ký, peer ký Ed25519 trên \texttt{txid + contractName + payload}, thêm
-một \texttt{EndorsementEntry}, rồi trả lại. Khóa công khai của nó nằm trong danh
-sách endorser tin cậy (\texttt{TRUSTED\_ENDORSER\_PUBLIC\_KEYS}).
+dịch chưa ký, peer ký trên thông điệp \texttt{txid + contractName + payload}
+(cùng bố cục \texttt{TxMessage} với Core và Ordering Service), thêm một
+\texttt{EndorsementEntry} kèm trường \texttt{algorithm}, rồi trả lại. Thuật toán
+ký được chọn lúc khởi động peer (\texttt{ed25519} mặc định hoặc \texttt{mldsa-44}
+hậu lượng tử). Khóa công khai tương ứng nằm trong danh sách endorser tin cậy
+(\texttt{TRUSTED\_ENDORSER\_PUBLIC\_KEYS}), định dạng \texttt{algo:pubhex} hoặc
+hex thuần (mặc định hiểu là Ed25519).
+
+\subsection{Hỗ trợ đa thuật toán ký endorsement}
+\label{sec:cp-multi-algo}
+
+Để so sánh tính kiên cường hậu lượng tử mà không phá pipeline hiện có, Committing
+Peer được mở rộng từ một lớp ký Ed25519 cố định sang kiến trúc \textbf{pluggable
+signer}: interface \texttt{Signer} (\texttt{internal/crypto/signer.go}) gói sinh
+khóa, ký, xác minh và định dạng khóa tin cậy. Hai triển khai song song:
+\textbf{Ed25519} (\texttt{ed25519\_signer.go}, thư viện \texttt{crypto/ed25519},
+chữ ký 64\,byte) là đường mặc định cho benchmark; \textbf{ML-DSA-44}
+(\texttt{mldsa\_signer.go}, chuẩn FIPS\,204 qua \texttt{cloudflare/circl},
+khóa công khai 1312\,byte, chữ ký 2420\,byte, tên wire \texttt{mldsa-44}) phục vụ
+kịch bản hậu lượng tử.
+
+\textbf{Thông điệp được ký} giữ nguyên giữa hai thuật toán:
+\texttt{TxMessage = txid + contractName + string(payload)}. Layout không đổi nên
+có thể so sánh hiệu năng và độ trễ E2E trên cùng pipeline, chỉ thay tầng ký.
+
+Khi khởi động, \texttt{LoadOrGenerateSigner()} đọc \texttt{COMMIT\_PEER\_KEY\_ALGO}
+(hoặc prompt \texttt{1}/\texttt{2}), nạp khóa từ \texttt{COMMIT\_PEER\_PRIVATE\_KEY}
+hoặc file \texttt{endorsement.key} / \texttt{endorsement.mldsa44.key}, hoặc sinh
+mới. \texttt{ResolveKeyAlgorithm()} kiểm tra độ dài khóa hex để tránh gán nhầm
+scheme. Khóa tin cậy trả về dạng \texttt{ed25519:...} hoặc \texttt{mldsa-44:...}
+qua \texttt{TrustedKey()}.
+
+Handler \texttt{RegisterTxSignHandler()} nhận JSON từ Core, ký bằng
+\texttt{signer.SignTx()}, gắn \texttt{EndorsementEntry} (kèm \texttt{algorithm}),
+đồng bộ \texttt{sender\_pubkey}/\texttt{signature}, rồi tự xác minh trước khi
+trả về. Ở tầng validate block, \texttt{validateEndorsedTx()} gọi
+\texttt{VerifyEndorsement()} theo \texttt{algorithm}; nếu trường này rỗng (relay
+cũ thiếu metadata), \texttt{InferAlgorithmFromWire()} suy luận từ độ dài hex
+pubkey/chữ ký. Endorser tin cậy được so khớp theo cặp \texttt{algo:pubhex}. Trường
+\texttt{algorithm} cũng được relay qua Core và Ordering Service để block JSON
+giữ đủ metadata trên toàn pipeline.
+
+\begin{table}[H]
+\centering
+\caption{So sánh hai scheme endorsement trên Committing Peer}
+\label{tab:endorsement-algos}
+\begin{tabular}{@{}lcc@{}}
+\toprule
+\textbf{Thuộc tính} & \textbf{Ed25519} & \textbf{ML-DSA-44} \\
+\midrule
+Tên wire & \texttt{ed25519} & \texttt{mldsa-44} \\
+Khóa công khai (hex) & 64 ký tự & 2624 ký tự \\
+Chữ ký (hex) & 128 ký tự & 4840 ký tự \\
+File khóa mặc định & \texttt{endorsement.key} & \texttt{endorsement.mldsa44.key} \\
+Kháng lượng tử & Không & Có (NIST) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Một peer chỉ chạy một \texttt{Signer} tại thời điểm khởi động; block hash, Merkle
+root và world state không phụ thuộc thuật toán endorsement. Thực nghiệm cho thấy
+ML-DSA làm tăng kích thước wire và thời gian ký trên hot-path tx-sign, throughput
+commit thấp hơn Ed25519 dù logic validate/commit giữ nguyên.
 
 \subsection{Kiểm tra hợp lệ (Validation)}
 \label{sec:validation}
@@ -811,8 +977,8 @@ block không bị sửa đổi trên đường truyền, và hàm hash/merkle ph
 Ordering Service tính. \textbf{Kiểm tra endorsement}
 (\texttt{validateEndorsedTx()}): với mỗi giao dịch smart-contract, phải có mảng
 \texttt{Endorsements[]} không rỗng, xác minh từng chữ ký bằng
-\texttt{VerifyTransaction}, và ít nhất một khóa endorser phải nằm trong tập tin
-cậy.
+\texttt{VerifyEndorsement()} theo \texttt{algorithm}, và ít nhất một khóa
+endorser phải nằm trong tập tin cậy (định dạng \texttt{algo:pubhex}).
 
 \textbf{Phạm vi hiện tại (theo mã nguồn):} một số kiểm tra chưa được thực thi
 đầy đủ trên hot-path. Việc kiểm tra liên tục chuỗi (\texttt{PrevHash} của block
@@ -871,7 +1037,13 @@ Vì Committing Peer là nơi giao dịch được commit thật, nó là nguồn
 không lệ thuộc độ trễ ghi PostgreSQL nên chính xác hơn khi benchmark. Server
 metrics tại \texttt{:8081} cung cấp \texttt{/metrics/throughput},
 \texttt{/metrics/benchmark} và \texttt{/metrics/commit-lookup}; Core Service gọi
-các endpoint này để tổng hợp benchmark E2E.
+các endpoint này (qua \texttt{COMMIT\_PEER\_METRICS\_URL}) để tổng hợp benchmark
+E2E. Thời điểm \texttt{RecordBlock()} không phụ thuộc thuật toán ký, nên so sánh
+Ed25519 và ML-DSA trên cùng API metrics chỉ cần đổi \texttt{COMMIT\_PEER\_KEY\_ALGO}
+và khởi động lại peer.
+
+% Blockchain Explorer + PostgreSQL — section hoàn chỉnh cho báo cáo / luận văn
+% Paste vào main.tex: \input{docs/report-explorer-postgres}
 
 \section{Blockchain Explorer --- Giao diện}
 \label{sec:explorer}
@@ -897,7 +1069,7 @@ React Router DOM & 6.26.2 & Điều hướng client-side \\
 Vite & 5.4.1 & Build tool \& dev server (proxy \texttt{/api}) \\
 Material-UI (MUI) & 6.1.1 & Bộ component giao diện \\
 Tailwind CSS & 3.4.13 & CSS tiện ích \\
-CryptoJS & 4.1.1 & Băm SHA-256 (tạo txid phía client) \\
+CryptoJS & 4.1.1 & Băm SHA-256 (dữ liệu mock \texttt{MockData.js}) \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -907,6 +1079,12 @@ CryptoJS & 4.1.1 & Băm SHA-256 (tạo txid phía client) \\
 prop \texttt{section} khác nhau. Lớp gọi API (\texttt{src/api/client.js}) dùng
 URL tương đối được Vite proxy chuyển tới Core Service, tránh vướng CORS khi dev.
 
+Explorer \textbf{không} đọc trực tiếp \texttt{chain.block} hay LevelDB. Danh sách
+block và giao dịch trên UI đều qua Core API; Core đọc bản mirror trong schema
+\texttt{commit\_peer} của PostgreSQL. Mirror ghi bất đồng bộ sau khi commit peer
+ghi file, nên UI có thể chậm hơn một chút so với thời điểm commit thật --- đủ
+cho khám phá ledger, không dùng làm ground truth khi benchmark.
+
 \subsection{Mã hóa payload nhị phân}
 
 Payload của giao dịch cần nhỏ gọn và đúng kiểu để hợp đồng đọc. Frontend có hai
@@ -915,21 +1093,31 @@ cơ chế mã hóa, đều xuất ra chuỗi hex: (1)~\textbf{hệ nhị phân t
 các kiểu STRING, UINT8/16/32/64, FLOAT/DOUBLE, BYTES, BOOLEAN, ADDRESS), tiết
 kiệm ${\sim}70\%$ so với JSON; và (2)~\textbf{hệ payload contract}
 (\texttt{transactionUtils.js}): JSON $\rightarrow$ UTF-8 $\rightarrow$ hex, để
-contract Go dùng \texttt{json.Unmarshal} đọc. Vì contract WASM hiện đọc payload
-bằng \texttt{json.Unmarshal}, form Transfer dùng cơ chế JSON-hex khi gửi tới
-contract. Hàm \texttt{coercePayloadFieldsBySchema} ép kiểu input HTML (luôn là
-chuỗi) về int/float đúng theo schema trước khi mã hóa.
+contract Go dùng \texttt{json.Unmarshal} đọc.
+
+Vì contract WASM hiện đọc payload bằng \texttt{json.Unmarshal}, form Transfer dùng
+cơ chế JSON-hex khi gửi tới contract. Codec nhị phân chỉ còn trong decoder legacy
+khi đọc payload cũ. Hàm \texttt{coercePayloadFieldsBySchema} ép kiểu input HTML
+(luôn là chuỗi) về int/float đúng theo schema trước khi mã hóa. \texttt{txid} sinh
+bằng \texttt{crypto.randomUUID()} phía client (không qua CryptoJS). Sau submit
+thành công, UI không cập nhật danh sách ngay mà gọi lại API --- chỉ hiện giao dịch
+đã xuất hiện trên mirror Postgres.
 
 \subsection{Cập nhật realtime qua SSE}
 
-Explorer dùng SSE để hiện block/giao dịch mới ngay khi commit. Khi
+Explorer dùng SSE để hiện block/giao dịch mới ngay khi commit (qua mirror). Khi
 \texttt{Dashboard} mount, nó mở \texttt{EventSource('/api/explorer/stream')};
 nhận sự kiện \texttt{ledger\_update} (chứa \texttt{latest\_block} và
-\texttt{latest\_tx}) thì cập nhật (upsert) danh sách. Nếu SSE đứt, Dashboard
-chuyển sang \textbf{polling dự phòng} (gọi \texttt{/api/transactions} và
-\texttt{/api/blocks} mỗi 3000\,ms), và dừng polling khi SSE kết nối lại --- mẫu
-``ưu tiên đẩy, có lưới đỡ kéo''. Trạng thái kết nối được hiển thị bằng chấm màu
-(xanh/vàng/đỏ).
+\texttt{latest\_tx}) thì cập nhật (upsert) danh sách. Phía Core,
+\texttt{HandleExplorerStream} poll PostgreSQL mỗi 2\,giây rồi emit khi phát hiện
+block hoặc tx mới --- kéo có nhịp qua mirror DB, không phải push trực tiếp từ
+commit peer.
+
+Nếu SSE đứt, Dashboard chuyển sang \textbf{polling dự phòng} (gọi
+\texttt{/api/transactions} và \texttt{/api/blocks} mỗi 3000\,ms), tự reconnect SSE
+sau 3\,giây, và dừng polling khi stream kết nối lại --- mẫu ``ưu tiên đẩy, có lưới
+đỡ kéo''. Trạng thái kết nối được hiển thị bằng chữ và màu
+(\texttt{connected}/\texttt{connecting}/\texttt{disconnected}).
 
 \section{Cơ sở dữ liệu PostgreSQL}
 \label{sec:postgres}
@@ -955,16 +1143,41 @@ commit\_peer & Committing Peer & Sổ cái đã commit (mirror) \\
 \end{tabular}
 \end{table}
 
-Các bảng chính: \texttt{core\_service.smart\_contracts} (bytecode WASM +
-\texttt{payload\_schema} JSONB); \texttt{core\_service.tx\_submit\_times}
-(\texttt{txid} PRIMARY KEY, \texttt{submitted\_at}, index theo
-\texttt{submitted\_at DESC} để đo E2E); \texttt{commit\_peer.ledger}
-(\texttt{block\_hash} UNIQUE, \texttt{block\_number}, \texttt{block\_data} JSONB,
-\texttt{committed\_at}); và \texttt{commit\_peer.ledger\_transactions} (liên kết
-\texttt{block\_id} $\rightarrow$ \texttt{txid}, \texttt{tx\_data} JSONB, khóa
-ngoại \texttt{ON DELETE CASCADE}). Lưu ý UTXO world state \textbf{không} ở
-PostgreSQL --- nó nằm trên đĩa (LevelDB) tại Committing Peer. Các thao tác chèn
-dùng \texttt{ON CONFLICT DO NOTHING} để idempotent.
+\subsection{Các bảng chính}
+
+\textbf{\texttt{core\_service.smart\_contracts}:} lưu bytecode WASM
+(\texttt{contract\_code}), tên contract (UNIQUE), \texttt{payload\_schema} JSONB
+(tùy chọn) và timestamp. Core ghi khi deploy qua \texttt{POST /api/tx/deploy}.
+
+\textbf{\texttt{core\_service.tx\_submit\_times}:} \texttt{txid} PRIMARY KEY,
+\texttt{submitted\_at} TIMESTAMPTZ, index theo \texttt{submitted\_at DESC}. Core
+ghi khi accept HTTP submit (\texttt{CORE\_RECORD\_SUBMIT=1}). Dùng đo submit và
+join E2E --- không đồng nghĩa tx đã commit.
+
+\textbf{\texttt{commit\_peer.ledger}:} \texttt{block\_hash} UNIQUE,
+\texttt{block\_number}, \texttt{block\_data} JSONB, \texttt{committed\_at}.
+Commit peer mirror sau khi ghi file và world state.
+
+\textbf{\texttt{commit\_peer.ledger\_transactions}:} liên kết \texttt{block\_id}
+$\rightarrow$ \texttt{ledger.id}, \texttt{txid}, \texttt{tx\_index},
+\texttt{tx\_data} JSONB (payload hex, endorsements, \texttt{algorithm}), khóa
+ngoại \texttt{ON DELETE CASCADE}, UNIQUE \texttt{(block\_id, txid)}.
+
+\textbf{\texttt{order\_service}:} bảng \texttt{transactions}, \texttt{blocks},
+\texttt{block\_transactions} --- mirror tùy chọn từ orderer; Explorer hiện không
+đọc schema này.
+
+\subsection{Ghi mirror và đo benchmark}
+
+UTXO world state \textbf{không} ở PostgreSQL --- nó nằm trên đĩa (LevelDB) tại
+Committing Peer. Các thao tác chèn mirror dùng \texttt{ON CONFLICT DO NOTHING} để
+idempotent. Hàng đợi mirror mặc định 512 slot, 2 worker; queue đầy thì spawn
+goroutine ghi ngay --- commit blockchain không chờ Postgres.
+
+Khi đo hiệu năng chính xác, benchmark API ưu tiên thời điểm commit từ commit peer
+(\texttt{:8081}) thay vì chỉ dựa vào \texttt{committed\_at} trên mirror, vì mirror
+có độ trễ so với sổ cái thật.
+
 
 \section{Phương pháp đo lường hiệu năng}
 \label{sec:measurement}
