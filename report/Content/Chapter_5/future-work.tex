@@ -1,0 +1,167 @@
+\chapter{Kết luận và Hướng phát triển}
+\label{chap:future-work}
+
+Chương này tổng kết những gì khóa luận đã đạt được, thẳng thắn chỉ ra các giới
+hạn của hệ thống ở trạng thái hiện tại, rồi từ đó đề xuất các hướng phát triển
+tiếp theo. Các hướng đề xuất không phải là danh sách tính năng ngẫu nhiên, mà
+bám sát những \textit{ranh giới thiết kế} và \textit{giới hạn của phép đo} đã
+được nêu ở Chương~\ref{chap:methodology} và Chương~\ref{chap:evaluation}: mỗi
+hướng nhằm gỡ bỏ một giả định đã được cố ý đặt ra để giữ phạm vi khóa luận tập
+trung vào luồng xử lý cốt lõi.
+
+\section{Kết luận}
+\label{sec:conclusion}
+
+Khóa luận đã \textbf{tìm hiểu, thiết kế và hiện thực từ đầu} một nền tảng
+blockchain có cấp phép định hướng doanh nghiệp, lấy cảm hứng từ kiến trúc
+Hyperledger Fabric. Thay vì tái sử dụng một nền tảng có sẵn, chúng tôi tự cài
+đặt từng thành phần lõi để làm chủ công nghệ: từ tầng mạng ngang hàng
+\texttt{libp2p}, thuật toán đồng thuận Raft, máy ảo hợp đồng thông minh
+WebAssembly, cho tới tầng sổ cái bất biến và world state UTXO.
+
+Cụ thể, hệ thống hiện thực trọn vẹn triết lý tách ba trách nhiệm
+\textbf{Execute--Order--Validate} qua bốn tiến trình độc lập, với các đóng góp
+nổi bật: (i)~một hiện thực Raft hoàn chỉnh kèm biến thể bầu lãnh đạo theo độ ưu
+tiên loại bỏ chia phiếu và hội tụ xác định; (ii)~một máy ảo WASM với cache module
+và pool sandbox cho thực thi song song; (iii)~một cơ chế cắt block lai giữa kích
+thước lô và thời gian, kèm giao block theo mô hình đăng-ký--phát-tỏa và đồng bộ
+bốn pha dựa trên \texttt{(commitIndex, commitHash)}; và (iv)~một phương pháp đo
+lường ba lớp (client, submit, commit) cho phép cô lập và phân tích trần thông
+lượng của từng tầng.
+
+Về mặt hiệu năng, thực nghiệm ở Chương~\ref{chap:evaluation} cho thấy tầng
+ordering \textit{không} phải là nút thắt: trần đóng block thuần đạt
+${\sim}73$--$82$k tx/s, cao hơn nhiều lần thông lượng end-to-end tham khảo qua
+toàn pipeline. Kết quả này vừa xác nhận tính đúng đắn của thiết kế đồng thuận,
+vừa chỉ rõ cổ chai thực tế nằm ở đường Core (WASM và ký endorsement) --- một tri
+thức định hướng trực tiếp cho các hướng phát triển bên dưới.
+
+\section{Giới hạn hiện tại}
+\label{sec:limitations}
+
+Ở trạng thái hiện tại, hệ thống còn các giới hạn sau, phần lớn là hệ quả của
+những giả định được cố ý đặt ra để giữ phạm vi:
+
+\begin{itemize}
+  \item \textbf{Mô hình tin cậy dừng lỗi (crash fault tolerance).} Raft chỉ chịu
+  được lỗi \textit{dừng} (crash/mạng phân mảnh), không chịu được node hành xử
+  ác ý (Byzantine). Khóa luận mới chỉ \textit{thảo luận} BFT
+  (Mục~\ref{sec:contributions}, Chương~\ref{chap:related-work}) chứ chưa hiện
+  thực.
+
+  \item \textbf{Ràng buộc ``một block in-flight''.} Vòng đồng thuận hiện đề xuất
+  và commit tuần tự từng block một; leader phải chờ block trước được commit mới
+  cắt block kế. Đây là một cận trên tiềm ẩn của thông lượng khi chạy nhiều node
+  trên mạng thật (Mục~\ref{sec:eval-threats}).
+
+  \item \textbf{Trạng thái đồng thuận in-memory, chưa bền vững.} Log Raft và
+  trạng thái bầu cử hiện giữ trong bộ nhớ; chưa có ghi trước (write-ahead log),
+  fsync, snapshot hay nén log. Một node khởi động lại phải dựa vào cơ chế sync
+  để bắt kịp, và cả cluster không sống sót qua sự cố mất điện đồng thời.
+
+  \item \textbf{Thành viên tĩnh.} Danh sách thành viên và độ ưu tiên được cấu
+  hình tĩnh khi khởi động; chưa hỗ trợ thêm/bớt node lúc chạy (dynamic
+  membership reconfiguration).
+
+  \item \textbf{Phép đo là cận trên của một máy đơn.} Số liệu ở
+  Chương~\ref{chap:evaluation} đo trên cluster một node, loopback, in-memory, và
+  giao dịch giả lập không thực thi WASM. Chúng chưa phản ánh RTT đồng thuận nhiều
+  node, độ trễ mạng thật và chi phí I/O đĩa.
+
+  \item \textbf{Bảo mật danh tính và kênh truyền còn sơ khai.} Hệ thống chưa có
+  hạ tầng chứng chỉ (MSP/CA) đầy đủ, kênh \texttt{libp2p} chưa siết TLS/xác thực
+  hai chiều bắt buộc, và chưa có phân quyền truy cập ở mức tổ chức.
+\end{itemize}
+
+\section{Hướng phát triển}
+\label{sec:future-directions}
+
+\subsection{Nâng cấp mô hình tin cậy lên chịu lỗi Byzantine}
+\label{sec:fw-bft}
+
+Hướng có giá trị học thuật cao nhất là thay/bổ sung tầng đồng thuận CFT hiện tại
+bằng một thuật toán \textbf{chịu lỗi Byzantine} (BFT). Do kiến trúc đã tách bạch
+tầng ordering sau một giao diện thông điệp rõ ràng
+(Mục~\ref{sec:ordering-messages} về mô hình thông điệp và định tuyến), việc thay
+lõi đồng thuận không buộc phải viết lại Core hay Committing Peer. Các ứng viên:
+PBFT~\cite{castro1999pbft} cổ điển ($O(N^2)$ thông điệp mỗi vòng), hoặc các biến
+thể hiện đại theo hướng leader-based tuyến tính hoá chi phí. Việc này nâng mô
+hình an toàn từ quorum đa số ($\lfloor N/2\rfloor + 1$) lên ngưỡng
+$\lfloor (N-1)/3\rfloor$ node lỗi, phù hợp với các liên minh doanh nghiệp mà các
+tổ chức thành viên không hoàn toàn tin nhau.
+
+\subsection{Bền vững hoá và phục hồi tầng đồng thuận}
+\label{sec:fw-durability}
+
+Bổ sung \textbf{write-ahead log} có fsync cho log Raft, kèm cơ chế
+\textbf{snapshot và nén log} để tránh log tăng vô hạn và rút ngắn thời gian phục
+hồi. Kết hợp với cơ chế sync bốn pha hiện có (Mục~\ref{sec:deliver-sync}), một
+node có thể khôi phục từ snapshot gần nhất rồi phát lại phần log còn thiếu, thay
+vì đồng bộ lại từ đầu. Đây là điều kiện tiên quyết để cluster sống sót qua sự cố
+mất điện đồng thời và để chạy thực tế trong môi trường sản xuất.
+
+\subsection{Đường ống hoá việc đóng block (pipelining)}
+\label{sec:fw-pipelining}
+
+Gỡ bỏ ràng buộc ``một block in-flight'' bằng cách cho phép leader đề xuất
+\textbf{nhiều block gối đầu} trước khi block trước đó được commit, tương tự cơ
+chế cửa sổ trượt. Hướng này trực tiếp nhắm vào cận trên thông lượng đã nhận diện
+ở Mục~\ref{sec:eval-threats} và được kỳ vọng thu hẹp khoảng cách giữa trần đóng
+block đo trên một node và thông lượng thực tế nhiều node, đổi lại độ phức tạp
+trong quản lý trật tự commit và xử lý khi leader đổi.
+
+\subsection{Tối ưu đường nóng của Core}
+\label{sec:fw-core}
+
+Vì thực nghiệm cho thấy cổ chai end-to-end nằm ở Core chứ không ở ordering
+(Mục~\ref{sec:eval-threats}), hướng tăng thông lượng toàn hệ thống hiệu quả nhất
+là tối ưu đường Core: (i)~\textbf{song song hoá xác minh chữ ký} endorsement và
+gộp lô kiểm tra; (ii)~xem xét \textbf{chữ ký tổng hợp} (ví dụ BLS) để giảm số
+lần xác minh trên mỗi block; (iii)~mở rộng pool sandbox WASM và cache module theo
+tải; và (iv)~đo lại toàn pipeline sau tối ưu để xác định cổ chai kế tiếp.
+
+\subsection{Đánh giá trên cụm nhiều node và mạng thật}
+\label{sec:fw-multinode}
+
+Lặp lại bộ thực nghiệm ở Chương~\ref{chap:evaluation} trên cụm \textbf{nhiều
+node phân tán} qua mạng thật, với trạng thái ghi xuống đĩa và giao dịch thực thi
+WASM đầy đủ. Mục tiêu là lượng hoá phần chi phí mà các giả định hiện tại đã bỏ
+qua --- RTT đồng thuận, độ trễ mạng, chi phí fsync --- và kiểm chứng giả thuyết
+rằng thứ hạng tương đối giữa các cấu hình (đỉnh ở block=250--500, vùng trũng ở
+block=1.000) vẫn được giữ nguyên vì chúng bắt nguồn từ cơ chế gom lô độc lập với
+số node.
+
+\subsection{Cấu hình lại thành viên lúc chạy}
+\label{sec:fw-membership}
+
+Hỗ trợ thêm/bớt node và điều chỉnh độ ưu tiên \textbf{trong lúc cluster đang
+chạy} mà không cần khởi động lại, dựa trên cơ chế thay đổi cấu hình an toàn của
+Raft (joint consensus). Hướng này cần bảo toàn nguyên tắc quorum tính trên tổng
+số thành viên (Mục~\ref{sec:quorum}) trong suốt quá trình chuyển đổi để
+tránh split-brain.
+
+\subsection{Mở rộng theo chiều ngang: đa kênh và phân mảnh}
+\label{sec:fw-scaling}
+
+Theo mô hình \textit{channel} của Hyperledger Fabric, có thể cho phép nhiều
+cluster ordering độc lập phục vụ các kênh khác nhau, mỗi kênh một sổ cái riêng.
+Đây là con đường mở rộng thông lượng theo chiều ngang khi một cluster đơn đã đạt
+trần, đồng thời cung cấp cách ly dữ liệu giữa các nhóm tổ chức.
+
+\subsection{Hoàn thiện hệ sinh thái hợp đồng thông minh}
+\label{sec:fw-contracts}
+
+Bổ sung một \textbf{SDK phát triển hợp đồng} đa ngôn ngữ (mọi ngôn ngữ biên dịch
+được sang WASM), cơ chế \textbf{vòng đời hợp đồng} (cài đặt, nâng cấp, thu hồi có
+kiểm soát), và \textbf{đo/giới hạn tài nguyên} (gas metering) để chống hợp đồng
+độc hại hoặc vòng lặp vô hạn --- tận dụng khả năng cô lập sẵn có của
+\texttt{wazero}.
+
+\subsection{Siết bảo mật và sẵn sàng vận hành}
+\label{sec:fw-security}
+
+Xây dựng hạ tầng danh tính đầy đủ (MSP/CA) cho các tổ chức thành viên, bắt buộc
+TLS/xác thực hai chiều trên toàn bộ kênh \texttt{libp2p}, và bổ sung phân quyền
+truy cập ở mức tổ chức. Song song, hoàn thiện quan sát hệ thống (observability)
+và đóng gói triển khai (ví dụ Kubernetes) để đưa các công cụ orchestrator hiện
+nằm ngoài phạm vi (Mục~\ref{sec:contributions}) lên mức sẵn sàng sản xuất.

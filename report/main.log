@@ -1,0 +1,2575 @@
+This is pdfTeX, Version 3.141592653-2.6-1.40.28 (MiKTeX 25.12) (preloaded format=pdflatex 2026.6.30)  11 JUL 2026 17:19
+entering extended mode
+ restricted \write18 enabled.
+ %&-line parsing enabled.
+**./main.tex
+(main.tex
+LaTeX2e <2025-11-01>
+L3 programming layer <2025-12-24>
+(my-format.cls
+Document Class: my-format 2025/07/01
+
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/base\article.cl
+s
+Document Class: article 2025/01/22 v1.4n Standard LaTeX document class
+
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/base\size12.clo
+File: size12.clo 2025/01/22 v1.4n Standard LaTeX file (size option)
+)
+\c@part=\count275
+\c@section=\count276
+\c@subsection=\count277
+\c@subsubsection=\count278
+\c@paragraph=\count279
+\c@subparagraph=\count280
+\c@figure=\count281
+\c@table=\count282
+\abovecaptionskip=\skip49
+\belowcaptionskip=\skip50
+\bibindent=\dimen148
+)
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/tools\multicol.
+sty
+Package: multicol 2025/10/21 v2.0b multicolumn formatting (FMi)
+\c@tracingmulticols=\count283
+\mult@box=\box53
+\multicol@leftmargin=\dimen149
+\c@unbalance=\count284
+\c@collectmore=\count285
+\doublecol@number=\count286
+\multicoltolerance=\count287
+\multicolpretolerance=\count288
+\full@width=\dimen150
+\page@free=\dimen151
+\premulticols=\dimen152
+\postmulticols=\dimen153
+\multicolsep=\skip51
+\multicolbaselineskip=\skip52
+\partial@page=\box54
+\last@line=\box55
+\mc@boxedresult=\box56
+\maxbalancingoverflow=\dimen154
+\mult@rightbox=\box57
+\mult@grightbox=\box58
+\mult@firstbox=\box59
+\mult@gfirstbox=\box60
+\@tempa=\box61
+\@tempa=\box62
+\@tempa=\box63
+\@tempa=\box64
+\@tempa=\box65
+\@tempa=\box66
+\@tempa=\box67
+\@tempa=\box68
+\@tempa=\box69
+\@tempa=\box70
+\@tempa=\box71
+\@tempa=\box72
+\@tempa=\box73
+\@tempa=\box74
+\@tempa=\box75
+\@tempa=\box76
+\@tempa=\box77
+\@tempa=\box78
+\@tempa=\box79
+\@tempa=\box80
+\@tempa=\box81
+\@tempa=\box82
+\@tempa=\box83
+\@tempa=\box84
+\@tempa=\box85
+\@tempa=\box86
+\@tempa=\box87
+\@tempa=\box88
+\@tempa=\box89
+\@tempa=\box90
+\@tempa=\box91
+\@tempa=\box92
+\@tempa=\box93
+\@tempa=\box94
+\@tempa=\box95
+\@tempa=\box96
+\c@minrows=\count289
+\c@columnbadness=\count290
+\c@finalcolumnbadness=\count291
+\last@try=\dimen155
+\multicolovershoot=\dimen156
+\multicolundershoot=\dimen157
+\mult@nat@firstbox=\box97
+\colbreak@box=\box98
+\mc@col@check@num=\count292
+\g__mc_curr_col_int=\count293
+)
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/oberdiek\aliasc
+nt.sty
+Package: aliascnt 2018/09/07 v1.5 Alias counters (HO)
+)
+\c@chapter=\count294
+LaTeX Font Info:    Redeclaring math symbol \Gamma on input line 250.
+LaTeX Font Info:    Redeclaring math symbol \Delta on input line 251.
+LaTeX Font Info:    Redeclaring math symbol \Theta on input line 252.
+LaTeX Font Info:    Redeclaring math symbol \Lambda on input line 253.
+LaTeX Font Info:    Redeclaring math symbol \Xi on input line 254.
+LaTeX Font Info:    Redeclaring math symbol \Pi on input line 255.
+LaTeX Font Info:    Redeclaring math symbol \Sigma on input line 256.
+LaTeX Font Info:    Redeclaring math symbol \Upsilon on input line 257.
+LaTeX Font Info:    Redeclaring math symbol \Phi on input line 258.
+LaTeX Font Info:    Redeclaring math symbol \Psi on input line 259.
+LaTeX Font Info:    Redeclaring math symbol \Omega on input line 260.
+\@tempcntc=\count295
+\fnindent=\dimen158
+\c@@inst=\count296
+\c@@auth=\count297
+\c@auco=\count298
+\instindent=\dimen159
+\authrun=\box99
+\authorrunning=\toks17
+\tocauthor=\toks18
+\titrun=\box100
+\titlerunning=\toks19
+\toctitle=\toks20
+\c@theorem=\count299
+\c@case=\count300
+\c@conjecture=\count301
+\c@corollary=\count302
+\c@definition=\count303
+\c@example=\count304
+\c@exercise=\count305
+\c@lemma=\count306
+\c@note=\count307
+\c@problem=\count308
+\c@property=\count309
+\c@proposition=\count310
+\c@question=\count311
+\c@solution=\count312
+\c@remark=\count313
+\headlineindent=\dimen160
+)
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/lm\lmodern.sty
+Package: lmodern 2015/05/01 v1.6.1 Latin Modern Fonts
+LaTeX Font Info:    Overwriting symbol font `operators' in version `normal'
+(Font)                  OT1/cmr/m/n --> OT1/lmr/m/n on input line 22.
+LaTeX Font Info:    Overwriting symbol font `letters' in version `normal'
+(Font)                  OML/cmm/m/it --> OML/lmm/m/it on input line 23.
+LaTeX Font Info:    Overwriting symbol font `symbols' in version `normal'
+(Font)                  OMS/cmsy/m/n --> OMS/lmsy/m/n on input line 24.
+LaTeX Font Info:    Overwriting symbol font `largesymbols' in version `normal'
+(Font)                  OMX/cmex/m/n --> OMX/lmex/m/n on input line 25.
+LaTeX Font Info:    Overwriting symbol font `operators' in version `bold'
+(Font)                  OT1/cmr/bx/n --> OT1/lmr/bx/n on input line 26.
+LaTeX Font Info:    Overwriting symbol font `letters' in version `bold'
+(Font)                  OML/cmm/b/it --> OML/lmm/b/it on input line 27.
+LaTeX Font Info:    Overwriting symbol font `symbols' in version `bold'
+(Font)                  OMS/cmsy/b/n --> OMS/lmsy/b/n on input line 28.
+LaTeX Font Info:    Overwriting symbol font `largesymbols' in version `bold'
+(Font)                  OMX/cmex/m/n --> OMX/lmex/m/n on input line 29.
+LaTeX Font Info:    Overwriting math alphabet `\mathbf' in version `normal'
+(Font)                  OT1/cmr/bx/n --> OT1/lmr/bx/n on input line 31.
+LaTeX Font Info:    Overwriting math alphabet `\mathsf' in version `normal'
+(Font)                  OT1/cmss/m/n --> OT1/lmss/m/n on input line 32.
+LaTeX Font Info:    Overwriting math alphabet `\mathit' in version `normal'
+(Font)                  OT1/cmr/m/it --> OT1/lmr/m/it on input line 33.
+LaTeX Font Info:    Overwriting math alphabet `\mathtt' in version `normal'
+(Font)                  OT1/cmtt/m/n --> OT1/lmtt/m/n on input line 34.
+LaTeX Font Info:    Overwriting math alphabet `\mathbf' in version `bold'
+(Font)                  OT1/cmr/bx/n --> OT1/lmr/bx/n on input line 35.
+LaTeX Font Info:    Overwriting math alphabet `\mathsf' in version `bold'
+(Font)                  OT1/cmss/bx/n --> OT1/lmss/bx/n on input line 36.
+LaTeX Font Info:    Overwriting math alphabet `\mathit' in version `bold'
+(Font)                  OT1/cmr/bx/it --> OT1/lmr/bx/it on input line 37.
+LaTeX Font Info:    Overwriting math alphabet `\mathtt' in version `bold'
+(Font)                  OT1/cmtt/m/n --> OT1/lmtt/m/n on input line 38.
+)
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/pdfpages\pdfpag
+es.sty
+Package: pdfpages 2026/03/30 v0.6h Insert pages of external PDF documents (AM)
+
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/base\ifthen.sty
+Package: ifthen 2024/03/16 v1.1e Standard LaTeX ifthen package (DPC)
+)
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/tools\calc.sty
+Package: calc 2025/03/01 v4.3b Infix arithmetic (KKT,FJ)
+\calc@Acount=\count314
+\calc@Bcount=\count315
+\calc@Adimen=\dimen161
+\calc@Bdimen=\dimen162
+\calc@Askip=\skip53
+\calc@Bskip=\skip54
+LaTeX Info: Redefining \setlength on input line 86.
+LaTeX Info: Redefining \addtolength on input line 87.
+\calc@Ccount=\count316
+\calc@Cskip=\skip55
+)
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/eso-pic\eso-pic
+.sty
+Package: eso-pic 2026/05/31 v3.0e eso-pic (RN)
+\ESO@tempdima=\dimen163
+\ESO@tempdimb=\dimen164
+
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/graphics\keyval
+.sty
+Package: keyval 2022/05/29 v1.15 key=value parser (DPC)
+\KV@toks@=\toks21
+)
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/xcolor\xcolor.s
+ty
+Package: xcolor 2024/09/29 v3.02 LaTeX color extensions (UK)
+
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/graphics-cfg\co
+lor.cfg
+File: color.cfg 2016/01/02 v1.6 sample color configuration
+)
+Package xcolor Info: Driver file: pdftex.def on input line 274.
+
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/graphics-def\pd
+ftex.def
+File: pdftex.def 2025/09/29 v1.2d Graphics/color driver for pdftex
+)
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/graphics\mathco
+lor.ltx)
+Package xcolor Info: Model `cmy' substituted by `cmy0' on input line 1349.
+Package xcolor Info: Model `hsb' substituted by `rgb' on input line 1353.
+Package xcolor Info: Model `RGB' extended on input line 1365.
+Package xcolor Info: Model `HTML' substituted by `rgb' on input line 1367.
+Package xcolor Info: Model `Hsb' substituted by `hsb' on input line 1368.
+Package xcolor Info: Model `tHsb' substituted by `hsb' on input line 1369.
+Package xcolor Info: Model `HSB' substituted by `hsb' on input line 1370.
+Package xcolor Info: Model `Gray' substituted by `gray' on input line 1371.
+Package xcolor Info: Model `wave' substituted by `hsb' on input line 1372.
+))
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/etoolbox\etoolb
+ox.sty
+Package: etoolbox 2025/10/02 v2.5m e-TeX tools for LaTeX (JAW)
+\etb@tempcnta=\count317
+)
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/graphics\graphi
+cx.sty
+Package: graphicx 2024/12/31 v1.2e Enhanced LaTeX Graphics (DPC,SPQR)
+
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/graphics\graphi
+cs.sty
+Package: graphics 2024/08/06 v1.4g Standard LaTeX Graphics (DPC,SPQR)
+
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/graphics\trig.s
+ty
+Package: trig 2023/12/02 v1.11 sin cos tan (DPC)
+)
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/graphics-cfg\gr
+aphics.cfg
+File: graphics.cfg 2016/06/04 v1.11 sample graphics configuration
+)
+Package graphics Info: Driver file: pdftex.def on input line 106.
+)
+\Gin@req@height=\dimen165
+\Gin@req@width=\dimen166
+)
+\AM@pagewidth=\dimen167
+\AM@pageheight=\dimen168
+\AM@fboxrule=\dimen169
+
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/pdfpages\pppdft
+ex.def
+File: pppdftex.def 2026/03/30 v0.6h Pdfpages driver for pdfTeX (AM)
+)
+\pdfpages@includegraphics@status=\count318
+\AM@pagebox=\box101
+\AM@global@opts=\toks22
+\AM@pagecnt=\count319
+\AM@toc@title=\toks23
+\AM@lof@heading=\toks24
+\c@AM@survey=\count320
+\AM@templatesizebox=\box102
+)
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/base\fontenc.st
+y
+Package: fontenc 2025/07/18 v2.1d Standard LaTeX package
+
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/vntex\t5enc.def
+File: t5enc.def 2006/11/21 v1.4 Vietnamese T5 encoding
+Now handling font encoding T5 ...
+... processing UTF-8 mapping file for font encoding T5
+
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/vntex\t5enc.dfu
+File: t5enc.dfu 2006/08/19 v1.1 UTF8 support for Vietnamese
+   defining Unicode char U+00AB (decimal 171)
+   defining Unicode char U+00BB (decimal 187)
+   defining Unicode char U+00C0 (decimal 192)
+   defining Unicode char U+00C1 (decimal 193)
+   defining Unicode char U+00C2 (decimal 194)
+   defining Unicode char U+00C3 (decimal 195)
+   defining Unicode char U+00C8 (decimal 200)
+   defining Unicode char U+00C9 (decimal 201)
+   defining Unicode char U+00CA (decimal 202)
+   defining Unicode char U+00CC (decimal 204)
+   defining Unicode char U+00CD (decimal 205)
+   defining Unicode char U+00D2 (decimal 210)
+   defining Unicode char U+00D3 (decimal 211)
+   defining Unicode char U+00D4 (decimal 212)
+   defining Unicode char U+00D5 (decimal 213)
+   defining Unicode char U+00D9 (decimal 217)
+   defining Unicode char U+00DA (decimal 218)
+   defining Unicode char U+00DD (decimal 221)
+   defining Unicode char U+00E0 (decimal 224)
+   defining Unicode char U+00E1 (decimal 225)
+   defining Unicode char U+00E2 (decimal 226)
+   defining Unicode char U+00E3 (decimal 227)
+   defining Unicode char U+00E8 (decimal 232)
+   defining Unicode char U+00E9 (decimal 233)
+   defining Unicode char U+00EA (decimal 234)
+   defining Unicode char U+00EC (decimal 236)
+   defining Unicode char U+00ED (decimal 237)
+   defining Unicode char U+00F2 (decimal 242)
+   defining Unicode char U+00F3 (decimal 243)
+   defining Unicode char U+00F4 (decimal 244)
+   defining Unicode char U+00F5 (decimal 245)
+   defining Unicode char U+00F9 (decimal 249)
+   defining Unicode char U+00FA (decimal 250)
+   defining Unicode char U+00FD (decimal 253)
+   defining Unicode char U+0102 (decimal 258)
+   defining Unicode char U+0103 (decimal 259)
+   defining Unicode char U+0110 (decimal 272)
+   defining Unicode char U+0111 (decimal 273)
+   defining Unicode char U+0128 (decimal 296)
+   defining Unicode char U+0129 (decimal 297)
+   defining Unicode char U+0131 (decimal 305)
+   defining Unicode char U+0168 (decimal 360)
+   defining Unicode char U+0169 (decimal 361)
+   defining Unicode char U+01A0 (decimal 416)
+   defining Unicode char U+01A1 (decimal 417)
+   defining Unicode char U+01AF (decimal 431)
+   defining Unicode char U+01B0 (decimal 432)
+   defining Unicode char U+1EA0 (decimal 7840)
+   defining Unicode char U+1EA1 (decimal 7841)
+   defining Unicode char U+1EA2 (decimal 7842)
+   defining Unicode char U+1EA3 (decimal 7843)
+   defining Unicode char U+1EA4 (decimal 7844)
+   defining Unicode char U+1EA5 (decimal 7845)
+   defining Unicode char U+1EA6 (decimal 7846)
+   defining Unicode char U+1EA7 (decimal 7847)
+   defining Unicode char U+1EA8 (decimal 7848)
+   defining Unicode char U+1EA9 (decimal 7849)
+   defining Unicode char U+1EAA (decimal 7850)
+   defining Unicode char U+1EAB (decimal 7851)
+   defining Unicode char U+1EAC (decimal 7852)
+   defining Unicode char U+1EAD (decimal 7853)
+   defining Unicode char U+1EAE (decimal 7854)
+   defining Unicode char U+1EAF (decimal 7855)
+   defining Unicode char U+1EB0 (decimal 7856)
+   defining Unicode char U+1EB1 (decimal 7857)
+   defining Unicode char U+1EB2 (decimal 7858)
+   defining Unicode char U+1EB3 (decimal 7859)
+   defining Unicode char U+1EB4 (decimal 7860)
+   defining Unicode char U+1EB5 (decimal 7861)
+   defining Unicode char U+1EB6 (decimal 7862)
+   defining Unicode char U+1EB7 (decimal 7863)
+   defining Unicode char U+1EB8 (decimal 7864)
+   defining Unicode char U+1EB9 (decimal 7865)
+   defining Unicode char U+1EBA (decimal 7866)
+   defining Unicode char U+1EBB (decimal 7867)
+   defining Unicode char U+1EBC (decimal 7868)
+   defining Unicode char U+1EBD (decimal 7869)
+   defining Unicode char U+1EBE (decimal 7870)
+   defining Unicode char U+1EBF (decimal 7871)
+   defining Unicode char U+1EC0 (decimal 7872)
+   defining Unicode char U+1EC1 (decimal 7873)
+   defining Unicode char U+1EC2 (decimal 7874)
+   defining Unicode char U+1EC3 (decimal 7875)
+   defining Unicode char U+1EC4 (decimal 7876)
+   defining Unicode char U+1EC5 (decimal 7877)
+   defining Unicode char U+1EC6 (decimal 7878)
+   defining Unicode char U+1EC7 (decimal 7879)
+   defining Unicode char U+1EC8 (decimal 7880)
+   defining Unicode char U+1EC9 (decimal 7881)
+   defining Unicode char U+1ECA (decimal 7882)
+   defining Unicode char U+1ECB (decimal 7883)
+   defining Unicode char U+1ECC (decimal 7884)
+   defining Unicode char U+1ECD (decimal 7885)
+   defining Unicode char U+1ECE (decimal 7886)
+   defining Unicode char U+1ECF (decimal 7887)
+   defining Unicode char U+1ED0 (decimal 7888)
+   defining Unicode char U+1ED1 (decimal 7889)
+   defining Unicode char U+1ED2 (decimal 7890)
+   defining Unicode char U+1ED3 (decimal 7891)
+   defining Unicode char U+1ED4 (decimal 7892)
+   defining Unicode char U+1ED5 (decimal 7893)
+   defining Unicode char U+1ED6 (decimal 7894)
+   defining Unicode char U+1ED7 (decimal 7895)
+   defining Unicode char U+1ED8 (decimal 7896)
+   defining Unicode char U+1ED9 (decimal 7897)
+   defining Unicode char U+1EDA (decimal 7898)
+   defining Unicode char U+1EDB (decimal 7899)
+   defining Unicode char U+1EDC (decimal 7900)
+   defining Unicode char U+1EDD (decimal 7901)
+   defining Unicode char U+1EDE (decimal 7902)
+   defining Unicode char U+1EDF (decimal 7903)
+   defining Unicode char U+1EE0 (decimal 7904)
+   defining Unicode char U+1EE1 (decimal 7905)
+   defining Unicode char U+1EE2 (decimal 7906)
+   defining Unicode char U+1EE3 (decimal 7907)
+   defining Unicode char U+1EE4 (decimal 7908)
+   defining Unicode char U+1EE5 (decimal 7909)
+   defining Unicode char U+1EE6 (decimal 7910)
+   defining Unicode char U+1EE7 (decimal 7911)
+   defining Unicode char U+1EE8 (decimal 7912)
+   defining Unicode char U+1EE9 (decimal 7913)
+   defining Unicode char U+1EEA (decimal 7914)
+   defining Unicode char U+1EEB (decimal 7915)
+   defining Unicode char U+1EEC (decimal 7916)
+   defining Unicode char U+1EED (decimal 7917)
+   defining Unicode char U+1EEE (decimal 7918)
+   defining Unicode char U+1EEF (decimal 7919)
+   defining Unicode char U+1EF0 (decimal 7920)
+   defining Unicode char U+1EF1 (decimal 7921)
+   defining Unicode char U+1EF2 (decimal 7922)
+   defining Unicode char U+1EF3 (decimal 7923)
+   defining Unicode char U+1EF4 (decimal 7924)
+   defining Unicode char U+1EF5 (decimal 7925)
+   defining Unicode char U+1EF6 (decimal 7926)
+   defining Unicode char U+1EF7 (decimal 7927)
+   defining Unicode char U+1EF8 (decimal 7928)
+   defining Unicode char U+1EF9 (decimal 7929)
+   defining Unicode char U+200C (decimal 8204)
+   defining Unicode char U+2013 (decimal 8211)
+   defining Unicode char U+2014 (decimal 8212)
+   defining Unicode char U+2018 (decimal 8216)
+   defining Unicode char U+2019 (decimal 8217)
+   defining Unicode char U+201A (decimal 8218)
+   defining Unicode char U+201C (decimal 8220)
+   defining Unicode char U+201D (decimal 8221)
+   defining Unicode char U+201E (decimal 8222)
+   defining Unicode char U+2030 (decimal 8240)
+   defining Unicode char U+2031 (decimal 8241)
+   defining Unicode char U+2039 (decimal 8249)
+   defining Unicode char U+203A (decimal 8250)
+   defining Unicode char U+2423 (decimal 9251)
+))
+LaTeX Font Info:    Trying to load font information for T5+lmr on input line 11
+6.
+ (C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/lm\t5lmr.fd
+File: t5lmr.fd 2015/05/01 v1.6.1 Font defs for Latin Modern
+))
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/base\inputenc.s
+ty
+Package: inputenc 2024/02/08 v1.3d Input encoding file
+\inpenc@prehook=\toks25
+\inpenc@posthook=\toks26
+)
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/pgf/frontendlay
+er\tikz.sty
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/pgf/basiclayer\
+pgf.sty
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/pgf/utilities\p
+gfrcs.sty
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgf/utilities
+\pgfutil-common.tex
+\pgfutil@everybye=\toks27
+\pgfutil@tempdima=\dimen170
+\pgfutil@tempdimb=\dimen171
+)
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgf/utilities
+\pgfutil-latex.def
+\pgfutil@abb=\box103
+)
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgf/utilities
+\pgfrcs.code.tex
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgf\pgf.revis
+ion.tex)
+Package: pgfrcs 2025-08-29 v3.1.11a (3.1.11a)
+))
+Package: pgf 2025-08-29 v3.1.11a (3.1.11a)
+
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/pgf/basiclayer\
+pgfcore.sty
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/pgf/systemlayer
+\pgfsys.sty
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgf/systemlay
+er\pgfsys.code.tex
+Package: pgfsys 2025-08-29 v3.1.11a (3.1.11a)
+
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgf/utilities
+\pgfkeys.code.tex
+\pgfkeys@pathtoks=\toks28
+\pgfkeys@temptoks=\toks29
+
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgf/utilities
+\pgfkeyslibraryfiltered.code.tex
+\pgfkeys@tmptoks=\toks30
+))
+\pgf@x=\dimen172
+\pgf@y=\dimen173
+\pgf@xa=\dimen174
+\pgf@ya=\dimen175
+\pgf@xb=\dimen176
+\pgf@yb=\dimen177
+\pgf@xc=\dimen178
+\pgf@yc=\dimen179
+\pgf@xd=\dimen180
+\pgf@yd=\dimen181
+\w@pgf@writea=\write3
+\r@pgf@reada=\read2
+\c@pgf@counta=\count321
+\c@pgf@countb=\count322
+\c@pgf@countc=\count323
+\c@pgf@countd=\count324
+\t@pgf@toka=\toks31
+\t@pgf@tokb=\toks32
+\t@pgf@tokc=\toks33
+\pgf@sys@id@count=\count325
+
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgf/systemlay
+er\pgf.cfg
+File: pgf.cfg 2025-08-29 v3.1.11a (3.1.11a)
+)
+Driver file for pgf: pgfsys-pdftex.def
+
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgf/systemlay
+er\pgfsys-pdftex.def
+File: pgfsys-pdftex.def 2025-08-29 v3.1.11a (3.1.11a)
+
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgf/systemlay
+er\pgfsys-common-pdf.def
+File: pgfsys-common-pdf.def 2025-08-29 v3.1.11a (3.1.11a)
+)))
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgf/systemlay
+er\pgfsyssoftpath.code.tex
+File: pgfsyssoftpath.code.tex 2025-08-29 v3.1.11a (3.1.11a)
+\pgfsyssoftpath@smallbuffer@items=\count326
+\pgfsyssoftpath@bigbuffer@items=\count327
+)
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgf/systemlay
+er\pgfsysprotocol.code.tex
+File: pgfsysprotocol.code.tex 2025-08-29 v3.1.11a (3.1.11a)
+))
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgf/basiclaye
+r\pgfcore.code.tex
+Package: pgfcore 2025-08-29 v3.1.11a (3.1.11a)
+
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgf/math\pgfm
+ath.code.tex
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgf/math\pgfm
+athutil.code.tex)
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgf/math\pgfm
+athparser.code.tex
+\pgfmath@dimen=\dimen182
+\pgfmath@count=\count328
+\pgfmath@box=\box104
+\pgfmath@toks=\toks34
+\pgfmath@stack@operand=\toks35
+\pgfmath@stack@operation=\toks36
+)
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgf/math\pgfm
+athfunctions.code.tex)
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgf/math\pgfm
+athfunctions.basic.code.tex)
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgf/math\pgfm
+athfunctions.trigonometric.code.tex)
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgf/math\pgfm
+athfunctions.random.code.tex)
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgf/math\pgfm
+athfunctions.comparison.code.tex)
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgf/math\pgfm
+athfunctions.base.code.tex)
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgf/math\pgfm
+athfunctions.round.code.tex)
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgf/math\pgfm
+athfunctions.misc.code.tex)
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgf/math\pgfm
+athfunctions.integerarithmetics.code.tex)
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgf/math\pgfm
+athcalc.code.tex)
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgf/math\pgfm
+athfloat.code.tex
+\c@pgfmathroundto@lastzeros=\count329
+))
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgf/math\pgfi
+nt.code.tex)
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgf/basiclaye
+r\pgfcorepoints.code.tex
+File: pgfcorepoints.code.tex 2025-08-29 v3.1.11a (3.1.11a)
+\pgf@picminx=\dimen183
+\pgf@picmaxx=\dimen184
+\pgf@picminy=\dimen185
+\pgf@picmaxy=\dimen186
+\pgf@pathminx=\dimen187
+\pgf@pathmaxx=\dimen188
+\pgf@pathminy=\dimen189
+\pgf@pathmaxy=\dimen190
+\pgf@xx=\dimen191
+\pgf@xy=\dimen192
+\pgf@yx=\dimen193
+\pgf@yy=\dimen194
+\pgf@zx=\dimen195
+\pgf@zy=\dimen196
+)
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgf/basiclaye
+r\pgfcorepathconstruct.code.tex
+File: pgfcorepathconstruct.code.tex 2025-08-29 v3.1.11a (3.1.11a)
+\pgf@path@lastx=\dimen197
+\pgf@path@lasty=\dimen198
+)
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgf/basiclaye
+r\pgfcorepathusage.code.tex
+File: pgfcorepathusage.code.tex 2025-08-29 v3.1.11a (3.1.11a)
+\pgf@shorten@end@additional=\dimen199
+\pgf@shorten@start@additional=\dimen256
+)
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgf/basiclaye
+r\pgfcorescopes.code.tex
+File: pgfcorescopes.code.tex 2025-08-29 v3.1.11a (3.1.11a)
+\pgfpic=\box105
+\pgf@hbox=\box106
+\pgf@layerbox@main=\box107
+\pgf@picture@serial@count=\count330
+)
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgf/basiclaye
+r\pgfcoregraphicstate.code.tex
+File: pgfcoregraphicstate.code.tex 2025-08-29 v3.1.11a (3.1.11a)
+\pgflinewidth=\dimen257
+)
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgf/basiclaye
+r\pgfcoretransformations.code.tex
+File: pgfcoretransformations.code.tex 2025-08-29 v3.1.11a (3.1.11a)
+\pgf@pt@x=\dimen258
+\pgf@pt@y=\dimen259
+\pgf@pt@temp=\dimen260
+)
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgf/basiclaye
+r\pgfcorequick.code.tex
+File: pgfcorequick.code.tex 2025-08-29 v3.1.11a (3.1.11a)
+)
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgf/basiclaye
+r\pgfcoreobjects.code.tex
+File: pgfcoreobjects.code.tex 2025-08-29 v3.1.11a (3.1.11a)
+)
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgf/basiclaye
+r\pgfcorepathprocessing.code.tex
+File: pgfcorepathprocessing.code.tex 2025-08-29 v3.1.11a (3.1.11a)
+)
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgf/basiclaye
+r\pgfcorearrows.code.tex
+File: pgfcorearrows.code.tex 2025-08-29 v3.1.11a (3.1.11a)
+\pgfarrowsep=\dimen261
+)
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgf/basiclaye
+r\pgfcoreshade.code.tex
+File: pgfcoreshade.code.tex 2025-08-29 v3.1.11a (3.1.11a)
+\pgf@max=\dimen262
+\pgf@sys@shading@range@num=\count331
+\pgf@shadingcount=\count332
+)
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgf/basiclaye
+r\pgfcoreimage.code.tex
+File: pgfcoreimage.code.tex 2025-08-29 v3.1.11a (3.1.11a)
+)
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgf/basiclaye
+r\pgfcoreexternal.code.tex
+File: pgfcoreexternal.code.tex 2025-08-29 v3.1.11a (3.1.11a)
+\pgfexternal@startupbox=\box108
+)
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgf/basiclaye
+r\pgfcorelayers.code.tex
+File: pgfcorelayers.code.tex 2025-08-29 v3.1.11a (3.1.11a)
+)
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgf/basiclaye
+r\pgfcoretransparency.code.tex
+File: pgfcoretransparency.code.tex 2025-08-29 v3.1.11a (3.1.11a)
+)
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgf/basiclaye
+r\pgfcorepatterns.code.tex
+File: pgfcorepatterns.code.tex 2025-08-29 v3.1.11a (3.1.11a)
+)
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgf/basiclaye
+r\pgfcorerdf.code.tex
+File: pgfcorerdf.code.tex 2025-08-29 v3.1.11a (3.1.11a)
+)))
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgf/modules\p
+gfmoduleshapes.code.tex
+File: pgfmoduleshapes.code.tex 2025-08-29 v3.1.11a (3.1.11a)
+\pgfnodeparttextbox=\box109
+)
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgf/modules\p
+gfmoduleplot.code.tex
+File: pgfmoduleplot.code.tex 2025-08-29 v3.1.11a (3.1.11a)
+)
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/pgf/compatibili
+ty\pgfcomp-version-0-65.sty
+Package: pgfcomp-version-0-65 2025-08-29 v3.1.11a (3.1.11a)
+\pgf@nodesepstart=\dimen263
+\pgf@nodesepend=\dimen264
+)
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/pgf/compatibili
+ty\pgfcomp-version-1-18.sty
+Package: pgfcomp-version-1-18 2025-08-29 v3.1.11a (3.1.11a)
+))
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/pgf/utilities\p
+gffor.sty
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/pgf/utilities\p
+gfkeys.sty
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgf/utilities
+\pgfkeys.code.tex))
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/pgf/math\pgfmat
+h.sty
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgf/math\pgfm
+ath.code.tex))
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgf/utilities
+\pgffor.code.tex
+Package: pgffor 2025-08-29 v3.1.11a (3.1.11a)
+\pgffor@iter=\dimen265
+\pgffor@skip=\dimen266
+\pgffor@stack=\toks37
+\pgffor@toks=\toks38
+))
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgf/frontendl
+ayer/tikz\tikz.code.tex
+Package: tikz 2025-08-29 v3.1.11a (3.1.11a)
+
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgf/libraries
+\pgflibraryplothandlers.code.tex
+File: pgflibraryplothandlers.code.tex 2025-08-29 v3.1.11a (3.1.11a)
+\pgf@plot@mark@count=\count333
+\pgfplotmarksize=\dimen267
+)
+\tikz@lastx=\dimen268
+\tikz@lasty=\dimen269
+\tikz@lastxsaved=\dimen270
+\tikz@lastysaved=\dimen271
+\tikz@lastmovetox=\dimen272
+\tikz@lastmovetoy=\dimen273
+\tikzleveldistance=\dimen274
+\tikzsiblingdistance=\dimen275
+\tikz@figbox=\box110
+\tikz@figbox@bg=\box111
+\tikz@tempbox=\box112
+\tikz@tempbox@bg=\box113
+\tikztreelevel=\count334
+\tikznumberofchildren=\count335
+\tikznumberofcurrentchild=\count336
+\tikz@fig@count=\count337
+
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgf/modules\p
+gfmodulematrix.code.tex
+File: pgfmodulematrix.code.tex 2025-08-29 v3.1.11a (3.1.11a)
+\pgfmatrixcurrentrow=\count338
+\pgfmatrixcurrentcolumn=\count339
+\pgf@matrix@numberofcolumns=\count340
+)
+\tikz@expandcount=\count341
+
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgf/frontendl
+ayer/tikz/libraries\tikzlibrarytopaths.code.tex
+File: tikzlibrarytopaths.code.tex 2025-08-29 v3.1.11a (3.1.11a)
+)))
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgf/frontendl
+ayer/tikz/libraries\tikzlibrarycalc.code.tex
+File: tikzlibrarycalc.code.tex 2025-08-29 v3.1.11a (3.1.11a)
+)
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/geometry\geomet
+ry.sty
+Package: geometry 2026/03/07 v6.0 Page Geometry
+
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/iftex\ifvtex.
+sty
+Package: ifvtex 2019/10/25 v1.7 ifvtex legacy package. Use iftex instead.
+
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/iftex\iftex.s
+ty
+Package: iftex 2024/12/12 v1.0g TeX engine tests
+))
+\Gm@cnth=\count342
+\Gm@cntv=\count343
+\c@Gm@tempcnt=\count344
+\Gm@bindingoffset=\dimen276
+\Gm@wd@mp=\dimen277
+\Gm@odd@mp=\dimen278
+\Gm@even@mp=\dimen279
+\Gm@layoutwidth=\dimen280
+\Gm@layoutheight=\dimen281
+\Gm@layouthoffset=\dimen282
+\Gm@layoutvoffset=\dimen283
+\Gm@dimlist=\toks39
+
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/geometry\geomet
+ry.cfg))
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/setspace\setspa
+ce.sty
+Package: setspace 2022/12/04 v6.7b set line spacing
+)
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/tools\indentfir
+st.sty
+Package: indentfirst 2023/07/02 v1.03 Indent first paragraph (DPC)
+)
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/amsmath\amsmath
+.sty
+Package: amsmath 2025/07/09 v2.17z AMS math features
+\@mathmargin=\skip56
+
+For additional information on amsmath, use the `?' option.
+
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/amsmath\amstext
+.sty
+Package: amstext 2024/11/17 v2.01 AMS text
+
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/amsmath\amsgen.
+sty
+File: amsgen.sty 1999/11/30 v2.0 generic functions
+\@emptytoks=\toks40
+\ex@=\dimen284
+))
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/amsmath\amsbsy.
+sty
+Package: amsbsy 1999/11/29 v1.2d Bold Symbols
+\pmbraise@=\dimen285
+)
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/amsmath\amsopn.
+sty
+Package: amsopn 2022/04/08 v2.04 operator names
+)
+\inf@bad=\count345
+LaTeX Info: Redefining \frac on input line 233.
+\uproot@=\count346
+\leftroot@=\count347
+LaTeX Info: Redefining \overline on input line 398.
+LaTeX Info: Redefining \colon on input line 409.
+\classnum@=\count348
+\DOTSCASE@=\count349
+LaTeX Info: Redefining \ldots on input line 495.
+LaTeX Info: Redefining \dots on input line 498.
+LaTeX Info: Redefining \cdots on input line 619.
+\Mathstrutbox@=\box114
+\strutbox@=\box115
+LaTeX Info: Redefining \big on input line 721.
+LaTeX Info: Redefining \Big on input line 722.
+LaTeX Info: Redefining \bigg on input line 723.
+LaTeX Info: Redefining \Bigg on input line 724.
+\big@size=\dimen286
+LaTeX Font Info:    Redeclaring font encoding OML on input line 742.
+LaTeX Font Info:    Redeclaring font encoding OMS on input line 743.
+\macc@depth=\count350
+LaTeX Info: Redefining \bmod on input line 904.
+LaTeX Info: Redefining \pmod on input line 909.
+LaTeX Info: Redefining \smash on input line 939.
+LaTeX Info: Redefining \relbar on input line 969.
+LaTeX Info: Redefining \Relbar on input line 970.
+\c@MaxMatrixCols=\count351
+\dotsspace@=\muskip17
+\c@parentequation=\count352
+\dspbrk@lvl=\count353
+\tag@help=\toks41
+\row@=\count354
+\column@=\count355
+\maxfields@=\count356
+\andhelp@=\toks42
+\eqnshift@=\dimen287
+\alignsep@=\dimen288
+\tagshift@=\dimen289
+\tagwidth@=\dimen290
+\totwidth@=\dimen291
+\lineht@=\dimen292
+\@envbody=\toks43
+\multlinegap=\skip57
+\multlinetaggap=\skip58
+\mathdisplay@stack=\toks44
+LaTeX Info: Redefining \[ on input line 2950.
+LaTeX Info: Redefining \] on input line 2951.
+)
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/amsfonts\amssym
+b.sty
+Package: amssymb 2013/01/14 v3.01 AMS font symbols
+
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/amsfonts\amsfon
+ts.sty
+Package: amsfonts 2013/01/14 v3.01 Basic AMSFonts support
+\symAMSa=\mathgroup4
+\symAMSb=\mathgroup5
+LaTeX Font Info:    Redeclaring math symbol \hbar on input line 98.
+LaTeX Font Info:    Overwriting math alphabet `\mathfrak' in version `bold'
+(Font)                  U/euf/m/n --> U/euf/b/n on input line 106.
+))
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/appendix\append
+ix.sty
+Package: appendix 2020/02/08 v1.2c extra appendix facilities
+\c@@pps=\count357
+\c@@ppsavesec=\count358
+\c@@ppsaveapp=\count359
+)
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/booktabs\bookta
+bs.sty
+Package: booktabs 2020/01/12 v1.61803398 Publication quality tables
+\heavyrulewidth=\dimen293
+\lightrulewidth=\dimen294
+\cmidrulewidth=\dimen295
+\belowrulesep=\dimen296
+\belowbottomsep=\dimen297
+\aboverulesep=\dimen298
+\abovetopsep=\dimen299
+\cmidrulesep=\dimen300
+\cmidrulekern=\dimen301
+\defaultaddspace=\dimen302
+\@cmidla=\count360
+\@cmidlb=\count361
+\@aboverulesep=\dimen303
+\@belowrulesep=\dimen304
+\@thisruleclass=\count362
+\@lastruleclass=\count363
+\@thisrulewidth=\dimen305
+)
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/multirow\multir
+ow.sty
+Package: multirow 2024/11/12 v2.9 Span multiple rows of a table
+\multirow@colwidth=\skip59
+\multirow@cntb=\count364
+\multirow@dima=\skip60
+\bigstrutjot=\dimen306
+)
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/hyperref\hyperr
+ef.sty
+Package: hyperref 2025-07-12 v7.01o Hypertext links for LaTeX
+
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/kvsetkeys\kvset
+keys.sty
+Package: kvsetkeys 2022-10-05 v1.19 Key value parser (HO)
+)
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/kvdefinekeys\
+kvdefinekeys.sty
+Package: kvdefinekeys 2019-12-19 v1.6 Define keys (HO)
+)
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pdfescape\pdf
+escape.sty
+Package: pdfescape 2019/12/09 v1.15 Implements pdfTeX's escape features (HO)
+
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/ltxcmds\ltxcm
+ds.sty
+Package: ltxcmds 2023-12-04 v1.26 LaTeX kernel commands for general use (HO)
+)
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pdftexcmds\pd
+ftexcmds.sty
+Package: pdftexcmds 2020-06-27 v0.33 Utility functions of pdfTeX for LuaTeX (HO
+)
+
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/infwarerr\inf
+warerr.sty
+Package: infwarerr 2019/12/03 v1.5 Providing info/warning/error messages (HO)
+)
+Package pdftexcmds Info: \pdf@primitive is available.
+Package pdftexcmds Info: \pdf@ifprimitive is available.
+Package pdftexcmds Info: \pdfdraftmode found.
+))
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/hycolor\hycolor
+.sty
+Package: hycolor 2020-01-27 v1.10 Color options for hyperref/bookmark (HO)
+)
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/hyperref\namere
+f.sty
+Package: nameref 2025-06-21 v2.57 Cross-referencing by name of section
+
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/refcount\refcou
+nt.sty
+Package: refcount 2019/12/15 v3.6 Data extraction from label references (HO)
+)
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/gettitlestrin
+g\gettitlestring.sty
+Package: gettitlestring 2019/12/15 v1.6 Cleanup title references (HO)
+
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/kvoptions\kvopt
+ions.sty
+Package: kvoptions 2022-06-15 v3.15 Key value format for package options (HO)
+))
+\c@section@level=\count365
+)
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/stringenc\str
+ingenc.sty
+Package: stringenc 2019/11/29 v1.12 Convert strings between diff. encodings (HO
+)
+)
+\@linkdim=\dimen307
+\Hy@linkcounter=\count366
+\Hy@pagecounter=\count367
+
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/hyperref\pd1enc
+.def
+File: pd1enc.def 2025-07-12 v7.01o Hyperref: PDFDocEncoding definition (HO)
+Now handling font encoding PD1 ...
+... no UTF-8 mapping file for font encoding PD1
+)
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/intcalc\intca
+lc.sty
+Package: intcalc 2019/12/15 v1.3 Expandable calculations with integers (HO)
+)
+\Hy@SavedSpaceFactor=\count368
+
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/hyperref\puenc.
+def
+File: puenc.def 2025-07-12 v7.01o Hyperref: PDF Unicode definition (HO)
+Now handling font encoding PU ...
+... no UTF-8 mapping file for font encoding PU
+)
+Package hyperref Info: Option `colorlinks' set `true' on input line 4066.
+Package hyperref Info: Hyper figures OFF on input line 4195.
+Package hyperref Info: Link nesting OFF on input line 4200.
+Package hyperref Info: Hyper index ON on input line 4203.
+Package hyperref Info: Plain pages OFF on input line 4210.
+Package hyperref Info: Backreferencing OFF on input line 4215.
+Package hyperref Info: Implicit mode ON; LaTeX internals redefined.
+Package hyperref Info: Bookmarks ON on input line 4462.
+\c@Hy@tempcnt=\count369
+
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/url\url.sty
+\Urlmuskip=\muskip18
+Package: url 2013/09/16  ver 3.4  Verb mode for urls, etc.
+)
+LaTeX Info: Redefining \url on input line 4801.
+\XeTeXLinkMargin=\dimen308
+
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/bitset\bitset
+.sty
+Package: bitset 2019/12/09 v1.3 Handle bit-vector datatype (HO)
+
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/bigintcalc\bi
+gintcalc.sty
+Package: bigintcalc 2019/12/15 v1.5 Expandable calculations on big integers (HO
+)
+))
+\Fld@menulength=\count370
+\Field@Width=\dimen309
+\Fld@charsize=\dimen310
+Package hyperref Info: Hyper figures OFF on input line 6078.
+Package hyperref Info: Link nesting OFF on input line 6083.
+Package hyperref Info: Hyper index ON on input line 6086.
+Package hyperref Info: backreferencing OFF on input line 6093.
+Package hyperref Info: Link coloring ON on input line 6096.
+Package hyperref Info: Link coloring with OCG OFF on input line 6103.
+Package hyperref Info: PDF/A mode OFF on input line 6108.
+\Hy@abspage=\count371
+\c@Item=\count372
+\c@Hfootnote=\count373
+)
+Package hyperref Info: Driver (autodetected): hpdftex.
+
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/hyperref\hpdfte
+x.def
+File: hpdftex.def 2025-07-12 v7.01o Hyperref driver for pdfTeX
+\Fld@listcount=\count374
+\c@bookmark@seq@number=\count375
+
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/rerunfilecheck\
+rerunfilecheck.sty
+Package: rerunfilecheck 2025-06-21 v1.11 Rerun checks for auxiliary files (HO)
+
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/uniquecounter
+\uniquecounter.sty
+Package: uniquecounter 2019/12/15 v1.4 Provide unlimited unique counter (HO)
+)
+Package uniquecounter Info: New unique counter `rerunfilecheck' on input line 2
+84.
+)
+\Hy@SectionHShift=\skip61
+)
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/ulem\ulem.sty
+\UL@box=\box116
+\UL@hyphenbox=\box117
+\UL@skip=\skip62
+\UL@hook=\toks45
+\UL@height=\dimen311
+\UL@pe=\count376
+\UL@pixel=\dimen312
+\ULC@box=\box118
+Package: ulem 2019/11/18
+\ULdepth=\dimen313
+)
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/float\float.sty
+Package: float 2001/11/08 v1.3d Float enhancements (AL)
+\c@float@type=\count377
+\float@exts=\toks46
+\float@box=\box119
+\@float@everytoks=\toks47
+\@floatcapt=\box120
+)
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/listings\listin
+gs.sty
+\lst@mode=\count378
+\lst@gtempboxa=\box121
+\lst@token=\toks48
+\lst@length=\count379
+\lst@currlwidth=\dimen314
+\lst@column=\count380
+\lst@pos=\count381
+\lst@lostspace=\dimen315
+\lst@width=\dimen316
+\lst@newlines=\count382
+\lst@lineno=\count383
+\lst@maxwidth=\dimen317
+
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/listings\lstpat
+ch.sty
+File: lstpatch.sty 2025/11/14 1.11b (Carsten Heinz)
+)
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/listings\lstmis
+c.sty
+File: lstmisc.sty 2025/11/14 1.11b (Carsten Heinz)
+\c@lstnumber=\count384
+\lst@skipnumbers=\count385
+\lst@framebox=\box122
+)
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/listings\listin
+gs.cfg
+File: listings.cfg 2025/11/14 1.11b listings configuration
+))
+Package: listings 2025/11/14 1.11b (Carsten Heinz)
+
+==> First Aid for listings.sty no longer applied!
+    Expected:
+        2024/09/23 1.10c (Carsten Heinz)
+    but found:
+        2025/11/14 1.11b (Carsten Heinz)
+    so I'm assuming it got fixed.
+
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/pgfplots\pgfplo
+ts.sty
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgfplots\pgfp
+lots.revision.tex)
+Package: pgfplots 2021/05/15 v1.18.1 Data Visualization (1.18.1)
+
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgfplots\pgfp
+lots.code.tex
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgfplots\pgfp
+lotscore.code.tex
+\t@pgfplots@toka=\toks49
+\t@pgfplots@tokb=\toks50
+\t@pgfplots@tokc=\toks51
+\pgfplots@tmpa=\dimen318
+\c@pgfplots@coordindex=\count386
+\c@pgfplots@scanlineindex=\count387
+
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgfplots/sys\
+pgfplotssysgeneric.code.tex))
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgfplots/libs
+\pgfplotslibrary.code.tex)
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgfplots/oldp
+gfcompatib\pgfplotsoldpgfsupp_loader.code.tex
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgf/libraries
+\pgflibraryfpu.code.tex)
+Package pgfplots: loading complementary utilities for your pgf version...
+\t@pgf@toka=\toks52
+\t@pgf@tokb=\toks53
+\t@pgf@tokc=\toks54
+
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgfplots/oldp
+gfcompatib\pgfplotsoldpgfsupp_pgfutil-common-lists.tex))
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgfplots/util
+\pgfplotsutil.code.tex
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgfplots/list
+structure\pgfplotsliststructure.code.tex)
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgfplots/list
+structure\pgfplotsliststructureext.code.tex)
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgfplots/list
+structure\pgfplotsarray.code.tex
+\c@pgfplotsarray@tmp=\count388
+)
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgfplots/list
+structure\pgfplotsmatrix.code.tex)
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgfplots/numt
+able\pgfplotstableshared.code.tex
+\c@pgfplotstable@counta=\count389
+\t@pgfplotstable@a=\toks55
+)
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgfplots/list
+structure\pgfplotsdeque.code.tex)
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgfplots/util
+\pgfplotsbinary.code.tex
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgfplots/util
+\pgfplotsbinary.data.code.tex))
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgfplots/util
+\pgfplotsutil.verb.code.tex)
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgfplots/libs
+\pgflibrarypgfplots.surfshading.code.tex
+\c@pgfplotslibrarysurf@no=\count390
+
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgfplots/sys\
+pgflibrarypgfplots.surfshading.pgfsys-pdftex.def)))
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgfplots/util
+\pgfplotscolormap.code.tex
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgfplots/util
+\pgfplotscolor.code.tex))
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgfplots\pgfp
+lotsstackedplots.code.tex)
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgfplots\pgfp
+lotsplothandlers.code.tex
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgfplots\pgfp
+lotsmeshplothandler.code.tex
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgfplots\pgfp
+lotsmeshplotimage.code.tex)))
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgfplots\pgfp
+lots.scaling.code.tex)
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgfplots\pgfp
+lotscoordprocessing.code.tex)
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgfplots\pgfp
+lots.errorbars.code.tex)
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgfplots\pgfp
+lots.markers.code.tex)
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgfplots\pgfp
+lotsticks.code.tex)
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgfplots\pgfp
+lots.paths.code.tex)
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgf/frontendl
+ayer/tikz/libraries\tikzlibrarydecorations.code.tex
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgf/modules\p
+gfmoduledecorations.code.tex
+\pgfdecoratedcompleteddistance=\dimen319
+\pgfdecoratedremainingdistance=\dimen320
+\pgfdecoratedinputsegmentcompleteddistance=\dimen321
+\pgfdecoratedinputsegmentremainingdistance=\dimen322
+\pgf@decorate@distancetomove=\dimen323
+\pgf@decorate@repeatstate=\count391
+\pgfdecorationsegmentamplitude=\dimen324
+\pgfdecorationsegmentlength=\dimen325
+)
+\tikz@lib@dec@box=\box123
+)
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgf/frontendl
+ayer/tikz/libraries\tikzlibrarydecorations.pathmorphing.code.tex
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgf/libraries
+/decorations\pgflibrarydecorations.pathmorphing.code.tex))
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgf/frontendl
+ayer/tikz/libraries\tikzlibrarydecorations.pathreplacing.code.tex
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgf/libraries
+/decorations\pgflibrarydecorations.pathreplacing.code.tex))
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgfplots/libs
+\tikzlibrarypgfplots.contourlua.code.tex)
+\pgfplots@numplots=\count392
+\pgfplots@xmin@reg=\dimen326
+\pgfplots@xmax@reg=\dimen327
+\pgfplots@ymin@reg=\dimen328
+\pgfplots@ymax@reg=\dimen329
+\pgfplots@zmin@reg=\dimen330
+\pgfplots@zmax@reg=\dimen331
+)
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgf/frontendl
+ayer/tikz/libraries\tikzlibraryplotmarks.code.tex
+File: tikzlibraryplotmarks.code.tex 2025-08-29 v3.1.11a (3.1.11a)
+
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgf/libraries
+\pgflibraryplotmarks.code.tex
+File: pgflibraryplotmarks.code.tex 2025-08-29 v3.1.11a (3.1.11a)
+)))
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/generic/pgfplots/libs
+\tikzlibrarypgfplots.groupplots.code.tex
+\pgfplots@group@current@plot=\count393
+\pgfplots@group@current@row=\count394
+\pgfplots@group@current@column=\count395
+)
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/l3backend\l3bac
+kend-pdftex.def
+File: l3backend-pdftex.def 2025-10-09 L3 backend support: PDF output (pdfTeX)
+\l__color_backend_stack_int=\count396
+) (main.aux (Cover_Page/cover-page.aux)
+(Beginning/commitment.aux) (Beginning/acknowledgement.aux)
+(Content/Abstract/abstract.aux) (Content/Chapter_1/introduction.aux)
+(Content/Chapter_2/related-work.aux) (Content/Chapter_3/methodology.aux))
+\openout1 = `main.aux'.
+
+LaTeX Font Info:    Checking defaults for OML/cmm/m/it on input line 77.
+LaTeX Font Info:    ... okay on input line 77.
+LaTeX Font Info:    Checking defaults for OMS/cmsy/m/n on input line 77.
+LaTeX Font Info:    ... okay on input line 77.
+LaTeX Font Info:    Checking defaults for OT1/cmr/m/n on input line 77.
+LaTeX Font Info:    ... okay on input line 77.
+LaTeX Font Info:    Checking defaults for T1/cmr/m/n on input line 77.
+LaTeX Font Info:    ... okay on input line 77.
+LaTeX Font Info:    Checking defaults for TS1/cmr/m/n on input line 77.
+LaTeX Font Info:    ... okay on input line 77.
+LaTeX Font Info:    Checking defaults for OMX/cmex/m/n on input line 77.
+LaTeX Font Info:    ... okay on input line 77.
+LaTeX Font Info:    Checking defaults for U/cmr/m/n on input line 77.
+LaTeX Font Info:    ... okay on input line 77.
+LaTeX Font Info:    Checking defaults for T5/cmr/m/n on input line 77.
+LaTeX Font Info:    Trying to load font information for T5+cmr on input line 77
+.
+
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/vntex\t5cmr.fd
+File: t5cmr.fd 1999/05/25 v2.5h Standard LaTeX font definitions
+)
+LaTeX Font Info:    ... okay on input line 77.
+LaTeX Font Info:    Checking defaults for PD1/pdf/m/n on input line 77.
+LaTeX Font Info:    ... okay on input line 77.
+LaTeX Font Info:    Checking defaults for PU/pdf/m/n on input line 77.
+LaTeX Font Info:    ... okay on input line 77.
+
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/context/base/mkii\sup
+p-pdf.mkii
+[Loading MPS to PDF converter (version 2006.09.02).]
+\scratchcounter=\count397
+\scratchdimen=\dimen332
+\scratchbox=\box124
+\nofMPsegments=\count398
+\nofMParguments=\count399
+\everyMPshowfont=\toks56
+\MPscratchCnt=\count400
+\MPscratchDim=\dimen333
+\MPnumerator=\count401
+\makeMPintoPDFobject=\count402
+\everyMPtoPDFconversion=\toks57
+)
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/epstopdf-pkg\ep
+stopdf-base.sty
+Package: epstopdf-base 2020-01-24 v2.11 Base part for package epstopdf
+Package epstopdf-base Info: Redefining graphics rule for `.eps' on input line 4
+85.
+
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/00miktex\epstop
+df-sys.cfg
+File: epstopdf-sys.cfg 2021/03/18 v2.0 Configuration of epstopdf for MiKTeX
+))
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/pdflscape\pdfls
+cape.sty
+Package: pdflscape 2022-10-27 v0.13 Display of landscape pages in PDF
+
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/pdflscape\pdfls
+cape-nometadata.sty
+Package: pdflscape-nometadata 2022-10-28 v0.13 Display of landscape pages in PD
+F (HO)
+
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/graphics\lscape
+.sty
+Package: lscape 2020/05/28 v3.02 Landscape Pages (DPC)
+)
+Package pdflscape Info: Auto-detected driver: pdftex on input line 81.
+))
+*geometry* driver: auto-detecting
+*geometry* detected driver: pdftex
+*geometry* verbose mode - [ preamble ] result:
+* driver: pdftex
+* paper: a4paper
+* layout: <same size as paper>
+* layoutoffset:(h,v)=(0.0pt,0.0pt)
+* modes: 
+* h-part:(L,W,R)=(99.58464pt, 441.01773pt, 56.9055pt)
+* v-part:(T,H,B)=(85.35826pt, 660.10394pt, 99.58464pt)
+* \paperwidth=597.50787pt
+* \paperheight=845.04684pt
+* \textwidth=441.01773pt
+* \textheight=660.10394pt
+* \oddsidemargin=27.31465pt
+* \evensidemargin=27.31465pt
+* \topmargin=-14.91173pt
+* \headheight=12.0pt
+* \headsep=16.0pt
+* \topskip=12.0pt
+* \footskip=30.0pt
+* \marginparwidth=90.0pt
+* \marginparsep=10.0pt
+* \columnsep=10.0pt
+* \skip\footins=10.8pt plus 4.0pt minus 2.0pt
+* \hoffset=0.0pt
+* \voffset=0.0pt
+* \mag=1000
+* \@twocolumnfalse
+* \@twosidefalse
+* \@mparswitchfalse
+* \@reversemarginfalse
+* (1in=72.27pt=25.4mm, 1cm=28.453pt)
+
+Package hyperref Info: Link coloring ON on input line 77.
+(main.out) (main.out)
+\@outlinefile=\write4
+\openout4 = `main.out'.
+
+\c@lstlisting=\count403
+
+Package pgfplots notification 'compat/show suggested version=true': you might b
+enefit from \pgfplotsset{compat=1.18} (current compat level: 1.17).
+
+\openout2 = `Cover_Page/cover-page.aux'.
+
+(Cover_Page/cover-page.tex [1
+
+
+{C:/Users/long.nguyen18/AppData/Local/MiKTeX/fonts/map/pdftex/pdftex.map}{C:/Us
+ers/long.nguyen18/AppData/Local/Programs/MiKTeX/fonts/enc/dvips/lm/lm-t5.enc}] 
+[1])
+\openout2 = `Beginning/commitment.aux'.
+
+ (Beginning/commitment.tex
+Overfull \hbox (6.74063pt too wide) in paragraph at lines 3--11
+[]\T5/lmr/m/n/13 ChÛng tÊi xin cam ^^_oan kh‚a lu™n tËt nghiªp \T5/lmr/m/it/13 
+``Tºm hi∫u v† x•y d¸ng blockchain
+ []
+
+) [1
+
+
+
+
+
+]
+\openout2 = `Beginning/acknowledgement.aux'.
+
+ (Beginning/acknowledgement.tex) [2
+
+
+
+
+] (main.toc)
+\tf@toc=\write5
+\openout5 = `main.toc'.
+
+ [3
+
+
+
+
+] (main.lof)
+\tf@lof=\write6
+\openout6 = `main.lof'.
+
+ [4
+
+]
+(main.lot)
+\tf@lot=\write7
+\openout7 = `main.lot'.
+
+ [5
+
+]
+\openout2 = `Content/Abstract/abstract.aux'.
+
+ (Content/Abstract/abstract.tex
+LaTeX Font Info:    Trying to load font information for T5+lmtt on input line 1
+4.
+
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/lm\t5lmtt.fd
+File: t5lmtt.fd 2015/05/01 v1.6.1 Font defs for Latin Modern
+)
+pdfTeX warning (ext4): destination with the same identifier (name{page.1}) has 
+been already used, duplicate ignored
+<to be read again> 
+                   \relax 
+l.42 \end{abstract}
+                    [1
+
+
+]) [2]
+\openout2 = `Content/Chapter_1/introduction.aux'.
+
+ (Content/Chapter_1/introduction.tex
+Chapter 1.
+LaTeX Font Info:    Calculating math sizes for size <13> on input line 4.
+LaTeX Font Info:    Trying to load font information for OT1+lmr on input line 4
+.
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/lm\ot1lmr.fd
+File: ot1lmr.fd 2015/05/01 v1.6.1 Font defs for Latin Modern
+)
+LaTeX Font Info:    Trying to load font information for OML+lmm on input line 4
+.
+
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/lm\omllmm.fd
+File: omllmm.fd 2015/05/01 v1.6.1 Font defs for Latin Modern
+)
+LaTeX Font Info:    Trying to load font information for OMS+lmsy on input line 
+4.
+
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/lm\omslmsy.fd
+File: omslmsy.fd 2015/05/01 v1.6.1 Font defs for Latin Modern
+)
+LaTeX Font Info:    Trying to load font information for OMX+lmex on input line 
+4.
+
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/lm\omxlmex.fd
+File: omxlmex.fd 2015/05/01 v1.6.1 Font defs for Latin Modern
+)
+LaTeX Font Info:    External font `lmex10' loaded for size
+(Font)              <13> on input line 4.
+LaTeX Font Info:    External font `lmex10' loaded for size
+(Font)              <9.09996> on input line 4.
+LaTeX Font Info:    External font `lmex10' loaded for size
+(Font)              <6.5> on input line 4.
+LaTeX Font Info:    Trying to load font information for U+msa on input line 4.
+
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/amsfonts\umsa.f
+d
+File: umsa.fd 2013/01/14 v3.01 AMS symbols A
+)
+LaTeX Font Info:    Trying to load font information for U+msb on input line 4.
+
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/amsfonts\umsb.f
+d
+File: umsb.fd 2013/01/14 v3.01 AMS symbols B
+)
+
+LaTeX Warning: Citation `nakamoto2008bitcoin' on page 3 undefined on input line
+ 8.
+
+
+LaTeX Warning: Citation `nq57' on page 3 undefined on input line 22.
+
+
+LaTeX Warning: Citation `qd1236' on page 3 undefined on input line 24.
+
+
+LaTeX Warning: Citation `qd1236' on page 3 undefined on input line 31.
+
+[3
+
+
+
+
+]
+
+LaTeX Warning: Citation `androulaki2018hyperledger' on page 4 undefined on inpu
+t line 43.
+
+
+LaTeX Warning: Citation `ongaro2014raft' on page 4 undefined on input line 45.
+
+
+LaTeX Warning: Citation `nakamoto2008bitcoin' on page 4 undefined on input line
+ 57.
+
+
+LaTeX Warning: Citation `buterin2014ethereum' on page 4 undefined on input line
+ 58.
+
+
+LaTeX Warning: Citation `castro1999pbft' on page 4 undefined on input line 69.
+
+LaTeX Font Info:    External font `lmex10' loaded for size
+(Font)              <9> on input line 77.
+LaTeX Font Info:    External font `lmex10' loaded for size
+(Font)              <6> on input line 77.
+LaTeX Font Info:    External font `lmex10' loaded for size
+(Font)              <5> on input line 77.
+[4]
+
+LaTeX Warning: Citation `fischer1985flp' on page 5 undefined on input line 110.
+
+
+[5
+pdfTeX warning (ext4): destination with the same identifier (name{table.1}) has
+ been already used, duplicate ignored
+<argument> ...shipout:D \box_use:N \l_shipout_box 
+                                                  \__shipout_drop_firstpage_...
+l.125   \item \textbf
+                     {B√†i to√°n hi·ªáu nƒÉng.} L√†m th·∫ø n√†o ƒë·ªÉ ƒë·∫°t...
+] [6{C:/Users/long.nguyen18/AppData/Local/Programs/MiKTeX/fonts/enc/dvips/lm/lm
+-mathsy.enc}]
+
+LaTeX Warning: Citation `little1961law' on page 7 undefined on input line 210.
+
+[7] [8]) [9]
+\openout2 = `Content/Chapter_2/related-work.aux'.
+
+ (Content/Chapter_2/related-work.tex
+Chapter 2.
+
+LaTeX Warning: Citation `fips180' on page 10 undefined on input line 28.
+
+
+LaTeX Warning: Citation `nakamoto2008bitcoin' on page 10 undefined on input lin
+e 28.
+
+
+LaTeX Warning: Citation `merkle1979' on page 10 undefined on input line 34.
+
+[10
+
+
+
+
+]
+
+LaTeX Warning: Citation `nakamoto2008bitcoin' on page 11 undefined on input lin
+e 47.
+
+
+LaTeX Warning: Citation `buterin2014ethereum' on page 11 undefined on input lin
+e 73.
+
+
+LaTeX Warning: Citation `wood2014ethereum' on page 11 undefined on input line 7
+3.
+
+[11{C:/Users/long.nguyen18/AppData/Local/Programs/MiKTeX/fonts/enc/dvips/lm/lm-
+mathit.enc}{C:/Users/long.nguyen18/AppData/Local/Programs/MiKTeX/fonts/enc/dvip
+s/lm/lm-rm.enc}]
+
+LaTeX Warning: Citation `androulaki2018hyperledger' on page 12 undefined on inp
+ut line 96.
+
+[12]
+
+LaTeX Warning: Citation `fischer1985flp' on page 13 undefined on input line 152
+.
+
+
+LaTeX Warning: Citation `lamport1998paxos' on page 13 undefined on input line 1
+61.
+
+[13
+pdfTeX warning (ext4): destination with the same identifier (name{table.2}) has
+ been already used, duplicate ignored
+<argument> ...shipout:D \box_use:N \l_shipout_box 
+                                                  \__shipout_drop_firstpage_...
+l.165 
+      ]
+
+LaTeX Warning: Citation `ongaro2014raft' on page 14 undefined on input line 169
+.
+
+
+LaTeX Warning: Citation `lamport1982byzantine' on page 14 undefined on input li
+ne 202.
+
+
+LaTeX Warning: Citation `castro1999pbft' on page 14 undefined on input line 204
+.
+
+[14]
+
+LaTeX Warning: Citation `cachin2017blockchain' on page 15 undefined on input li
+ne 209.
+
+
+LaTeX Warning: Citation `haas2017wasm' on page 15 undefined on input line 237.
+
+
+LaTeX Warning: Citation `wasmspec' on page 15 undefined on input line 237.
+
+
+LaTeX Warning: Citation `wasi' on page 15 undefined on input line 248.
+
+[15
+pdfTeX warning (ext4): destination with the same identifier (name{table.3}) has
+ been already used, duplicate ignored
+<argument> ...shipout:D \box_use:N \l_shipout_box 
+                                                  \__shipout_drop_firstpage_...
+l.249 
+      ]
+
+LaTeX Warning: Citation `libp2p' on page 16 undefined on input line 263.
+
+
+LaTeX Warning: Citation `benet2014ipfs' on page 16 undefined on input line 264.
+
+
+
+LaTeX Warning: Citation `leveldb' on page 16 undefined on input line 275.
+
+
+LaTeX Warning: Citation `dinh2017blockbench' on page 16 undefined on input line
+ 286.
+
+[16]
+
+LaTeX Warning: Citation `little1961law' on page 17 undefined on input line 293.
+
+
+
+LaTeX Warning: Citation `androulaki2018hyperledger' on page 17 undefined on inp
+ut line 306.
+
+
+LaTeX Warning: Citation `ongaro2014raft' on page 17 undefined on input line 308
+.
+
+
+LaTeX Warning: Citation `haas2017wasm' on page 17 undefined on input line 312.
+
+
+Overfull \hbox (25.38434pt too wide) in paragraph at lines 312--314
+[]\T5/lmr/bx/n/13 V∑ hÒp ^^_Áng thÊng minh: \T5/lmr/m/n/13 dÚng We-bAssem-bly [
+\T5/lmr/bx/n/13 ?\T5/lmr/m/n/13 ] (giËng Polka-dot/CosmWasm)
+ []
+
+
+LaTeX Warning: Citation `nakamoto2008bitcoin' on page 17 undefined on input lin
+e 315.
+
+
+LaTeX Warning: Citation `buterin2014ethereum' on page 17 undefined on input lin
+e 316.
+
+) [17]
+\openout2 = `Content/Chapter_3/methodology.aux'.
+
+ (Content/Chapter_3/methodology.tex
+Chapter 3.
+[18
+
+
+
+
+
+pdfTeX warning (ext4): destination with the same identifier (name{table.4}) has
+ been already used, duplicate ignored
+<argument> ...shipout:D \box_use:N \l_shipout_box 
+                                                  \__shipout_drop_firstpage_...
+l.45 
+     ]
+
+LaTeX Warning: Reference `fig:overall-arch' on page 19 undefined on input line 
+50.
+
+<Images/fg_1_architecture.png, id=264, 2826.56pt x 1541.76pt>
+File: Images/fg_1_architecture.png Graphic file (type png)
+<use Images/fg_1_architecture.png>
+Package pdftex.def Info: Images/fg_1_architecture.png  used on input line 53.
+(pdftex.def)             Requested size: 441.01773pt x 240.54652pt.
+[19
+pdfTeX warning (ext4): destination with the same identifier (name{figure.1}) ha
+s been already used, duplicate ignored
+<argument> ...shipout:D \box_use:N \l_shipout_box 
+                                                  \__shipout_drop_firstpage_...
+l.73   \item \textbf
+                    {T·∫°o \& g·ª≠i:} Ng∆∞·ªùi d√πng ƒëi·ªÅn form tr√™n Expl...
+ <./Images/fg_1_architecture.png>]
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/listings\lstlan
+g1.sty
+File: lstlang1.sty 2025/11/14 1.11b listings language file
+)
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/listings\lstlan
+g2.sty
+File: lstlang2.sty 2025/11/14 1.11b listings language file
+)
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/listings\lstlan
+g3.sty
+File: lstlang3.sty 2025/11/14 1.11b listings language file
+)
+Package hyperref Info: bookmark level for unknown lstlisting defaults to 0 on i
+nput line 110.
+LaTeX Font Info:    Font shape `T5/lmtt/bx/n' in size <9> not available
+(Font)              Font shape `T5/lmtt/b/n' tried instead on input line 111.
+ [20]
+Overfull \hbox (14.10014pt too wide) in paragraph at lines 131--136
+\T5/lmr/m/n/13 JSON, \T5/lmtt/m/n/13 Payload \T5/lmr/m/n/13 ^^_˜Òc m¢ h‚a hex t
+hÊng qua c°c h†m \T5/lmtt/m/n/13 MarshalJSON\T5/lmr/m/n/13 /\T5/lmtt/m/n/13 Unm
+arshalJSON
+ []
+
+[21]
+
+LaTeX Warning: Reference `sec:cp-storage' on page 22 undefined on input line 16
+6.
+
+[22]
+Overfull \hbox (7.78922pt too wide) in paragraph at lines 235--244
+\T5/lmr/m/n/13 Con-tract \T5/lmr/bx/n/13 nh™p \T5/lmr/m/n/13 qua \T5/lmtt/m/n/1
+3 //go:wasmimport env PutState\T5/lmr/m/n/13 : host ^^_Âc \T5/lmtt/m/n/13 keyPt
+r/keySize\T5/lmr/m/n/13 ,
+ []
+
+[23]
+
+LaTeX Warning: Reference `fig:wasm-abi' on page 24 undefined on input line 248.
+
+
+LaTeX Font Info:    Font shape `T5/lmtt/bx/n' in size <13> not available
+(Font)              Font shape `T5/lmtt/b/n' tried instead on input line 256.
+
+Overfull \hbox (32.54683pt too wide) in paragraph at lines 272--277
+[]\T5/lmr/m/it/13 B˜Óc C --- ^^^˜a pay-load v†o sand-box. \T5/lmr/m/n/13 N∏u \T
+5/lmtt/m/n/13 len(tx.Payload)>0\T5/lmr/m/n/13 : gÂi \T5/lmtt/m/n/13 allocate(le
+n)\T5/lmr/m/n/13 ,
+ []
+
+
+Overfull \hbox (8.06735pt too wide) in paragraph at lines 284--288
+[]\T5/lmr/m/it/13 B˜Óc E --- Tr£ sand-box. \T5/lmtt/m/n/13 defer release(runOK)
+\T5/lmr/m/n/13 : n∏u th†nh cÊng, \T5/lmtt/m/n/13 runOK=true\T5/lmr/m/n/13 ,
+ []
+
+[24
+pdfTeX warning (ext4): destination with the same identifier (name{figure.2}) ha
+s been already used, duplicate ignored
+<argument> ...shipout:D \box_use:N \l_shipout_box 
+                                                  \__shipout_drop_firstpage_...
+l.288 
+      ]
+Underfull \hbox (badness 6016) in paragraph at lines 310--311
+[]\T5/lmtt/m/n/9 debug\T5/lmr/m/n/9 : log cold/warm, WASM std-
+ []
+
+
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/listings\lstlan
+g1.sty
+File: lstlang1.sty 2025/11/14 1.11b listings language file
+)
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/listings\lstlan
+g1.sty
+File: lstlang1.sty 2025/11/14 1.11b listings language file
+)
+Overfull \hbox (116.30183pt too wide) in paragraph at lines 315--317
+[]\T5/lmr/bx/n/13 Bi∂n d‡ch v† tri∫n khai con-tract. \T5/lmr/m/n/13 Source n¨m 
+trong \T5/lmtt/m/n/13 coreservice/contracts/<ten>/main.go\T5/lmr/m/n/13 .
+ []
+
+
+Overfull \hbox (34.03333pt too wide) in paragraph at lines 322--329
+\T5/lmr/m/n/13 (browser) k≤o \T5/lmtt/m/n/13 gojs \T5/lmr/m/n/13 --- host b°o \
+T5/lmtt/m/n/13 module[gojs] not instantiated\T5/lmr/m/n/13 . \T5/lmtt/m/n/13 -s
+cheduler=none\T5/lmr/m/n/13 :
+ []
+
+[25
+pdfTeX warning (ext4): destination with the same identifier (name{table.5}) has
+ been already used, duplicate ignored
+<argument> ...shipout:D \box_use:N \l_shipout_box 
+                                                  \__shipout_drop_firstpage_...
+l.336 
+      ]
+
+LaTeX Warning: Reference `tab:sample-contracts' on page 26 undefined on input l
+ine 337.
+
+
+Underfull \hbox (badness 5189) in paragraph at lines 347--348
+[]\T5/lmtt/m/n/9 action=="create"\T5/lmr/m/n/9 : key \T5/lmtt/m/n/9 Asset_<id>\
+T5/lmr/m/n/9 ,
+ []
+
+
+Underfull \hbox (badness 5133) in paragraph at lines 347--348
+\T5/lmr/m/n/9 value = raw JSON pay-load, qua
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 348--349
+[]\T5/lmtt/m/n/9 op=="register"\T5/lmr/m/n/9 , \T5/lmtt/m/n/9 qty>=0\T5/lmr/m/n
+/9 : key
+ []
+
+
+Underfull \hbox (badness 1584) in paragraph at lines 349--350
+[]\T5/lmtt/m/n/9 size<=512\T5/lmr/m/n/9 , \T5/lmtt/m/n/9 1<=len(v)<=128\T5/lmr/
+m/n/9 ; val-i-date
+ []
+
+[26
+pdfTeX warning (ext4): destination with the same identifier (name{table.6}) has
+ been already used, duplicate ignored
+<argument> ...shipout:D \box_use:N \l_shipout_box 
+                                                  \__shipout_drop_firstpage_...
+l.389 
+      ]
+
+LaTeX Warning: Citation `bernstein2012ed25519' on page 27 undefined on input li
+ne 392.
+
+
+LaTeX Warning: Citation `rfc8032' on page 27 undefined on input line 392.
+
+
+Overfull \hbox (2.43803pt too wide) in paragraph at lines 396--402
+\T5/lmtt/m/n/13 cloudflare/circl/sign/mldsa/mldsa44\T5/lmr/m/n/13 . Kh‚a cÊng k
+hai 1312byte (2624 hex),
+ []
+
+
+Overfull \hbox (34.5904pt too wide) in paragraph at lines 403--407
+\T5/lmtt/m/n/13 VerifyTransaction \T5/lmr/m/n/13 Ed25519 (dev/legacy). Pro-duc-
+tion luÊn \T5/lmtt/m/n/13 signTxViaCommitPeer()
+ []
+
+[27
+pdfTeX warning (ext4): destination with the same identifier (name{table.7}) has
+ been already used, duplicate ignored
+<argument> ...shipout:D \box_use:N \l_shipout_box 
+                                                  \__shipout_drop_firstpage_...
+l.436 
+      ]
+Overfull \hbox (24.6133pt too wide) in paragraph at lines 445--450
+[]\T5/lmr/bx/n/13 Kh‚a tin c™y. \T5/lmr/m/n/13 Com-mit peer val-i-date block vÓ
+i \T5/lmtt/m/n/13 TRUSTED_ENDORSER_PUBLIC_KEYS\T5/lmr/m/n/13 :
+ []
+
+
+LaTeX Warning: Reference `sec:wasm-engine' on page 28 undefined on input line 4
+68.
+
+[28]
+Overfull \hbox (64.15353pt too wide) in paragraph at lines 481--487
+[]\T5/lmr/m/it/13 B˜Óc 4. \T5/lmtt/m/n/13 sendEndorsementAsync\T5/lmr/m/n/13 : 
+n∏u c‚ or-derer dis-cov-ery, \T5/lmtt/m/n/13 discovery.SendEndorsement
+ []
+
+
+Overfull \hbox (55.28323pt too wide) in paragraph at lines 481--487
+\T5/lmr/m/n/13 g˚i tx JSON (^^_¢ en-dorse) tÓi Raft leader qua \T5/lmtt/m/n/13 
+/raft-order-service/endorsement/1.0.0\T5/lmr/m/n/13 .
+ []
+
+
+Overfull \hbox (125.6626pt too wide) in paragraph at lines 501--508
+\T5/lmr/m/n/13 ˘ng (\T5/lmtt/m/n/13 endorsement.key \T5/lmr/m/n/13 / \T5/lmtt/m
+/n/13 endorsement.mldsa44.key\T5/lmr/m/n/13 ); (ii) c™p nh™t \T5/lmtt/m/n/13 TR
+USTED_ENDORSER_PUBLIC_KEYS\T5/lmr/m/n/13 ;
+ []
+
+
+Overfull \hbox (2.54349pt too wide) in paragraph at lines 527--530
+[]\T5/lmr/m/n/13 Bi∏n thu™t to°n (\T5/lmtt/m/n/13 COMMIT_PEER_KEY_ALGO\T5/lmr/m
+/n/13 , \T5/lmtt/m/n/13 TRUSTED_ENDORSER_PUBLIC_KEYS\T5/lmr/m/n/13 )
+ []
+
+[29
+pdfTeX warning (ext4): destination with the same identifier (name{table.8}) has
+ been already used, duplicate ignored
+<argument> ...shipout:D \box_use:N \l_shipout_box 
+                                                  \__shipout_drop_firstpage_...
+l.532 \subsection
+                 {M·∫°ng libp2p v√† Discovery}]
+
+LaTeX Warning: Reference `tab:protocols' on page 30 undefined on input line 536
+.
+
+
+Overfull \hbox (35.6337pt too wide) in paragraph at lines 560--567
+[]\T5/lmr/m/n/13 MÎt chi ti∏t tËi ˜u ^^_°ng chÛ ˛ l† \T5/lmtt/m/n/13 SubmitReco
+rder \T5/lmr/m/n/13 (\T5/lmtt/m/n/13 storage/submit_recorder.go\T5/lmr/m/n/13 )
+:
+ []
+
+
+LaTeX Warning: Reference `tab:core-api' on page 30 undefined on input line 571.
+
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 586--586
+[]\T5/lmr/m/n/9 GET
+ []
+
+[30]
+
+LaTeX Warning: Citation `ongaro2014raft' on page 31 undefined on input line 604
+.
+
+[31
+pdfTeX warning (ext4): destination with the same identifier (name{table.9}) has
+ been already used, duplicate ignored
+<argument> ...shipout:D \box_use:N \l_shipout_box 
+                                                  \__shipout_drop_firstpage_...
+l.628 
+      ]
+
+LaTeX Warning: Reference `sec:committing-peer' on page 32 undefined on input li
+ne 634.
+
+
+LaTeX Warning: Reference `sec:ordering-tradeoffs' on page 32 undefined on input
+ line 642.
+
+
+LaTeX Warning: Reference `tab:raft-components' on page 32 undefined on input li
+ne 651.
+
+[32]
+
+LaTeX Warning: Reference `tab:raft-messages' on page 33 undefined on input line
+ 697.
+
+[33
+pdfTeX warning (ext4): destination with the same identifier (name{table.10}) ha
+s been already used, duplicate ignored
+<argument> ...shipout:D \box_use:N \l_shipout_box 
+                                                  \__shipout_drop_firstpage_...
+l.699 
+      ]
+Underfull \hbox (badness 1533) in paragraph at lines 714--715
+\T5/lmr/m/n/9 t‰a to†n bÎ danh s°ch th†nh vi∂n (t¯
+ []
+
+
+Overfull \hbox (1.744pt too wide) in paragraph at lines 716--716
+[]\T5/lmr/m/n/9 MembershipRequest/Response| 
+ []
+
+[34
+pdfTeX warning (ext4): destination with the same identifier (name{table.11}) ha
+s been already used, duplicate ignored
+<argument> ...shipout:D \box_use:N \l_shipout_box 
+                                                  \__shipout_drop_firstpage_...
+l.741 
+      ]
+
+LaTeX Warning: Reference `fig:raft-states' on page 35 undefined on input line 7
+62.
+
+[35
+pdfTeX warning (ext4): destination with the same identifier (name{figure.3}) ha
+s been already used, duplicate ignored
+<argument> ...shipout:D \box_use:N \l_shipout_box 
+                                                  \__shipout_drop_firstpage_...
+l.786 
+      ]
+
+LaTeX Warning: Reference `sec:leader-election' on page 36 undefined on input li
+ne 793.
+
+[36{C:/Users/long.nguyen18/AppData/Local/Programs/MiKTeX/fonts/enc/dvips/lm/lm-
+mathex.enc}]
+
+LaTeX Warning: Reference `tab:raft-vs-standard' on page 37 undefined on input l
+ine 852.
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 867--868
+[]\T5/lmr/bx/n/9 To†n bÎ trong RAM
+ []
+
+
+Underfull \hbox (badness 2922) in paragraph at lines 867--868
+\T5/lmr/m/n/9 (nhanh, mßt khi crash, bÚ
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 868--868
+[]\T5/lmtt/m/n/9 etcd/raft\T5/lmr/m/n/9 ,
+ []
+
+[37]
+
+LaTeX Warning: Reference `tab:timing' on page 38 undefined on input line 881.
+
+
+LaTeX Warning: Reference `fig:election' on page 38 undefined on input line 904.
+
+
+[38
+pdfTeX warning (ext4): destination with the same identifier (name{table.12}) ha
+s been already used, duplicate ignored
+<argument> ...shipout:D \box_use:N \l_shipout_box 
+                                                  \__shipout_drop_firstpage_...
+l.907 ...{B∆∞·ªõc 1 --- X√°c ƒë·ªãnh ·ª©ng vi√™n.}
+                                                   Node ƒë√°nh d·∫•u Leader ...
+
+pdfTeX warning (ext4): destination with the same identifier (name{table.13}) ha
+s been already used, duplicate ignored
+<argument> ...shipout:D \box_use:N \l_shipout_box 
+                                                  \__shipout_drop_firstpage_...
+l.907 ...{B∆∞·ªõc 1 --- X√°c ƒë·ªãnh ·ª©ng vi√™n.}
+                                                   Node ƒë√°nh d·∫•u Leader ...
+]
+
+LaTeX Warning: Reference `sec:ordering-splitbrain' on page 39 undefined on inpu
+t line 935.
+
+[39]
+
+LaTeX Warning: Reference `sec:quorum' on page 40 undefined on input line 976.
+
+[40
+pdfTeX warning (ext4): destination with the same identifier (name{figure.4}) ha
+s been already used, duplicate ignored
+<argument> ...shipout:D \box_use:N \l_shipout_box 
+                                                  \__shipout_drop_firstpage_...
+l.989 \textbf{L·ªõp 3 --- Tho√°i v·ªã theo term.}
+                                                  Term ƒë√≥ng vai tr√≤ ƒë·ªì...
+]
+
+LaTeX Warning: Reference `sec:block-cutting' on page 41 undefined on input line
+ 1002.
+
+[41] [42]
+
+LaTeX Warning: Reference `fig:block-pipeline' on page 43 undefined on input lin
+e 1067.
+
+[43
+pdfTeX warning (ext4): destination with the same identifier (name{figure.5}) ha
+s been already used, duplicate ignored
+<argument> ...shipout:D \box_use:N \l_shipout_box 
+                                                  \__shipout_drop_firstpage_...
+l.1110 
+       ] [44]
+
+LaTeX Warning: Reference `tab:protocols' on page 45 undefined on input line 118
+5.
+
+[45]
+Underfull \hbox (badness 2012) in paragraph at lines 1201--1202
+[]\T5/lmr/m/n/9 Client $\OMS/lmsy/m/n/9 !$ \T5/lmr/m/n/9 Com-mit-ting Peer: tru
+y vßn
+ []
+
+[46
+pdfTeX warning (ext4): destination with the same identifier (name{table.14}) ha
+s been already used, duplicate ignored
+<argument> ...shipout:D \box_use:N \l_shipout_box 
+                                                  \__shipout_drop_firstpage_...
+l.1233 ...∫°ng th√°i trong RAM, kh√¥ng ghi b·ªÅn.}
+                                                   RaftLog v√† chu·ªói block...
+]
+
+LaTeX Warning: Reference `sec:deliver-sync' on page 47 undefined on input line 
+1237.
+
+
+LaTeX Warning: Reference `sec:ordering-splitbrain' on page 47 undefined on inpu
+t line 1253.
+
+[47]
+
+LaTeX Warning: Reference `tab:cp-packages' on page 48 undefined on input line 1
+305.
+
+
+LaTeX Warning: Reference `fig:cp-pipeline' on page 48 undefined on input line 1
+306.
+
+[48] [49
+pdfTeX warning (ext4): destination with the same identifier (name{table.15}) ha
+s been already used, duplicate ignored
+<argument> ...shipout:D \box_use:N \l_shipout_box 
+                                                  \__shipout_drop_firstpage_...
+l.1357   \item \textbf
+                      {Ch·∫∑ng mirror (b·∫•t ƒë·ªìng b·ªô).} M·ªôt nh√≥m wor...
+
+pdfTeX warning (ext4): destination with the same identifier (name{figure.6}) ha
+s been already used, duplicate ignored
+<argument> ...shipout:D \box_use:N \l_shipout_box 
+                                                  \__shipout_drop_firstpage_...
+l.1357   \item \textbf
+                      {Ch·∫∑ng mirror (b·∫•t ƒë·ªìng b·ªô).} M·ªôt nh√≥m wor...
+] [50] [51] [52]
+
+LaTeX Warning: Reference `tab:storage-layers' on page 53 undefined on input lin
+e 1488.
+
+
+Underfull \hbox (badness 2662) in paragraph at lines 1500--1501
+[]\T5/lmr/m/n/9 Tra UTXO hiªn
+ []
+
+
+Underfull \hbox (badness 4995) in paragraph at lines 1501--1502
+[]\T5/lmr/m/n/9 Explorer & b°o
+ []
+
+
+LaTeX Warning: Reference `sec:cp-deliver' on page 53 undefined on input line 15
+13.
+
+[53
+pdfTeX warning (ext4): destination with the same identifier (name{table.16}) ha
+s been already used, duplicate ignored
+<argument> ...shipout:D \box_use:N \l_shipout_box 
+                                                  \__shipout_drop_firstpage_...
+l.1519 \subsubsection
+                     {L·ªõp 2 --- World state (UTXO tr√™n LevelDB)}]
+
+LaTeX Warning: Reference `sec:cp-metrics' on page 54 undefined on input line 15
+57.
+
+[54]
+
+LaTeX Warning: Reference `tab:cp-env' on page 55 undefined on input line 1598.
+
+[55] [56
+pdfTeX warning (ext4): destination with the same identifier (name{table.17}) ha
+s been already used, duplicate ignored
+<argument> ...shipout:D \box_use:N \l_shipout_box 
+                                                  \__shipout_drop_firstpage_...
+l.1638 \textbf{Kh√≥a c·ª•c b·ªô, ph·∫°m vi h·∫πp.}
+                                                   V·ªõi c√°c tr·∫°ng th√°i ...
+]
+
+LaTeX Warning: Reference `tab:cp-concurrency' on page 57 undefined on input lin
+e 1640.
+
+[57
+pdfTeX warning (ext4): destination with the same identifier (name{table.18}) ha
+s been already used, duplicate ignored
+<argument> ...shipout:D \box_use:N \l_shipout_box 
+                                                  \__shipout_drop_firstpage_...
+l.1684 ...rld state, tu·∫ßn t·ª± ·ªü m·ª©c block.}
+                                                   World state ƒë∆∞·ª£c c·∫≠p]
+
+LaTeX Warning: Reference `tab:frontend-stack' on page 58 undefined on input lin
+e 1715.
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 1731--1732
+[]\T5/lmr/m/n/9 B´m SHA-256 (d˙ liªu mock
+ []
+
+[58]
+Overfull \hbox (7.33948pt too wide) in paragraph at lines 1736--1740
+[]\T5/lmr/m/n/13 Ÿng dˆng dÚng Re-act Router vÓi ba tuy∏n ^^_˜Ìng (\T5/lmtt/m/n
+/13 /transactions\T5/lmr/m/n/13 , \T5/lmtt/m/n/13 /transfer\T5/lmr/m/n/13 ,
+ []
+
+
+Overfull \hbox (73.07109pt too wide) in paragraph at lines 1749--1756
+\T5/lmr/m/n/13 DRESS), ti∏t kiªm $[]\OT1/lmr/m/n/13 70%$ \T5/lmr/m/n/13 so vÓi 
+JSON; v† (2) \T5/lmr/bx/n/13 hª pay-load con-tract \T5/lmr/m/n/13 (\T5/lmtt/m/n
+/13 transactionUtils.js\T5/lmr/m/n/13 ):
+ []
+
+[59
+pdfTeX warning (ext4): destination with the same identifier (name{table.19}) ha
+s been already used, duplicate ignored
+<argument> ...shipout:D \box_use:N \l_shipout_box 
+                                                  \__shipout_drop_firstpage_...
+l.1774 
+       ]
+Overfull \hbox (30.41078pt too wide) in paragraph at lines 1775--1780
+[]\T5/lmr/m/n/13 N∏u SSE ^^_˘t, Dash-board chuy∫n sang \T5/lmr/bx/n/13 polling 
+d¸ ph·ng \T5/lmr/m/n/13 (gÂi \T5/lmtt/m/n/13 /api/transactions
+ []
+
+
+LaTeX Warning: Reference `tab:schemas' on page 60 undefined on input line 1788.
+
+
+
+Overfull \hbox (31.68007pt too wide) in paragraph at lines 1811--1815
+[]\T5/lmtt/b/n/13 core_service.tx_submit_times\T5/lmr/bx/n/13 : \T5/lmtt/m/n/13
+ txid \T5/lmr/m/n/13 PRI-MARY KEY, \T5/lmtt/m/n/13 submitted_at \T5/lmr/m/n/13 
+TIMES-
+ []
+
+[60
+pdfTeX warning (ext4): destination with the same identifier (name{table.20}) ha
+s been already used, duplicate ignored
+<argument> ...shipout:D \box_use:N \l_shipout_box 
+                                                  \__shipout_drop_firstpage_...
+l.1820 ...ttt{commit\_peer.ledger\_transactions}:}
+                                                   li√™n k·∫øt \texttt{block...
+]
+Overfull \hbox (6.54214pt too wide) in paragraph at lines 1820--1824
+[]\T5/lmtt/b/n/13 commit_peer.ledger_transactions\T5/lmr/bx/n/13 : \T5/lmr/m/n/
+13 li∂n k∏t \T5/lmtt/m/n/13 block_id $\OMS/lmsy/m/n/13 !$ \T5/lmtt/m/n/13 ledge
+r.id\T5/lmr/m/n/13 , \T5/lmtt/m/n/13 txid\T5/lmr/m/n/13 ,
+ []
+
+
+Overfull \hbox (1.82747pt too wide) in paragraph at lines 1820--1824
+\T5/lmtt/m/n/13 tx_index\T5/lmr/m/n/13 , \T5/lmtt/m/n/13 tx_data \T5/lmr/m/n/13
+ JSONB (pay-load hex, en-dorse-ments, \T5/lmtt/m/n/13 algorithm\T5/lmr/m/n/13 )
+, kh‚a ngo§i
+ []
+
+
+LaTeX Warning: Reference `tab:three-layers' on page 61 undefined on input line 
+1847.
+
+
+Overfull \hbox (12.79826pt too wide) in paragraph at lines 1858--1858
+[]\T5/lmtt/m/n/9 core_service.tx_submit_times| 
+ []
+
+[61
+pdfTeX warning (ext4): destination with the same identifier (name{table.21}) ha
+s been already used, duplicate ignored
+<argument> ...shipout:D \box_use:N \l_shipout_box 
+                                                  \__shipout_drop_firstpage_...
+l.1875 
+       ]
+
+LaTeX Warning: Citation `little1961law' on page 62 undefined on input line 1881
+.
+
+
+LaTeX Warning: Reference `tab:bench-results' on page 62 undefined on input line
+ 1888.
+
+
+LaTeX Warning: Reference `sec:opts' on page 62 undefined on input line 1908.
+
+
+LaTeX Warning: Reference `tab:tech-problem' on page 62 undefined on input line 
+1917.
+
+[62
+pdfTeX warning (ext4): destination with the same identifier (name{table.22}) ha
+s been already used, duplicate ignored
+<argument> ...shipout:D \box_use:N \l_shipout_box 
+                                                  \__shipout_drop_firstpage_...
+l.1938 \end{table}
+                  ]) [63
+pdfTeX warning (ext4): destination with the same identifier (name{table.23}) ha
+s been already used, duplicate ignored
+<argument> ...shipout:D \box_use:N \l_shipout_box 
+                                                  \__shipout_drop_firstpage_...
+l.121 \include{Content/Chapter_3/methodology}
+                                             ]
+\openout2 = `Content/Chapter_4/evaluation.aux'.
+
+
+(Content/Chapter_4/evaluation.tex
+Chapter 4.
+
+LaTeX Warning: Reference `sec:measurement' on page 64 undefined on input line 1
+1.
+
+
+LaTeX Warning: Reference `sec:measurement' on page 64 undefined on input line 1
+6.
+
+
+LaTeX Warning: Reference `tab:eval-env' on page 64 undefined on input line 44.
+
+[64
+
+
+
+
+]
+
+LaTeX Warning: Reference `sec:eval-threats' on page 65 undefined on input line 
+83.
+
+[65
+pdfTeX warning (ext4): destination with the same identifier (name{table.24}) ha
+s been already used, duplicate ignored
+<argument> ...shipout:D \box_use:N \l_shipout_box 
+                                                  \__shipout_drop_firstpage_...
+l.90 \subsection
+                {Ma tr·∫≠n tham s·ªë}]
+
+LaTeX Warning: Reference `tab:eval-matrix' on page 66 undefined on input line 9
+4.
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 106--106
+[]\T5/lmr/m/n/9 block $\OMS/lmsy/m/n/9 2
+ []
+
+
+Overfull \hbox (4.58344pt too wide) in paragraph at lines 106--106
+\OMS/lmsy/m/n/9 f\OT1/lmr/m/n/9 100\OML/lmm/m/it/9 ; \OT1/lmr/m/n/9 250\OML/lmm
+/m/it/9 ; \OT1/lmr/m/n/9 500\OML/lmm/m/it/9 ; \OT1/lmr/m/n/9 1000\OML/lmm/m/it/
+9 ; \OT1/lmr/m/n/9 2000\OML/lmm/m/it/9 ; \OT1/lmr/m/n/9 4000\OMS/lmsy/m/n/9 g$|
+ 
+ []
+
+
+LaTeX Warning: Reference `sec:eval-interval' on page 66 undefined on input line
+ 115.
+
+
+LaTeX Warning: Reference `sec:eval-blocksize' on page 66 undefined on input lin
+e 117.
+
+
+LaTeX Warning: Reference `tab:eval-tps' on page 66 undefined on input line 125.
+
+
+
+LaTeX Warning: Reference `fig:eval-tps' on page 66 undefined on input line 125.
+
+
+[66
+pdfTeX warning (ext4): destination with the same identifier (name{table.25}) ha
+s been already used, duplicate ignored
+<argument> ...shipout:D \box_use:N \l_shipout_box 
+                                                  \__shipout_drop_firstpage_...
+l.146 
+      ]
+
+LaTeX Warning: Reference `tab:eval-blocksize' on page 67 undefined on input lin
+e 185.
+
+
+LaTeX Warning: Reference `fig:eval-blocksize' on page 67 undefined on input lin
+e 185.
+
+[67
+pdfTeX warning (ext4): destination with the same identifier (name{table.26}) ha
+s been already used, duplicate ignored
+<argument> ...shipout:D \box_use:N \l_shipout_box 
+                                                  \__shipout_drop_firstpage_...
+l.204 \end{table}
+                 
+pdfTeX warning (ext4): destination with the same identifier (name{figure.7}) ha
+s been already used, duplicate ignored
+<argument> ...shipout:D \box_use:N \l_shipout_box 
+                                                  \__shipout_drop_firstpage_...
+l.204 \end{table}
+                 ]
+Package pgfplots info on input line 219: Using 'lua backend=false' for axis: xm
+ode=log unsupported (yet).
+ [68
+pdfTeX warning (ext4): destination with the same identifier (name{table.27}) ha
+s been already used, duplicate ignored
+<argument> ...shipout:D \box_use:N \l_shipout_box 
+                                                  \__shipout_drop_firstpage_...
+l.241 
+      
+pdfTeX warning (ext4): destination with the same identifier (name{figure.8}) ha
+s been already used, duplicate ignored
+<argument> ...shipout:D \box_use:N \l_shipout_box 
+                                                  \__shipout_drop_firstpage_...
+l.241 
+      ]
+
+LaTeX Warning: Reference `tab:eval-interval' on page 69 undefined on input line
+ 251.
+
+[69
+pdfTeX warning (ext4): destination with the same identifier (name{table.28}) ha
+s been already used, duplicate ignored
+<argument> ...shipout:D \box_use:N \l_shipout_box 
+                                                  \__shipout_drop_firstpage_...
+l.298 
+      
+pdfTeX warning (ext4): destination with the same identifier (name{figure.9}) ha
+s been already used, duplicate ignored
+<argument> ...shipout:D \box_use:N \l_shipout_box 
+                                                  \__shipout_drop_firstpage_...
+l.298 
+      ]
+
+LaTeX Warning: Reference `tab:eval-workers' on page 70 undefined on input line 
+304.
+
+
+LaTeX Warning: Reference `fig:eval-workers' on page 70 undefined on input line 
+304.
+
+[70
+pdfTeX warning (ext4): destination with the same identifier (name{table.29}) ha
+s been already used, duplicate ignored
+<argument> ...shipout:D \box_use:N \l_shipout_box 
+                                                  \__shipout_drop_firstpage_...
+l.348 \section
+              {C·∫•u h√¨nh khuy·∫øn ngh·ªã}
+pdfTeX warning (ext4): destination with the same identifier (name{figure.10}) h
+as been already used, duplicate ignored
+<argument> ...shipout:D \box_use:N \l_shipout_box 
+                                                  \__shipout_drop_firstpage_...
+l.348 \section
+              {C·∫•u h√¨nh khuy·∫øn ngh·ªã}]
+
+LaTeX Warning: Reference `tab:eval-best' on page 71 undefined on input line 352
+.
+
+
+LaTeX Warning: Reference `sec:measurement' on page 71 undefined on input line 3
+81.
+
+
+LaTeX Warning: Reference `sec:opts' on page 71 undefined on input line 384.
+
+) [71
+pdfTeX warning (ext4): destination with the same identifier (name{table.30}) ha
+s been already used, duplicate ignored
+<argument> ...shipout:D \box_use:N \l_shipout_box 
+                                                  \__shipout_drop_firstpage_...
+l.122 \include{Content/Chapter_4/evaluation}
+                                            ] [72]
+\openout2 = `Content/Chapter_5/future-work.aux'.
+
+
+(Content/Chapter_5/future-work.tex
+Chapter 5.
+
+LaTeX Warning: Reference `chap:evaluation' on page 73 undefined on input line 8
+.
+
+
+LaTeX Warning: Reference `chap:evaluation' on page 73 undefined on input line 3
+2.
+
+[73
+
+
+
+
+]
+
+LaTeX Warning: Reference `sec:eval-threats' on page 74 undefined on input line 
+55.
+
+
+LaTeX Warning: Reference `chap:evaluation' on page 74 undefined on input line 6
+7.
+
+
+LaTeX Warning: Reference `sec:ordering-messages' on page 74 undefined on input 
+line 85.
+
+
+LaTeX Warning: Citation `castro1999pbft' on page 74 undefined on input line 87.
+
+
+[74]
+
+LaTeX Warning: Reference `sec:deliver-sync' on page 75 undefined on input line 
+98.
+
+
+LaTeX Warning: Reference `sec:eval-threats' on page 75 undefined on input line 
+109.
+
+
+LaTeX Warning: Reference `sec:eval-threats' on page 75 undefined on input line 
+117.
+
+[75]
+
+LaTeX Warning: Reference `chap:evaluation' on page 76 undefined on input line 1
+26.
+
+
+LaTeX Warning: Reference `sec:quorum' on page 76 undefined on input line 140.
+
+) [76] [77]
+No file main.bbl.
+(main.aux (Cover_Page/cover-page.aux) (Beginning/commitment.aux)
+(Beginning/acknowledgement.aux) (Content/Abstract/abstract.aux)
+(Content/Chapter_1/introduction.aux) (Content/Chapter_2/related-work.aux)
+(Content/Chapter_3/methodology.aux) (Content/Chapter_4/evaluation.aux)
+(Content/Chapter_5/future-work.aux))
+ ***********
+LaTeX2e <2025-11-01>
+L3 programming layer <2025-12-24>
+ ***********
+
+
+LaTeX Warning: There were undefined references.
+
+
+LaTeX Warning: Label(s) may have changed. Rerun to get cross-references right.
+
+
+Package rerunfilecheck Warning: File `main.out' has changed.
+(rerunfilecheck)                Rerun to get outlines right
+(rerunfilecheck)                or use package `bookmark'.
+
+Package rerunfilecheck Info: Checksums for `main.out':
+(rerunfilecheck)             Before: 2B90D39FC6AE5EB3090F2DDE442D6660;5189
+(rerunfilecheck)             After:  1F4FEEDF63AE587DCC07777CE140D3C2;8778.
+ ) 
+Here is how much of TeX's memory you used:
+ 36558 strings out of 467871
+ 833602 string characters out of 5414504
+ 1523713 words of memory out of 5000000
+ 64419 multiletter control sequences out of 15000+600000
+ 796062 words of font info for 107 fonts, out of 8000000 for 9000
+ 1141 hyphenation exceptions out of 8191
+ 84i,19n,94p,727b,2280s stack positions out of 10000i,1000n,20000p,200000b,200000s
+<C:/Users/long.nguyen18/AppData/Local/Programs/MiKTeX/fonts/type1/public/lm/l
+mbx12.pfb><C:/Users/long.nguyen18/AppData/Local/Programs/MiKTeX/fonts/type1/pub
+lic/lm/lmbx9.pfb><C:/Users/long.nguyen18/AppData/Local/Programs/MiKTeX/fonts/ty
+pe1/public/lm/lmex10.pfb><C:/Users/long.nguyen18/AppData/Local/Programs/MiKTeX/
+fonts/type1/public/lm/lmmi12.pfb><C:/Users/long.nguyen18/AppData/Local/Programs
+/MiKTeX/fonts/type1/public/lm/lmmi9.pfb><C:/Users/long.nguyen18/AppData/Local/P
+rograms/MiKTeX/fonts/type1/public/lm/lmr12.pfb><C:/Users/long.nguyen18/AppData/
+Local/Programs/MiKTeX/fonts/type1/public/lm/lmr17.pfb><C:/Users/long.nguyen18/A
+ppData/Local/Programs/MiKTeX/fonts/type1/public/lm/lmr6.pfb><C:/Users/long.nguy
+en18/AppData/Local/Programs/MiKTeX/fonts/type1/public/lm/lmr9.pfb><C:/Users/lon
+g.nguyen18/AppData/Local/Programs/MiKTeX/fonts/type1/public/lm/lmri12.pfb><C:/U
+sers/long.nguyen18/AppData/Local/Programs/MiKTeX/fonts/type1/public/lm/lmri9.pf
+b><C:/Users/long.nguyen18/AppData/Local/Programs/MiKTeX/fonts/type1/public/lm/l
+msy10.pfb><C:/Users/long.nguyen18/AppData/Local/Programs/MiKTeX/fonts/type1/pub
+lic/lm/lmsy9.pfb><C:/Users/long.nguyen18/AppData/Local/Programs/MiKTeX/fonts/ty
+pe1/public/lm/lmtk10.pfb><C:/Users/long.nguyen18/AppData/Local/Programs/MiKTeX/
+fonts/type1/public/lm/lmtt12.pfb><C:/Users/long.nguyen18/AppData/Local/Programs
+/MiKTeX/fonts/type1/public/lm/lmtt9.pfb><C:/Users/long.nguyen18/AppData/Local/P
+rograms/MiKTeX/fonts/type1/public/lm/lmtti10.pfb>
+Output written on main.pdf (84 pages, 5279839 bytes).
+PDF statistics:
+ 862 PDF objects out of 1000 (max. 8388607)
+ 324 named destinations out of 1000 (max. 500000)
+ 226 words of extra memory for PDF output out of 10000 (max. 10000000)
+

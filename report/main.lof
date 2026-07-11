@@ -1,0 +1,15 @@
+\addvspace {10\p@ }
+\addvspace {10\p@ }
+\addvspace {10\p@ }
+\contentsline {figure}{\numberline {1}{\ignorespaces Kiến trúc tổng thể và các luồng giao tiếp chính của hệ thống.}}{19}{figure.1}%
+\contentsline {figure}{\numberline {2}{\ignorespaces Giao diện hàm (ABI) giữa host và contract WASM.}}{24}{figure.2}%
+\contentsline {figure}{\numberline {3}{\ignorespaces Sơ đồ chuyển trạng thái của một node trong Ordering Service.}}{35}{figure.3}%
+\contentsline {figure}{\numberline {4}{\ignorespaces Quy trình bầu lãnh đạo theo độ ưu tiên.}}{40}{figure.4}%
+\contentsline {figure}{\numberline {5}{\ignorespaces Đường ống nhân bản và commit một block: đề xuất, chấp nhận theo quá bán, commit.}}{43}{figure.5}%
+\contentsline {figure}{\numberline {6}{\ignorespaces Kiến trúc đường ống và các gói con của Committing Peer.}}{49}{figure.6}%
+\addvspace {10\p@ }
+\contentsline {figure}{\numberline {7}{\ignorespaces Tốc độ commit bám sát tốc độ gửi tới ít nhất 20.000 tx/s; trần thực đo ở tải không giới hạn là ${\sim }73.500$ tx/s.}}{67}{figure.7}%
+\contentsline {figure}{\numberline {8}{\ignorespaces Thông lượng commit theo kích thước block: đạt đỉnh ${\sim }82.500$ tx/s ở block=250, với một vùng trũng lặp lại được ở block=1.000.}}{68}{figure.8}%
+\contentsline {figure}{\numberline {9}{\ignorespaces Ở tải 5.000 tx/s: chu kỳ ngắn cho nhiều block nhỏ, chu kỳ dài cho ít block lớn (bão hòa ở kích thước lô 1.000); thông lượng commit không đổi ${\sim }5.000$ tx/s.}}{69}{figure.9}%
+\contentsline {figure}{\numberline {10}{\ignorespaces Thông lượng theo số luồng gửi: vùng phẳng tối ưu ở 8--32 luồng (đỉnh tại 32, ${\sim }82.800$ tx/s), suy giảm khi vượt 32 do tranh chấp stream.}}{70}{figure.10}%
+\addvspace {10\p@ }

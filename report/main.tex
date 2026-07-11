@@ -69,6 +69,11 @@
 }
 \lstdefinestyle{pseudo}{language={},mathescape=true,keywordstyle=\color{codekw}\bfseries}
 
+% Biểu đồ kết quả thực nghiệm
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.17}
+\usepgfplotslibrary{groupplots}
+
 \begin{document}
 \fontsize{13pt}{15.6pt}\selectfont
 
@@ -114,6 +119,8 @@
 \include{Content/Chapter_1/introduction}
 \include{Content/Chapter_2/related-work}
 \include{Content/Chapter_3/methodology}
+\include{Content/Chapter_4/evaluation}
+\include{Content/Chapter_5/future-work}
 
 \addcontentsline{toc}{chapter}{References}
 \bibliographystyle{IEEEtran}

@@ -50,7 +50,7 @@ Hệ thống gồm bốn thành phần chạy độc lập, giao tiếp với nh
 Hình~\ref{fig:overall-arch} mô tả kiến trúc và các luồng giao tiếp chính.
 
 \begin{figure}[H]{}
-\includegraphics[width=\textwidth]{Images/architecture.png}
+\includegraphics[width=\textwidth]{Images/fg_1_architecture.png}
 \centering
 \caption{Kiến trúc tổng thể và các luồng giao tiếp chính của hệ thống.}
 \label{fig:overall-arch}
@@ -599,119 +599,355 @@ thay WebSocket vì luồng dữ liệu ở đây một chiều (server$\rightarr
 \section{Ordering Service --- Đồng thuận Raft}
 \label{sec:ordering-service}
 
-Đây là phần học thuật trọng tâm của khóa luận: \textbf{một hiện thực Raft tự viết
-hoàn toàn} (không dùng thư viện), với biến thể bầu lãnh đạo theo độ ưu tiên.
+Ordering Service là thành phần trọng tâm của khóa luận cả về mặt kỹ thuật lẫn học
+thuật. Đây là nơi hệ thống hiện thực một cơ chế \textbf{đồng thuận phân tán} theo
+tinh thần Raft~\cite{ongaro2014raft} nhưng \textbf{tự viết hoàn toàn} bằng Go
+(không dùng thư viện \texttt{etcd/raft} hay \texttt{hashicorp/raft}), với một biến
+thể bầu lãnh đạo \textit{theo độ ưu tiên} thay cho bầu cử theo timeout ngẫu nhiên
+của Raft nguyên bản. Mục này trình bày lần lượt: (i)~vai trò và bài toán tổng sắp
+thứ tự; (ii)~kiến trúc và các thành phần bên trong một node; (iii)~mô hình thông
+điệp và cách định tuyến; (iv)~vòng đời trạng thái của một node; (v)~quản lý thành
+viên và độ ưu tiên; (vi)~cơ chế quá bán (quorum) và cách nó chống phân ly não
+(split-brain); (vii)~quy trình bầu lãnh đạo chi tiết; (viii)~nhân bản log và cắt
+block --- đường nóng quyết định throughput; (ix)~giao block cho tầng ghi sổ;
+(x)~đồng bộ (sync) khi một node tụt hậu; (xi)~tầng mạng; và (xii)~các đánh đổi
+thiết kế.
 
-\subsection{Vai trò và lý do cần sắp xếp thứ tự}
+\subsection{Vai trò và bài toán tổng sắp thứ tự}
+\label{sec:ordering-role}
 
-Trong hệ phân tán, nhiều giao dịch đến gần như đồng thời từ nhiều nguồn. Nếu mỗi
-node tự quyết thứ tự, các bản sao sổ cái sẽ khác nhau, dẫn tới mất nhất quán.
-Ordering Service đảm bảo \textbf{mọi node thấy cùng một thứ tự giao dịch duy
-nhất} --- gọi là \textit{total order} (thứ tự toàn phần). Đây là điều kiện tiên
-quyết để world state hội tụ giống nhau ở mọi nơi.
+Trong một hệ phân tán, nhiều giao dịch đến gần như đồng thời từ nhiều nguồn khác
+nhau (nhiều Core Service, nhiều client). Nếu để mỗi bản sao sổ cái tự quyết định
+thứ tự áp dụng các giao dịch đó, các bản sao sẽ nhanh chóng phân kỳ: cùng một tập
+giao dịch nhưng áp dụng theo thứ tự khác nhau có thể dẫn tới trạng thái cuối cùng
+khác nhau (đặc biệt với mô hình UTXO, nơi một đầu vào chỉ được tiêu đúng một lần).
+Nhiệm vụ của Ordering Service là bảo đảm \textbf{mọi node trung thực đều quan sát
+thấy cùng một chuỗi giao dịch theo đúng một thứ tự duy nhất} --- thuộc tính này
+gọi là \textit{tổng sắp thứ tự} (total order). Đây là điều kiện tiên quyết để
+world state hội tụ giống hệt nhau tại mọi Committing Peer.
 
-\subsection{Raft của dự án khác Raft chuẩn ở đâu?}
-\label{sec:raft-diff}
+Điểm quan trọng về ranh giới trách nhiệm: Ordering Service \textbf{không} thực thi
+hợp đồng thông minh, \textbf{không} kiểm tra nội dung nghiệp vụ của giao dịch, và
+\textbf{không} xác minh chữ ký endorsement. Nó chỉ nhận các giao dịch đã được Core
+Service ``chạy thử'' và được Committing Peer ký xác nhận, rồi \textit{gom chúng vào
+các block theo một thứ tự nhất quán} và phân phát các block đó. Việc kiểm tra hợp
+lệ mật mã được ủy thác cho Committing Peer (Mục~\ref{sec:committing-peer}). Cách
+phân tách này giữ cho đường nóng đồng thuận nhẹ và nhanh: chi phí trên mỗi giao
+dịch tại tầng ordering gần như chỉ là chi phí xếp hàng và nhân bản, không kèm chi
+phí tính toán hợp đồng hay mật mã.
 
-Dự án giữ tinh thần Raft~\cite{ongaro2014raft} nhưng thay đổi cơ chế bầu cử cho
-\textit{xác định và đơn giản hơn}. Bảng~\ref{tab:raft-vs-standard} tóm tắt các
-khác biệt.
+Sổ cái mà Ordering Service duy trì hoàn toàn nằm trong bộ nhớ (RAM): một chuỗi các
+block đã commit và một nhật ký (log) các entry chưa commit. Đây là một lựa chọn
+thiết kế có chủ đích, ưu tiên tốc độ; hệ quả và cách bù đắp (cơ chế sync khi node
+khởi động lại) được bàn ở Mục~\ref{sec:ordering-tradeoffs}.
+
+\subsection{Kiến trúc và các thành phần bên trong một node}
+\label{sec:ordering-components}
+
+Mỗi node của Ordering Service là một tiến trình Go độc lập, được mô hình hóa bằng
+một cấu trúc trung tâm gọi là \texttt{RaftNode}. Toàn bộ trạng thái đồng thuận của
+node được gói trong cấu trúc này, và mọi luồng xử lý (goroutine) đều thao tác trên
+đó dưới sự bảo vệ của một số khóa (mutex) được phân tách theo chức năng để giảm
+tranh chấp. Bảng~\ref{tab:raft-components} liệt kê các thành phần chính bên trong
+một node cùng vai trò của chúng.
 
 \begin{table}[H]
 \centering
-\caption{So sánh Raft chuẩn và Raft của dự án}
-\label{tab:raft-vs-standard}
-\begin{tabular}{@{}p{2.6cm}p{4.4cm}p{4.4cm}@{}}
+\caption{Các thành phần bên trong một node của Ordering Service}
+\label{tab:raft-components}
+\begin{tabular}{@{}p{3.5cm}p{9.3cm}@{}}
 \toprule
-\textbf{Khía cạnh} & \textbf{Raft chuẩn} & \textbf{Dự án này} \\
+\textbf{Thành phần} & \textbf{Vai trò} \\
 \midrule
-Bầu Leader & Timeout \textbf{ngẫu nhiên}, ai hết giờ trước thì ứng cử & \textbf{Theo độ ưu tiên}: node tham gia sớm hơn = ưu tiên cao hơn = được chọn xác định \\
-Trạng thái & Follower / Candidate / Leader & Follower / ClaimingLeader / Leader / Syncing \\
-Phiếu bầu & Mỗi node bầu cho một candidate & Follower \textbf{ACK} lời tuyên bố ``Tôi là Leader mới'' \\
-Nội dung log & Lệnh tùy ý & Mỗi entry chứa \textbf{một block} \\
-Lưu bền & Ghi đĩa (term, log) & \textbf{Toàn bộ trong RAM} (nhanh, nhưng mất khi crash) \\
-Thư viện & etcd/raft, hashicorp/raft & \textbf{Tự viết hoàn toàn} \\
+Trạng thái đồng thuận & Trạng thái node (Follower/Leader/\dots), \textit{term} hiện tại, ID của Leader đang biết. Được bảo vệ bởi một khóa đọc--ghi chung. \\
+Membership view & Bản đồ toàn bộ thành viên đã biết của cluster (sống và chết), kèm thời điểm tham gia, độ ưu tiên và cờ sống/chết; có một số phiên bản (version) để phát hiện thay đổi. \\
+TxPool & Hồ chứa trong RAM các giao dịch đang chờ đóng block; chỉ Leader dùng. Được bảo vệ bằng khóa riêng để không tranh chấp với luồng đồng thuận. \\
+RaftLog & Nhật ký các entry \textit{chưa} commit; mỗi entry bao một block cùng chỉ số vị trí (index), chỉ số của entry liền trước và \textit{term}. \\
+OrderingBlock & Chuỗi các block \textit{đã} commit --- phần sổ cái mà node đã chốt. \\
+Deliver Manager & Quản lý danh sách người đăng ký (các Committing Peer) và phát tỏa mỗi block mới commit tới họ. \\
+Sync coordinator & Điều phối việc ``đuổi kịp'' khi node thiếu block (mới tham gia hoặc vừa hồi sinh). \\
+Transport & Tầng vận chuyển bọc một host libp2p: mở/nhận stream, gửi và phát tỏa thông điệp. \\
+Các kênh (channel) & Hàng đợi nội bộ nối các luồng: kênh thông điệp chung, kênh ACK block, kênh ACK bầu cử, kênh phản hồi trạng thái sync\dots \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\textbf{Vì sao bầu theo độ ưu tiên?} Trong Raft chuẩn, nhiều node có thể cùng
-ứng cử và chia phiếu (split vote), buộc phải bầu lại, làm chậm hội tụ.
-Priority-based loại bỏ điều này vì luôn có một node ``đáng làm Leader nhất''
-được xác định trước; ai cũng biết trước thứ tự ưu tiên nên ít bất định, dễ suy
-luận và debug. Đánh đổi là thiết kế này thiên về tính đơn giản và tốc độ hội tụ
-hơn là tổng quát hóa.
+\textbf{Mô hình đồng thời.} Khi khởi động, node chạy song song một số goroutine
+thường trực: (1)~một \textit{bộ xử lý thông điệp} rút thông điệp từ kênh chung và
+điều phối tới hàm xử lý tương ứng; (2)~một \textit{bộ giám sát heartbeat} chạy
+theo nhịp cố định (mỗi giây) để phát hiện Leader mất tích hoặc để tự gửi heartbeat
+nếu mình là Leader; và (3)~các handler stream do libp2p gọi mỗi khi có kết nối
+đến (thông điệp đồng thuận, giao dịch từ Core, yêu cầu giao block, yêu cầu sync).
+Ngoài ra, khi trở thành Leader, node còn chạy thêm một \textit{vòng cắt block tự
+động}. Các luồng này phối hợp qua kênh và mutex, được thiết kế để đường nóng
+(nhận giao dịch, cắt block, commit) không bị chặn bởi các luồng chậm.
 
-\subsection{Các trạng thái của node}
+\textbf{Phân tách khóa.} Một điểm đáng lưu ý về hiệu năng là việc tách các mutex
+theo trách nhiệm: khóa trạng thái đồng thuận, khóa TxPool, khóa membership, khóa
+sync và khóa vòng cắt block là độc lập nhau. Nhờ đó, việc Leader thêm giao dịch
+vào TxPool (rất thường xuyên dưới tải cao) không tranh chấp với việc đọc/ghi trạng
+thái term hay với luồng bầu cử. Đây là nền tảng để hệ thống duy trì throughput cao
+mà vẫn an toàn về mặt đồng thời.
 
-Mỗi node ở một trong bốn trạng thái, chuyển đổi như Hình~\ref{fig:raft-states}.
+\subsection{Mô hình thông điệp và định tuyến}
+\label{sec:ordering-messages}
+
+Các node giao tiếp với nhau bằng một kiểu thông điệp thống nhất, gồm: loại thông
+điệp, \textit{term} của người gửi, ID người gửi, phần dữ liệu kèm theo (tùy loại)
+và nhãn thời gian. Bảng~\ref{tab:raft-messages} liệt kê các loại thông điệp và
+mục đích của chúng, nhóm theo chức năng.
+
+\begin{table}[H]
+\centering
+\caption{Các loại thông điệp của tầng đồng thuận}
+\label{tab:raft-messages}
+\begin{tabular}{@{}p{2.2cm}p{4.3cm}p{6.3cm}@{}}
+\toprule
+\textbf{Nhóm} & \textbf{Thông điệp} & \textbf{Mục đích} \\
+\midrule
+Heartbeat & Heartbeat & Leader báo ``tôi còn sống'' cho các Follower. \\
+          & HeartbeatResponse & Follower báo lại cho một Leader ``ôi'' (stale) biết term/Leader hiện hành để nó tự thoái vị. \\
+\midrule
+Bầu cử & IAmNewLeader & Node ưu tiên cao nhất tuyên bố ``tôi là Leader mới'' cho toàn cluster. \\
+       & LeaderClaimAck & Follower trả lời CHẤP NHẬN/TỪ CHỐI lời tuyên bố đó. \\
+\midrule
+Thành viên & MembershipUpdate & Yêu cầu gia nhập (từ node mới) hoặc phát tỏa toàn bộ danh sách thành viên (từ Leader). \\
+           & MembershipAck & Leader xác nhận đã kết nạp và gửi kèm ảnh chụp thành viên. \\
+           & MembershipRequest/Response & Truy vấn/đáp danh sách thành viên (chỉ đọc), dùng khi tìm Leader lúc gia nhập. \\
+\midrule
+Giao dịch & TxRequest/TxResponse & Chuyển tiếp giao dịch tới Leader và xác nhận đã nhận. \\
+\midrule
+Block & BlockProposal & Leader đề xuất một entry log (một block) tới các Follower. \\
+      & BlockProposalAck & Follower báo đã chấp nhận (hoặc từ chối) đề xuất. \\
+      & BlockCommit & Leader thông báo một block đã đạt quá bán và được commit. \\
+\midrule
+Đồng bộ & SyncStatusRequest/Response & Dò trạng thái commit của các peer để chọn nguồn ``đuổi kịp''. \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Định tuyến hai tốc độ.} Điểm thiết kế đáng chú ý ở tầng định tuyến là
+không phải mọi thông điệp đều đi qua cùng một hàng đợi. Đa số thông điệp (heartbeat,
+bầu cử, thành viên, đồng bộ) được đẩy vào một \textit{kênh chung} và xử lý tuần tự
+bởi bộ xử lý thông điệp. Tuy nhiên, hai loại thông điệp có tần suất cực cao trên
+đường nóng --- \textit{giao dịch đến} và \textit{ACK đề xuất block} --- được tách
+ra xử lý riêng ngay tại handler stream: giao dịch được nạp thẳng vào TxPool (mỗi
+stream vốn đã chạy trong goroutine riêng), còn ACK block được đưa vào một kênh
+chuyên dụng. Lý do là: dưới tải hàng nghìn giao dịch mỗi giây, nếu để mọi thứ dồn
+vào một hàng đợi chung thì các thông điệp điều phối quan trọng (ACK, commit,
+heartbeat) sẽ bị kẹt sau một hàng dài giao dịch (hiện tượng nghẽn đầu hàng ---
+head-of-line blocking), làm chậm cả cụm. Việc tách kênh giữ cho tín hiệu đồng
+thuận luôn thông suốt bất kể lưu lượng giao dịch.
+
+\subsection{Vòng đời và các trạng thái của node}
+\label{sec:ordering-states}
+
+Mỗi node luôn ở một trong bốn trạng thái. So với Raft nguyên bản (Follower /
+Candidate / Leader), thiết kế này thay \textit{Candidate} bằng
+\texttt{ClaimingLeader} và bổ sung \texttt{Syncing}:
+
+\begin{itemize}
+  \item \textbf{Follower:} trạng thái mặc định. Node nghe heartbeat từ Leader,
+  nhận và ACK các đề xuất block, đồng thời chuyển tiếp giao dịch mà nó nhận được
+  tới Leader.
+  \item \textbf{ClaimingLeader:} node ưu tiên cao nhất còn sống đang tự tuyên bố
+  làm Leader và chờ thu đủ quá bán số phiếu chấp nhận.
+  \item \textbf{Leader:} node đã được chọn; nó gom giao dịch, cắt block, điều phối
+  commit, gửi heartbeat và phục vụ giao block cho tầng ghi sổ.
+  \item \textbf{Syncing:} node đang kéo các block/entry còn thiếu từ các peer khác
+  để đuổi kịp trạng thái cluster; trong thời gian này nó tạm hoãn xử lý đề xuất và
+  commit để tránh làm việc trùng.
+\end{itemize}
+
+Hình~\ref{fig:raft-states} minh họa các phép chuyển trạng thái. Các phép chuyển
+chính gồm: Follower~$\rightarrow$~ClaimingLeader khi phát hiện Leader hết hạn
+heartbeat và chính mình là ứng viên ưu tiên cao nhất;
+ClaimingLeader~$\rightarrow$~Leader khi thu đủ quá bán phiếu chấp nhận;
+ClaimingLeader~$\rightarrow$~Follower khi hết thời gian mà không đủ phiếu;
+Leader~$\rightarrow$~Follower khi nhận được bằng chứng có một Leader ở term cao
+hơn (qua heartbeat hoặc qua phản hồi heartbeat); và bất kỳ trạng thái nào cũng có
+thể chuyển sang Syncing khi phát hiện mình thiếu dữ liệu (mới gia nhập, hồi sinh
+sau mất kết nối, hoặc nhận commit cho một block chưa có trong log).
 
 \begin{figure}[H]
 \centering
-\caption{Sơ đồ chuyển trạng thái của một node Raft trong dự án.}
+\caption{Sơ đồ chuyển trạng thái của một node trong Ordering Service.}
 \label{fig:raft-states}
 \end{figure}
 
-\begin{itemize}
-  \item \textbf{Follower:} trạng thái mặc định; nghe heartbeat, nhận và ACK
-  block proposal.
-  \item \textbf{ClaimingLeader:} đang tự tuyên bố làm Leader, chờ thu đủ ACK đa
-  số.
-  \item \textbf{Leader:} gom giao dịch, cắt block, điều phối commit, gửi
-  heartbeat.
-  \item \textbf{Syncing:} đang kéo block bị thiếu từ peer khác.
-\end{itemize}
+\subsection{Quản lý thành viên và độ ưu tiên}
+\label{sec:ordering-membership}
 
-\subsection{Quorum tính trên tổng số thành viên}
+Mỗi node duy trì cục bộ một \textit{membership view} --- bản đồ toàn bộ thành viên
+cluster mà nó biết. Với mỗi thành viên, view lưu: ID của peer, thời điểm tham gia,
+một số \textbf{độ ưu tiên} (priority) và cờ sống/chết. Ngoài ra view có một số
+\textbf{phiên bản} (version) tăng dần mỗi khi có thay đổi (kết nạp thành viên, đánh
+dấu sống/chết), dùng để so sánh xem view của ai mới hơn.
+
+\textbf{Độ ưu tiên gán theo thứ tự tham gia.} Khi một node được kết nạp, nó nhận
+độ ưu tiên bằng số thành viên hiện có tại thời điểm đó. Nghĩa là node đầu tiên có
+độ ưu tiên 0 (cao nhất), node thứ hai có độ ưu tiên 1, và cứ thế. \textbf{Tham gia
+càng sớm thì số ưu tiên càng nhỏ, và số càng nhỏ thì mức ưu tiên càng cao.} Ứng
+viên Leader hợp lệ tại mọi thời điểm chính là \textit{node còn sống có độ ưu tiên
+nhỏ nhất}. Đây là điểm khác biệt cốt lõi so với Raft nguyên bản và là nền tảng cho
+cơ chế bầu cử xác định ở Mục~\ref{sec:leader-election}.
+
+\textbf{Luồng kết nạp.} Chỉ Leader mới có quyền kết nạp thành viên mới. Khi nhận
+được yêu cầu gia nhập, Leader thêm node vào view của mình, phát tỏa toàn bộ view
+mới cho mọi thành viên, rồi gửi riêng cho node mới một xác nhận kèm ảnh chụp view.
+Nhờ Leader là điểm tuần tự hóa duy nhất cho các thay đổi thành viên, mọi node cuối
+cùng hội tụ về cùng một danh sách với cùng cách gán độ ưu tiên.
+
+\textbf{Đánh dấu chết.} Một thành viên bị đánh dấu chết trong hai tình huống:
+Leader phát hiện không gửi được thông điệp tới một Follower (khi phát tỏa hoặc gửi
+heartbeat) thì đánh dấu Follower đó chết và phát tỏa view cập nhật; hoặc một
+Follower phát hiện Leader hết hạn heartbeat thì đánh dấu Leader chết trước khi khởi
+động bầu cử. Điểm tinh tế là một thành viên bị đánh dấu chết \textbf{không} bị xóa
+khỏi view --- nó vẫn được tính vào tổng số thành viên. Lý do liên quan trực tiếp
+đến cơ chế quá bán chống split-brain, trình bày ngay dưới đây.
+
+\subsection{Quá bán tính trên tổng số thành viên}
 \label{sec:quorum}
 
-Một quyết định an toàn then chốt: quorum đa số được tính trên \textbf{tổng số
-thành viên} (cả node sống lẫn chết), không chỉ trên số node đang sống:
-\begin{lstlisting}[language=Go,numbers=none]
-totalCount := Membership.GetTotalCount()  // ca song lan chet
-majority := totalCount/2 + 1
-\end{lstlisting}
-Lý do là để \textbf{chống split-brain} (não phân ly): nếu mạng chia đôi 50--50,
-không bên nào đạt quá bán trên tổng, nên không thể có hai Leader cùng commit ở
-hai phía. Đây là nguyên tắc an toàn nền tảng của Raft, dựa trên tính chất hai
-tập đa số bất kỳ luôn giao nhau.
+Một quyết định an toàn then chốt của thiết kế là: ngưỡng \textbf{quá bán} (quorum)
+được tính trên \textbf{tổng số thành viên đã biết} (cả node sống lẫn node đã bị
+đánh dấu chết), chứ không phải chỉ trên số node đang sống. Cụ thể, nếu tổng số
+thành viên là $N$ thì ngưỡng quá bán là
+\[
+  \text{quá bán} = \left\lfloor \tfrac{N}{2} \right\rfloor + 1 .
+\]
+Ngưỡng này được áp dụng ở hai nơi quan trọng nhất: khi một node tuyên bố làm Leader
+(cần thu đủ quá bán phiếu chấp nhận), và khi Leader commit một block (cần đủ quá
+bán ACK).
 
-\subsection{Bầu lãnh đạo và heartbeat}
+\textbf{Vì sao tính trên tổng chứ không trên số sống?} Đây chính là lá chắn nền
+tảng chống \textbf{phân ly não} (split-brain). Giả sử một cluster năm node bị chia
+đôi do sự cố mạng thành hai phân vùng, một bên ba node và một bên hai node. Nếu
+quá bán được tính theo số node \textit{sống mà mỗi bên quan sát được}, thì bên nào
+cũng có thể tự cho mình là ``đa số'' trong tầm nhìn hạn hẹp của nó và bầu ra một
+Leader riêng --- kết quả là hai Leader cùng commit các block khác nhau, sổ cái
+phân kỳ không thể hòa giải. Ngược lại, khi quá bán luôn tính trên tổng
+$N = 5$ (ngưỡng là 3), phân vùng hai node \textbf{không bao giờ} đạt nổi ba phiếu,
+nên không thể bầu Leader cũng không thể commit block; chỉ phân vùng ba node mới
+tiếp tục hoạt động. Tính chất toán học bảo đảm an toàn ở đây là: \textit{hai tập
+con quá bán bất kỳ của cùng một tập hợp luôn giao nhau}. Nhờ đó không thể tồn tại
+đồng thời hai quyết định quá bán mâu thuẫn (hai Leader cùng term, hoặc hai block
+khác nhau cùng vị trí).
+
+\textbf{Đánh đổi.} Cái giá của lựa chọn an toàn này là tính khả dụng (availability)
+trong một số kịch bản: nếu quá nửa số node thực sự chết cùng lúc, phần còn lại ---
+dù trung thực và kết nối tốt --- cũng không đạt được quá bán và do đó ngừng tiến
+triển (không bầu được Leader, không commit được block) cho đến khi đủ node hồi
+sinh. Đây là biểu hiện cụ thể của định lý CAP: khi buộc phải chọn, thiết kế ưu tiên
+\textbf{nhất quán} (consistency) hơn khả dụng, một lựa chọn phù hợp với sổ cái tài
+chính nơi phân kỳ dữ liệu là điều không thể chấp nhận.
+
+\subsection{Bầu lãnh đạo theo độ ưu tiên}
 \label{sec:leader-election}
 
-\subsubsection{Độ ưu tiên = thứ tự tham gia}
+Đây là đóng góp kỹ thuật đặc trưng nhất của Ordering Service. Thay vì cơ chế bầu
+cử theo timeout ngẫu nhiên của Raft nguyên bản --- nơi bất kỳ Follower nào hết giờ
+trước cũng có thể tự ứng cử, dẫn tới nguy cơ \textit{chia phiếu} (split vote) và
+phải bầu lại nhiều vòng --- thiết kế này dùng độ ưu tiên đã biết trước để làm cho
+việc bầu cử trở nên \textbf{xác định}. Bảng~\ref{tab:raft-vs-standard} tóm tắt các
+khác biệt.
 
-Mỗi thành viên cluster có một \texttt{Priority} (số nguyên), gán theo thứ tự
-tham gia: tham gia càng sớm, số càng nhỏ, càng được ưu tiên. Hàm
-\texttt{GetHighestPriorityAliveNode()} trả về node sống có priority nhỏ nhất ---
-chính là ứng viên Leader hợp lệ.
+\begin{table}[H]
+\centering
+\caption{So sánh Raft nguyên bản và Raft của dự án}
+\label{tab:raft-vs-standard}
+\begin{tabular}{@{}p{2.6cm}p{4.4cm}p{4.4cm}@{}}
+\toprule
+\textbf{Khía cạnh} & \textbf{Raft nguyên bản} & \textbf{Dự án này} \\
+\midrule
+Chọn Leader & Timeout \textbf{ngẫu nhiên}; ai hết giờ trước thì tự ứng cử & \textbf{Theo độ ưu tiên}: node tham gia sớm hơn = ưu tiên cao hơn = được chọn một cách xác định \\
+Trạng thái & Follower / Candidate / Leader & Follower / ClaimingLeader / Leader / Syncing \\
+Cơ chế phiếu & Mỗi node bầu cho một candidate; có thể chia phiếu & Follower \textit{chấp nhận} lời tuyên bố ``tôi là Leader mới'' của node ưu tiên cao nhất \\
+Nội dung log & Lệnh tùy ý & Mỗi entry bao đúng \textbf{một block} \\
+Lưu bền & Ghi đĩa (term, log) & \textbf{Toàn bộ trong RAM} (nhanh, mất khi crash, bù bằng sync) \\
+Thư viện & \texttt{etcd/raft}, \texttt{hashicorp/raft}\dots & \textbf{Tự viết hoàn toàn} \\
+\bottomrule
+\end{tabular}
+\end{table}
 
-\subsubsection{Các hằng số thời gian}
+\subsubsection{Phát hiện Leader mất tích}
+
+Mỗi node chạy một vòng giám sát theo nhịp mỗi giây. Nếu node là Leader, nó chỉ gửi
+heartbeat khi đã một khoảng thời gian (mặc định 2 giây) không phát đi thông điệp
+block nào --- vì bản thân việc đề xuất/commit block cũng đóng vai trò heartbeat,
+nên khi cluster đang bận cắt block thì không cần tốn thêm gói heartbeat riêng. Nếu
+node là Follower, mỗi lần giám sát nó kiểm tra khoảng thời gian kể từ tín hiệu cuối
+nhận được từ Leader; nếu vượt ngưỡng hết hạn heartbeat (mặc định 5 giây) thì coi
+như Leader đã mất và khởi động quy trình bầu cử. Bảng~\ref{tab:timing} liệt kê các
+hằng số thời gian của tầng đồng thuận.
 
 \begin{table}[H]
 \centering
 \caption{Các hằng số thời gian của tầng đồng thuận}
 \label{tab:timing}
-\begin{tabular}{@{}p{4cm}p{2cm}p{6cm}@{}}
+\begin{tabular}{@{}p{4.3cm}p{2.2cm}p{6cm}@{}}
 \toprule
 \textbf{Hằng số} & \textbf{Giá trị} & \textbf{Ý nghĩa} \\
 \midrule
-HeartbeatInterval & 2s & Leader gửi heartbeat nếu 2s chưa gửi block nào \\
-HeartbeatTimeout & 5s & Follower quá 5s không nghe Leader $\rightarrow$ bầu cử \\
-DetectionTimeout & 3s & Ngưỡng phát hiện (ticker chạy mỗi 1s) \\
-Cửa sổ chờ ACK & 10s & Thời gian thu ACK đa số khi tuyên bố Leader \\
-Hạn Leader kỳ vọng & 15s & Follower chờ node ưu tiên cao nhất ra tuyên bố \\
+Nhịp gửi heartbeat & 2\,s & Leader gửi heartbeat nếu suốt 2\,s không phát block nào \\
+Ngưỡng hết hạn heartbeat & 5\,s & Follower quá 5\,s không nghe Leader $\rightarrow$ bầu cử \\
+Nhịp giám sát & 1\,s & Vòng kiểm tra heartbeat chạy mỗi giây \\
+Cửa sổ chờ phiếu & 10\,s & Thời gian tối đa thu phiếu chấp nhận khi tuyên bố Leader (gấp đôi ngưỡng hết hạn) \\
+Hạn chờ Leader kỳ vọng & 15\,s & Follower chờ node ưu tiên cao nhất ra tuyên bố (gấp ba ngưỡng hết hạn) \\
+Chờ ACK mỗi block & 5\,s & Leader chờ đủ quá bán ACK cho một đề xuất block \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-Lưu ý: block proposal/commit cũng đóng vai trò heartbeat --- khi cluster đang
-bận cắt block thì không cần gửi heartbeat riêng (tiết kiệm mạng).
+\subsubsection{Quy trình bầu cử}
 
-\subsubsection{Quy trình bầu Leader}
+Khi một Follower phát hiện Leader mất, quy trình diễn ra như Hình~\ref{fig:election}
+và gồm các bước sau.
 
-Khi Follower phát hiện Leader mất (qua vòng giám sát \texttt{monitorHeartbeat()}
-chạy mỗi 1 giây), quy trình bầu cử diễn ra như Hình~\ref{fig:election}.
+\textbf{Bước 1 --- Xác định ứng viên.} Node đánh dấu Leader cũ là chết trong view
+của mình, rồi tra ra node còn sống có độ ưu tiên nhỏ nhất. Có hai khả năng:
+
+\begin{itemize}
+  \item \textit{Chính mình là ứng viên ưu tiên cao nhất:} node chuyển sang trạng
+  thái ClaimingLeader và tiến hành tuyên bố (Bước 2).
+  \item \textit{Người khác mới là ứng viên:} node \textbf{không} tự ứng cử. Thay
+  vào đó nó ghi nhận ``Leader kỳ vọng'' là node kia và đặt một hạn chờ (mặc định
+  15 giây). Nó lặng lẽ chờ node kia ra tuyên bố. Nếu quá hạn mà không thấy tuyên
+  bố nào, node coi ứng viên đó cũng đã chết, đánh dấu chết trong view, rồi lặp lại
+  Bước 1 để tìm ứng viên ưu tiên kế tiếp. Cơ chế ``chờ theo hạn'' này chính là thứ
+  ngăn nhiều node cùng đua nhau ứng cử.
+\end{itemize}
+
+\textbf{Bước 2 --- Tuyên bố làm Leader.} Ứng viên tăng \textit{term} của mình lên
+một đơn vị, chuyển sang ClaimingLeader, rồi phát tỏa thông điệp ``tôi là Leader
+mới'' (kèm term mới và độ ưu tiên của mình) tới \textbf{toàn bộ} thành viên đã biết
+(cả sống lẫn chết, để phòng trường hợp một node bị đánh dấu chết nhầm vẫn nhận
+được). Sau đó nó chờ thu phiếu chấp nhận trong cửa sổ tối đa 10 giây.
+
+\textbf{Bước 3 --- Follower đánh giá và bỏ phiếu.} Khi một node nhận được lời
+tuyên bố, nó quyết định chấp nhận hay từ chối dựa trên các điều kiện an toàn:
+
+\begin{itemize}
+  \item Nếu node đang \textit{chờ đúng} người tuyên bố này (đây là ``Leader kỳ
+  vọng'' của nó), nó chấp nhận ngay, cập nhật Leader và term theo lời tuyên bố.
+  \item Nếu node đang là Leader hoặc đang ClaimingLeader, nó \textbf{luôn từ chối}
+  lời tuyên bố của node khác (xem phân tích chống split-brain ở
+  Mục~\ref{sec:ordering-splitbrain}).
+  \item Trong các trường hợp còn lại, node chỉ chấp nhận khi cả ba điều kiện đồng
+  thời thỏa: (a)~người tuyên bố \textit{đúng là} node còn sống có độ ưu tiên cao
+  nhất theo view của nó; (b)~term trong lời tuyên bố \textit{không nhỏ hơn} term
+  hiện tại của nó; và (c)~Leader hiện tại (nếu còn) thực sự đã hết hạn heartbeat.
+  Để tránh bỏ phiếu vội, nếu view của node vẫn còn ghi nhận một Leader cũ chưa hết
+  hạn, nó sẽ chờ cho tới khi Leader đó thực sự hết hạn rồi mới đánh giá lại --- nhờ
+  vậy nó không từ chối oan một lời tuyên bố hợp lệ chỉ vì đồng hồ của nó lệch pha.
+\end{itemize}
+
+\textbf{Bước 4 --- Kết thúc tuyên bố.} Ứng viên đếm số phiếu chấp nhận (tính cả
+phiếu của chính nó). Nếu đạt \textbf{quá bán trên tổng số thành viên}, nó chính
+thức trở thành Leader: bắt đầu gửi heartbeat và khởi động vòng cắt block. Nếu hết
+cửa sổ 10 giây mà không đủ phiếu, nó \textbf{hoàn tác}: giảm term về giá trị cũ và
+quay lại trạng thái Follower. Việc hoàn tác term rất quan trọng để một lần tuyên bố
+thất bại không để lại ``rác term'' làm nhiễu các vòng bầu cử sau.
 
 \begin{figure}[H]
 \centering
@@ -719,112 +955,235 @@ chạy mỗi 1 giây), quy trình bầu cử diễn ra như Hình~\ref{fig:elect
 \label{fig:election}
 \end{figure}
 
-Cụ thể: (1)~\texttt{selectNewLeader()} đánh dấu Leader cũ chết, chọn node ưu
-tiên cao nhất còn sống; nếu chính mình là node đó thì chuyển sang
-\texttt{ClaimingLeader}, nếu không thì chờ node kia ra tuyên bố trong hạn 15s.
-(2)~\texttt{sendIAmNewLeaderAndWaitForAcks()} tăng term, phát
-\texttt{MsgIAmNewLeader} tới mọi thành viên, chờ tối đa 10s thu các
-\texttt{MsgLeaderClaimAck}. (3)~Follower trả YES/NO dựa trên ba điều kiện: người
-tuyên bố có đúng là node ưu tiên cao nhất còn sống không; \texttt{term} có
-$\geq$ \texttt{currentTerm} của mình không; và Leader hiện tại có thực sự đã
-``ôi'' (stale) không. (4)~\texttt{finishClaim()}: nếu thu được $\geq$ majority
-ACK YES thì trở thành Leader, ngược lại quay về Follower.
+\textbf{Vì sao bầu theo độ ưu tiên?} Vì thứ tự ưu tiên được mọi node biết trước và
+thống nhất (suy ra từ membership view chung), tại mỗi thời điểm luôn có đúng
+\textit{một} node ``đáng làm Leader nhất''. Các node khác không đua ứng cử mà chỉ
+chờ node đó ra tuyên bố. Điều này loại bỏ hiện tượng chia phiếu vốn buộc Raft
+nguyên bản phải bầu lại nhiều vòng, giúp thời gian hội tụ ngắn và hành vi dễ suy
+luận, dễ gỡ lỗi. Khi ứng viên ưu tiên nhất cũng chết, cơ chế ``hạn chờ Leader kỳ
+vọng'' tự động đẩy quyền ứng cử xuống node ưu tiên kế tiếp một cách trật tự. Đánh
+đổi là thiết kế này thiên về sự đơn giản và tốc độ hội tụ trong các kịch bản vận
+hành thường gặp, thay vì tổng quát hóa cho mọi mô hình lỗi.
+
+\subsection{Chống phân ly não (split-brain)}
+\label{sec:ordering-splitbrain}
+
+Bảo đảm ``không có hai Leader cùng commit các block mâu thuẫn'' là yêu cầu an toàn
+quan trọng nhất của tầng đồng thuận. Thiết kế đạt được điều này bằng \textbf{nhiều
+lớp phòng vệ chồng lên nhau}, chứ không dựa vào một cơ chế duy nhất.
+
+\textbf{Lớp 1 --- Quá bán trên tổng số thành viên.} Như đã phân tích ở
+Mục~\ref{sec:quorum}, vì hai tập quá bán bất kỳ luôn giao nhau, không thể có hai
+node cùng đạt quá bán phiếu trong cùng một term. Trong một phân vùng mạng, chỉ phân
+vùng chứa quá bán thành viên mới có thể bầu được Leader và commit block; phân vùng
+thiểu số bị đình trệ hoàn toàn.
+
+\textbf{Lớp 2 --- Leader và ClaimingLeader luôn từ chối lời tuyên bố khác.} Một
+node đang là Leader (hoặc đang trong quá trình tuyên bố) sẽ không bao giờ chấp
+nhận lời tuyên bố làm Leader của node khác. Điều này ngăn một node đang giữ quyền
+vô tình ``nhường ngôi'' rồi lại tiếp tục hành xử như Leader ở term mới, một tình
+huống có thể sinh ra hai Leader thoáng qua. Thay vì chấp nhận, node giữ nguyên vai
+trò và sẽ chỉ \textit{thoái vị một cách thụ động} khi có bằng chứng rõ ràng về một
+term cao hơn (Lớp 3).
+
+\textbf{Lớp 3 --- Thoái vị theo term.} Term đóng vai trò đồng hồ logic toàn cục.
+Khi một Leader nhận được heartbeat từ một Leader khác với term không nhỏ hơn term
+của mình, nó lập tức thoái vị về Follower. Ở chiều ngược lại, nếu một Leader ``ôi''
+(đang ở term cũ) gửi heartbeat cho một Follower đã biết term mới hơn, Follower sẽ
+gửi lại một phản hồi báo cho Leader cũ biết term và Leader hiện hành; nhận được
+phản hồi này, Leader cũ tự thoái vị và chuyển sang đồng bộ. Nhờ cặp cơ chế này, một
+Leader lỗi thời (chẳng hạn vừa hồi sinh sau khi bị cô lập) không thể tiếp tục
+commit: ngay khi tiếp xúc lại với phần cluster đang chạy ở term cao hơn, nó bị buộc
+thoái vị.
+
+\textbf{Lớp 4 --- Kiểm tra tính liên tục của log khi nhận block.} Ngay cả khi một
+đề xuất block lọt tới Follower, Follower vẫn từ chối nếu người gửi không phải Leader
+mà nó công nhận, nếu term của đề xuất cũ hơn term hiện tại, hoặc nếu đề xuất không
+nối tiếp liền mạch với log của nó. Chi tiết ở Mục~\ref{sec:block-cutting}.
+
+\textbf{Phạm vi bảo đảm.} Các lớp trên bảo đảm an toàn trong \textbf{đa số kịch bản
+lỗi thường gặp}: một Leader chết và được thay thế, một Follower chết rồi hồi sinh,
+mạng chia thành một phân vùng đa số và một phân vùng thiểu số, hoặc một Leader cũ
+tái xuất sau khi bị cô lập. Điều thiết kế \textit{không} bao trùm là hòa giải hai
+phân vùng từng cùng tồn tại và cùng ghi dữ liệu độc lập trong thời gian dài --- vì
+quá bán trên tổng số thành viên đã ngăn phân vùng thiểu số commit ngay từ đầu, nên
+tình huống ``hai lịch sử cùng hợp lệ cần trộn lại'' về nguyên tắc không phát sinh;
+phân vùng thiểu số khi tái hợp chỉ việc đồng bộ theo phân vùng đa số. Đây là lý do
+mục tiêu được phát biểu là ``không split-brain trong đa số trường hợp'': thiết kế
+loại bỏ các con đường dẫn tới hai lịch sử mâu thuẫn trong mô hình lỗi đã chọn (mất
+node, phân vùng đơn giản), thay vì cố xử lý mọi mô hình lỗi Byzantine hay phân vùng
+phức tạp.
 
 \subsection{Nhân bản log và cắt block}
 \label{sec:block-cutting}
 
-Đây là ``đường nóng'' (hot path) quyết định throughput của hệ thống.
+Đây là \textbf{đường nóng} (hot path) quyết định throughput của toàn hệ thống: từ
+lúc giao dịch vào TxPool của Leader đến lúc block chứa nó được commit và phát đi.
 
 \subsubsection{TxPool và vòng cắt block lai}
 
-Leader nhận giao dịch và gom vào một \textbf{TxPool} (hồ chứa trong RAM). Vòng
-cắt block (\texttt{StartAutoProposeBlock()}) hoạt động theo cơ chế \textbf{lai
-(hybrid)} vừa theo sự kiện vừa theo timeout:
+Giao dịch mà Leader nhận (trực tiếp từ Core Service, hoặc do một Follower chuyển
+tiếp) được gom vào TxPool trong RAM. Một vòng cắt block chạy trên Leader theo cơ
+chế \textbf{lai (hybrid)}, kết hợp kích hoạt theo sự kiện và theo thời gian:
 
-\begin{lstlisting}[numbers=none,caption={Vòng cắt block lai},captionpos=b]
-lap mai:
-   neu len(TxPool) >= AutoProposeBlockSize (1000):
-        -> cat block NGAY (khong cho)
-   nguoc lai:
-        -> cho toi da AutoProposeInterval (100ms) roi xa phan con lai
-   sau khi propose:
-        -> cho block truoc commit xong (hoac timeout 10s) moi propose tiep
-\end{lstlisting}
+\begin{itemize}
+  \item \textbf{Khi hàng chờ đã đầy một lô:} nếu số giao dịch trong TxPool đạt tới
+  kích thước lô mục tiêu (mặc định 1000 giao dịch), Leader cắt block \textbf{ngay
+  lập tức}, không chờ thêm. Dưới tải cao và bền vững, TxPool gần như luôn đầy, nên
+  các block được cắt liên tiếp nhau ở nhịp bằng đúng thời gian khứ hồi của một chu
+  trình commit --- không còn ``thuế thời gian'' cố định trên mỗi block.
+  \item \textbf{Khi hàng chờ chưa đầy:} Leader chờ tối đa một khoảng (mặc định
+  100\,ms) để gom thêm giao dịch, rồi xả (cắt block) phần đang có. Nếu vẫn rỗng thì
+  lặp lại vòng chờ.
+  \item \textbf{Một block trong bay tại một thời điểm:} sau khi đề xuất một block,
+  Leader chờ block đó commit xong (hoặc hết một hạn an toàn) rồi mới đề xuất block
+  kế. Nghĩa là không có nhiều block cùng được đề xuất chồng lấn. Ràng buộc này giữ
+  cho ngữ nghĩa chuỗi hash và cơ chế đồng bộ đơn giản, dễ lập luận đúng đắn.
+\end{itemize}
 
-\textbf{Đánh đổi kích thước lô:} block lớn $\rightarrow$ ít block hơn,
-throughput cao hơn (chi phí đồng thuận chia cho nhiều giao dịch); nhưng nếu tải
-thấp, phải chờ tới 100\,ms mới cắt $\rightarrow$ latency tăng. Cơ chế lai cân
-bằng: tải cao thì cắt ngay theo kích thước, tải thấp thì xả theo thời gian.
+\textbf{Đánh đổi kích thước lô.} Lô lớn nghĩa là ít block hơn cho cùng một khối
+lượng giao dịch, nên chi phí đồng thuận cố định (một vòng đề xuất--ACK--commit)
+được chia đều cho nhiều giao dịch $\rightarrow$ throughput cao hơn. Nhưng khi tải
+thấp, phải chờ tới hết khoảng thời gian gom mới cắt block $\rightarrow$ độ trễ trên
+mỗi giao dịch tăng. Cơ chế lai cân bằng hai thái cực: tải cao thì cắt ngay theo
+kích thước (tối ưu throughput), tải thấp thì xả theo thời gian (giới hạn độ trễ).
 
-\subsubsection{Đề xuất, ACK và commit}
+\subsubsection{Cấu trúc block và chuỗi hash}
 
-Khi cắt block, Leader: (1)~lấy $N$ giao dịch đầu từ TxPool, tính \textbf{Merkle
-root} từ các \texttt{txid} (với block $>1000$ tx, việc tính Merkle được song
-song hóa), tính \textbf{Hash} = double-SHA256 của header, đặt
-\texttt{PrevHash = lastCommittedHash}; (2)~tạo \texttt{LogEntry} với
-\texttt{Index}, \texttt{PrevLogIndex}, \texttt{Term}, append vào
-\texttt{RaftLog}; (3)~phát \texttt{MsgBlockProposal} tới mọi Follower. Follower
-kiểm tra người gửi là Leader, \texttt{term >= currentTerm}, và
-\textit{kiểm tra liên tục log} (\texttt{entry.PrevLogIndex == lastIndex} của
-mình); nếu khớp thì append và gửi \texttt{MsgBlockProposalAck}, nếu lệch thì từ
-chối (phải sync). Khi Leader đếm đủ majority ACK, nó \textbf{commit}: thêm block
-vào \texttt{OrderingBlock}, cập nhật \texttt{lastCommittedHash}, gọi
-\texttt{DeliverMgr.NotifyNewBlock()}, xóa giao dịch đã đóng block khỏi TxPool, và
-phát \texttt{MsgBlockCommit} cho Follower.
+Khi cắt block, Leader tạo một block với header kiểu Bitcoin, gồm: nhãn thời gian,
+hash của block trước (\textit{prev hash}), gốc cây Merkle của danh sách giao dịch,
+một trường nonce, và hash của chính block. Gốc Merkle được tính từ định danh
+(txid) của các giao dịch; với block lớn (trên 1000 giao dịch), tầng băm đầu tiên
+của cây Merkle được \textbf{song song hóa} trên nhiều lõi CPU để giảm độ trễ tính
+toán. Hash của block là \textbf{double-SHA256} của phần header (băm SHA-256 hai
+lần liên tiếp), đúng theo cách Bitcoin làm. Việc dùng prev hash làm cho các block
+móc xích vào nhau: sửa một block ở giữa sẽ làm sai hash của mọi block sau. Điều
+cốt yếu là hàm băm và cách tính gốc Merkle phải \textbf{trùng khớp tuyệt đối} giữa
+nơi tạo block (Ordering Service) và nơi kiểm tra block (Committing Peer), nếu không
+block hợp lệ sẽ bị từ chối oan.
 
-\subsection{Giao block (Deliver) và Đồng bộ (Sync)}
+\subsubsection{Đề xuất, chấp nhận và commit}
+
+Chu trình nhân bản một block diễn ra như Hình~\ref{fig:block-pipeline}:
+
+\textbf{(1) Đề xuất.} Leader lấy các giao dịch đầu hàng từ TxPool, tạo block với
+prev hash trỏ tới block commit gần nhất, rồi bọc block vào một \textit{entry log}
+mang chỉ số vị trí kế tiếp, chỉ số của entry liền trước, và term hiện tại. Entry
+này được thêm vào RaftLog cục bộ của Leader, rồi phát tỏa cho mọi Follower dưới
+dạng đề xuất block.
+
+\textbf{(2) Follower kiểm tra và ACK.} Mỗi Follower khi nhận đề xuất sẽ kiểm tra
+theo thứ tự: người gửi có đúng là Leader mà nó công nhận không; term của đề xuất
+có không nhỏ hơn term của nó không; và quan trọng nhất --- \textbf{kiểm tra tính
+liên tục của log}: chỉ số entry liền trước trong đề xuất phải khớp với chỉ số cuối
+cùng trong log của Follower. Nếu khớp, Follower thêm entry vào log của mình và gửi
+ACK chấp nhận; nếu lệch (log bị ``nhảy cóc'', thiếu entry ở giữa), Follower từ chối
+kèm lý do --- đây là tín hiệu để nó chuyển sang đồng bộ. Ngoài ra, nếu entry liền
+trước tồn tại nhưng lệch term, Follower cắt bỏ phần log xung đột trước khi xử lý
+tiếp. Việc kiểm tra liên tục này là cốt lõi bảo đảm mọi bản sao log giống hệt nhau
+theo cùng thứ tự.
+
+\textbf{(3) Commit khi đủ quá bán.} Leader thu ACK vào một kênh chuyên dụng và đếm.
+Ngay khi số ACK (kể cả của chính Leader) đạt \textbf{quá bán trên tổng số thành
+viên}, Leader commit block: nối block vào chuỗi đã commit, cập nhật con trỏ hash
+cho block kế, thông báo cho tầng giao block, loại các giao dịch vừa đóng block ra
+khỏi TxPool, và phát tỏa thông điệp commit cho các Follower. Trường hợp cluster chỉ
+có một node, chính Leader đã tự đủ quá bán nên commit ngay không cần chờ. Nếu hết
+hạn chờ ACK (mặc định 5 giây) mà chưa đủ quá bán, block không được commit.
+
+\textbf{(4) Follower commit.} Khi nhận thông điệp commit, Follower tra entry tương
+ứng trong log của mình rồi nối block vào chuỗi đã commit và chuyển tiếp cho tầng
+giao block. Nếu nó không tìm thấy entry đó trong log (đã bỏ lỡ đề xuất tương ứng),
+nó khởi động đồng bộ để đuổi kịp thay vì commit mù.
+
+\begin{figure}[H]
+\centering
+\caption{Đường ống nhân bản và commit một block: đề xuất, chấp nhận theo quá bán, commit.}
+\label{fig:block-pipeline}
+\end{figure}
+
+Cần phân biệt hai cấu trúc lưu block ở tầng ordering: \textit{RaftLog} chứa các
+entry \textit{chưa} commit (block đã đề xuất nhưng chưa chắc chắn), còn
+\textit{OrderingBlock} chứa các block \textit{đã} commit (đã chốt). Một entry chỉ
+di chuyển từ khái niệm ``trong log'' sang ``đã commit'' khi đạt quá bán ACK; đây
+chính là ranh giới giữa dữ liệu tạm và dữ liệu bền của tầng đồng thuận.
+
+\subsection{Giao block cho tầng ghi sổ (Deliver)}
+\label{sec:deliver}
+
+Sau khi commit, block cần tới tay các Committing Peer để được kiểm tra và ghi vĩnh
+viễn. Việc này do một \textit{trình quản lý giao block} đảm nhiệm theo mô hình
+\textbf{đăng ký và phát tỏa} (publish--subscribe). Mỗi Committing Peer mở một kết
+nối lâu dài tới orderer và gửi một yêu cầu kèm chỉ số ``tôi đã có tới block thứ
+mấy''. Orderer lập tức gửi ngay toàn bộ các block đã commit kể từ chỉ số đó (giúp
+peer bắt kịp lịch sử), rồi \textit{đăng ký} peer vào danh sách nhận để tiếp tục đẩy
+các block tương lai ngay khi chúng được commit. Kết nối được giữ mở lâu dài --- đây
+là mô hình \textit{đẩy theo dòng} (streaming push), peer không phải hỏi thăm liên
+tục.
+
+Mỗi người đăng ký có một hàng đợi đệm riêng (sức chứa 64 block). Điểm thiết kế đáng
+chú ý về độ bền vững: khi phát tỏa một block, nếu hàng đợi của một peer đang đầy
+(peer đó xử lý chậm), block sẽ bị \textbf{bỏ qua không chặn} (non-blocking) đối với
+peer đó, thay vì làm nghẽn luồng commit của cả cluster. Một peer bị bỏ lỡ block như
+vậy sẽ tự phát hiện lỗ hổng và bắt kịp bằng cơ chế đồng bộ. Nói cách khác, tốc độ
+của tầng đồng thuận không bị ghì lại bởi peer chậm nhất.
+
+\subsection{Đồng bộ khi node tụt hậu (Sync)}
 \label{sec:deliver-sync}
 
-\subsubsection{Deliver --- mô hình đăng ký \& phát tỏa}
+Vì sổ cái của tầng ordering nằm trong RAM, một node mới tham gia hoặc vừa hồi sinh
+sau sự cố sẽ thiếu nhiều block. Ngoài ra, một Follower có thể bỏ lỡ vài block do
+mạng chập chờn. Cơ chế \textbf{đồng bộ} lo việc ``đuổi kịp'' theo mô hình
+\textbf{kéo} (pull): node tụt hậu chủ động đi lấy dữ liệu còn thiếu. Quy trình đồng
+bộ được kích hoạt trong nhiều tình huống --- lần đầu gia nhập, phát hiện gián đoạn
+heartbeat kéo dài rồi có lại tín hiệu, một Leader cũ vừa thoái vị, hoặc nhận commit
+cho một block không có trong log --- và diễn ra qua các pha sau.
 
-\texttt{DeliverManager} quản lý danh sách \textbf{subscriber} (mỗi Committing
-Peer là một subscriber). \texttt{subscribe()} tạo một channel có đệm (cap 64);
-\texttt{NotifyNewBlock(block)} gửi block tới mọi subscriber, và nếu subscriber
-chậm (channel đầy) thì block bị \textbf{bỏ qua không chặn} (non-blocking) để
-không làm nghẽn luồng commit --- peer chậm sẽ tự bắt kịp bằng sync. Khi một
-Committing Peer kết nối qua protocol \texttt{/raft-order-service/deliver/1.0.0},
-nó gửi \texttt{DeliverRequest\{FromIndex\}}; orderer gửi ngay tất cả block đã
-commit từ \texttt{FromIndex}, rồi \texttt{subscribe()} để stream tiếp block
-tương lai. Kết nối giữ mở lâu dài --- đây là \textit{streaming push}, peer không
-phải hỏi liên tục.
+\textbf{Pha 1 --- Khám phá.} Node phát một yêu cầu dò trạng thái kèm chỉ số commit
+hiện tại của mình tới các peer còn sống, rồi thu các phản hồi trong một cửa sổ ngắn
+(mặc định 2 giây). Mỗi phản hồi cho biết chỉ số commit, hash của block commit cuối,
+chỉ số log cuối, ID của Leader mà peer đó biết, và phiên bản membership.
 
-\subsubsection{Sync --- đồng bộ bốn pha}
+\textbf{Pha 2 --- Chọn mục tiêu.} Node gom các phản hồi theo cặp
+\textit{(chỉ số commit, hash commit)} và chọn nhóm có \textbf{nhiều phiếu nhất};
+nếu hòa thì ưu tiên nhóm có chỉ số commit cao hơn. Việc bỏ phiếu theo cặp
+(chỉ số, hash) bảo đảm node đồng bộ theo \textit{trạng thái được đa số peer đồng
+thuận}, chứ không bị một peer đơn lẻ (có thể đang lỗi hoặc giữ nhánh sai) dẫn dắt.
+Leader nằm trong nhóm thắng được ưu tiên chọn làm nguồn tải chính.
 
-Khi một orderer mới tham gia hoặc vừa hồi sinh, nó có thể thiếu nhiều block.
-\texttt{sync.go} lo việc ``đuổi kịp'' theo mô hình \textbf{pull (kéo)}. Sync gồm
-bốn pha:
+\textbf{Pha 3 --- Tải block song song.} Khoảng block còn thiếu được chia thành các
+\textit{shard} (mỗi shard 64 block). Các shard được tải \textbf{đồng thời} từ nhiều
+nguồn theo kiểu xoay vòng để cân tải; nếu tải một shard từ một nguồn thất bại, node
+thử nguồn kế tiếp. Cách chia shard song song này rút ngắn đáng kể thời gian đuổi
+kịp khi cần tải hàng nghìn block.
 
-\begin{enumerate}
-  \item \textbf{Khám phá (${\sim}2$s):} phát \texttt{MsgSyncStatusRequest} kèm
-  \texttt{commitIndex} của mình; thu \texttt{MsgSyncStatusResponse} từ các peer
-  (gồm \texttt{commitIndex}, \texttt{commitHash}, \texttt{logLastIndex},
-  \texttt{leaderID}, phiên bản membership).
-  \item \textbf{Chọn nguồn:} nhóm các phản hồi theo cặp
-  \texttt{(commitIndex, commitHash)}; chọn nhóm có \textbf{nhiều phiếu nhất}
-  (đồng thuận mạnh nhất), hòa thì ưu tiên \texttt{commitIndex} cao hơn; ưu tiên
-  Leader trong nhóm thắng làm nguồn tải. Việc bỏ phiếu theo
-  \texttt{(commitIndex, commitHash)} đảm bảo node sync từ \textit{trạng thái đa
-  số đồng ý}, không bị một node lỗi đánh lừa.
-  \item \textbf{Tải block song song:} chia khoảng \texttt{[from..to]} thành các
-  shard (mỗi shard 64 block); tải các shard song song từ nhiều nguồn
-  (round-robin cân tải), thất bại thì thử nguồn kế.
-  \item \textbf{Xác minh \& cài đặt:} \texttt{verifyHashChain()} kiểm tra mỗi
-  block có \texttt{PrevHash} khớp \texttt{Hash} block trước, block cuối khớp
-  \texttt{commitHash} mục tiêu; sai thì sync thất bại và thử lại. Nếu đúng thì
-  append block, cài log entry, cập nhật \texttt{lastCommittedHash}, chuyển
-  Syncing $\rightarrow$ Follower.
-\end{enumerate}
+\textbf{Pha 4 --- Xác minh chuỗi hash.} Trước khi cài đặt, node kiểm tra tính toàn
+vẹn của toàn bộ dãy block tải về: prev hash của mỗi block phải khớp hash của block
+liền trước; hash lưu trong mỗi block phải khớp với hash tính lại độc lập từ header;
+và hash của block cuối cùng phải khớp với hash mục tiêu đã chọn ở Pha 2. Nếu bất kỳ
+kiểm tra nào sai, toàn bộ lần đồng bộ bị hủy và thử lại --- node không cài đặt dữ
+liệu chưa được xác minh.
 
-Về an toàn, node đang tự sync sẽ \textit{từ chối phục vụ} sync cho node khác để
-không lan truyền dữ liệu cũ.
+\textbf{Pha 5 --- Cài đặt.} Nếu chuỗi hash hợp lệ, node nối các block vào sổ cái,
+chuyển tiếp chúng cho tầng giao block, cập nhật con trỏ hash, và nếu cần thì kéo
+nốt các entry log chưa commit (phần vượt quá chỉ số commit). Cuối cùng node rời
+trạng thái Syncing về Follower.
 
-\subsection{Networking}
+Về an toàn của chính cơ chế đồng bộ: một node \textbf{đang tự đồng bộ sẽ từ chối
+phục vụ} yêu cầu đồng bộ của node khác, để không lan truyền dữ liệu mà bản thân
+chưa xác minh xong. Ngoài ra, mỗi node chỉ chạy một tiến trình đồng bộ tại một thời
+điểm; nhiều kích hoạt đồng thời được gộp làm một.
+
+\subsection{Tầng mạng}
 \label{sec:ordering-network}
 
-Tầng vận chuyển (\texttt{transport.go}) bọc một libp2p host với các thao tác
-\texttt{SendMessage}, \texttt{BroadcastMessage} (gửi bất đồng bộ kèm callback xử
-lý lỗi để đánh dấu peer chết) và \texttt{NewStream}. Bảng~\ref{tab:protocols}
-liệt kê các Protocol ID dùng trong toàn hệ thống.
+Toàn bộ giao tiếp của Ordering Service dựa trên mạng ngang hàng \texttt{libp2p}.
+Một tầng vận chuyển bọc host libp2p và cung cấp các thao tác: gửi thông điệp tới
+một peer, phát tỏa thông điệp tới một tập peer (bất đồng bộ, kèm khả năng gọi lại
+khi gửi thất bại để đánh dấu peer chết), và mở stream chuyên dụng cho từng loại
+lưu lượng. Mỗi loại lưu lượng dùng một \textit{Protocol ID} riêng để libp2p phân
+tách và định tuyến tới đúng handler. Bảng~\ref{tab:protocols} liệt kê các Protocol
+ID dùng trong toàn hệ thống.
 
 \begin{table}[H]
 \centering
@@ -834,9 +1193,9 @@ liệt kê các Protocol ID dùng trong toàn hệ thống.
 \toprule
 \textbf{Protocol ID} & \textbf{Mục đích} \\
 \midrule
-/raft-order-service/1.0.0 & Thông điệp consensus (heartbeat, bầu cử, membership) \\
-/raft-order-service/endorsement/1.0.0 & Core $\rightarrow$ Orderer: gửi tx đã endorse \\
-/raft-order-service/deliver/1.0.0 & Orderer $\rightarrow$ Committing Peer: stream block \\
+/raft-order-service/1.0.0 & Thông điệp đồng thuận (heartbeat, bầu cử, thành viên) \\
+/raft-order-service/endorsement/1.0.0 & Core $\rightarrow$ Orderer: gửi giao dịch đã endorse \\
+/raft-order-service/deliver/1.0.0 & Orderer $\rightarrow$ Committing Peer: dòng block \\
 /raft-order-service/sync/1.0.0 & Đồng bộ block/log giữa các orderer \\
 /fabric-enterprise/commit-peer/tx-sign/1.0.0 & Core $\rightarrow$ Committing Peer: xin chữ ký \\
 /commiting-peer/sync/1.0.0 & Client $\rightarrow$ Committing Peer: truy vấn UTXO \\
@@ -844,25 +1203,55 @@ liệt kê các Protocol ID dùng trong toàn hệ thống.
 \end{tabular}
 \end{table}
 
-Hai tối ưu hot-path trên mạng đặc biệt quan trọng. \textbf{OPT-3 (stream
-endorsement bền):} thay vì mở một stream mới cho \textit{mỗi} giao dịch (gây
-${\sim}10.000$ lần mở stream/giây ở 5000 TPS), \texttt{HandleEndorsementStream()}
-đọc nhiều tx trong một vòng lặp \texttt{for \{ decoder.Decode(\&tx) \}} trên
-\textbf{một stream giữ mở}; loadgen workers cũng giữ một stream/worker. Đây là
-khác biệt lớn nhất giúp vượt nghẽn cổ chai mở stream. \textbf{OPT-5 (bỏ qua kênh
-chung):} \texttt{MsgBlockProposalAck} đi thẳng vào \texttt{BlockAckChan} riêng,
-tránh dồn mọi message qua một hàng đợi chung gây tranh chấp.
+\textbf{Kênh nhận giao dịch bền.} Giao dịch từ Core Service đi vào qua một stream
+\textit{giữ mở lâu dài}: thay vì mở một kết nối mới cho mỗi giao dịch, orderer đọc
+nhiều giao dịch liên tiếp trên cùng một stream. Ở tải cao, việc mở stream cho từng
+giao dịch sẽ làm bão hòa cơ chế chấp nhận stream của host và trở thành nút thắt cổ
+chai; giữ stream bền giúp loại bỏ nút thắt đó. Một node nhận giao dịch mà không
+phải Leader sẽ chuyển tiếp giao dịch tới Leader; nếu là Leader thì nạp thẳng vào
+TxPool.
 
-\subsection{Công cụ bắn tải (loadgen) và client}
+\subsection{Khởi động và gia nhập cluster}
+\label{sec:ordering-bootstrap}
 
-Bộ máy bắn tải Go (\texttt{pkg/loadgen/}) bơm giao dịch ở tốc độ cao (mặc định
-5000 TPS) để đo hiệu năng, với tham số
-\texttt{-orderer <multiaddr> -tps 5000 -duration 30s -workers 16}. Nó tái dùng
-stream theo OPT-3 và theo dõi sự kiện block-commit để tính latency. CLI client
-(\texttt{cmd/client}) là một ví UTXO đầy đủ: sinh địa chỉ từ khóa Ed25519, theo
-dõi UTXO, tạo và ký giao dịch. Khác với loadgen (bắn thẳng tới orderer qua
-libp2p, đo throughput consensus thuần), công cụ k6 bắn HTTP tới Core Service
-(đo toàn pipeline submit và độ trễ HTTP từ góc nhìn client thật).
+Có hai con đường để một node bước vào cluster. Node \textit{đầu tiên} tự khởi động
+làm Leader của một cluster một-node (nó đương nhiên đủ quá bán một mình). Một node
+\textit{gia nhập sau} sẽ kết nối tới một peer mồi (bootstrap) đã biết, truy vấn để
+tìm ra Leader hiện tại, rồi gửi yêu cầu gia nhập trực tiếp tới Leader. Nếu cluster
+đang trong một vòng bầu cử và tạm thời chưa có Leader, node gia nhập sẽ thử lại vài
+lần với khoảng lùi ngắn cho đến khi có Leader để liên hệ. Sau khi được kết nạp và
+nhận ảnh chụp thành viên, nếu phát hiện mình còn thiếu block (sổ cái trống trong
+khi cluster đã có dữ liệu), node tự động chuyển sang đồng bộ để đuổi kịp trước khi
+tham gia đầy đủ vào việc đồng thuận.
+
+\subsection{Các đánh đổi thiết kế}
+\label{sec:ordering-tradeoffs}
+
+Thiết kế của Ordering Service phản ánh một số đánh đổi có chủ đích, cần được nêu rõ
+để đánh giá đúng phạm vi áp dụng.
+
+\textbf{Trạng thái trong RAM, không ghi bền.} RaftLog và chuỗi block đã commit đều
+nằm trong bộ nhớ. Ưu điểm là tốc độ: không có chi phí ghi đĩa trên đường nóng
+commit. Nhược điểm là khi một node khởi động lại, nó mất toàn bộ trạng thái cục bộ
+và phải dựng lại bằng cơ chế đồng bộ từ các peer còn sống. Đây là lý do cơ chế
+đồng bộ (Mục~\ref{sec:deliver-sync}) không chỉ là tính năng phụ mà là một phần
+thiết yếu để cluster chịu được việc node hồi sinh.
+
+\textbf{Ưu tiên nhất quán hơn khả dụng.} Vì quá bán tính trên tổng số thành viên,
+cluster ngừng tiến triển khi không hội đủ quá bán node sống. Đây là lựa chọn có
+chủ đích: với sổ cái, đình trệ tạm thời chấp nhận được, còn phân kỳ dữ liệu thì
+không.
+
+\textbf{Một block trong bay, không đường ống hóa (pipelining).} Việc chỉ cho phép
+một block được đề xuất tại một thời điểm giữ cho ngữ nghĩa chuỗi hash và đồng bộ
+đơn giản, dễ lập luận đúng đắn, đổi lại giới hạn mức song song ở tầng nhân bản.
+
+\textbf{Mô hình lỗi.} Các bảo đảm an toàn nhắm tới mô hình lỗi \textit{dừng} (node
+chết/hồi sinh) và \textit{phân vùng đơn giản} (một đa số, một thiểu số), không nhắm
+tới lỗi Byzantine ở tầng đồng thuận --- việc chống giao dịch/khối gian lận được đặt
+ở tầng kiểm tra mật mã của Committing Peer. Trong mô hình lỗi đã chọn, các lớp
+phòng vệ ở Mục~\ref{sec:ordering-splitbrain} loại bỏ khả năng split-brain cho phần
+lớn các kịch bản vận hành thực tế.
 
 % Committing Peer — section hoàn chỉnh cho báo cáo / luận văn
 % Paste vào main.tex: \input{docs/report-committing-peer}
@@ -871,129 +1260,233 @@ libp2p, đo throughput consensus thuần), công cụ k6 bắn HTTP tới Core S
 \section{Committing Peer --- Kiểm tra và Ghi sổ}
 \label{sec:committing-peer}
 
-\subsection{Vai trò và kiến trúc pipeline}
+Committing Peer là trạm cuối của hành trình một giao dịch. Nó nhận các block đã
+được Ordering Service sắp xếp và chốt thứ tự, kiểm tra tính hợp lệ mật mã của
+chúng, rồi ghi vĩnh viễn vào sổ cái. Đây cũng là nơi \textit{sổ cái thật} của hệ
+thống nằm: một file chuỗi block bất biến và một cơ sở dữ liệu world state; bản sao
+trên PostgreSQL chỉ là mirror phục vụ tra cứu. Mục này trình bày trọng tâm vào
+\textbf{thiết kế tổ chức} của thành phần: cách các gói (package) con được phân
+tách theo trách nhiệm và ghép nối với nhau, đường ống xử lý bằng kênh (channel),
+mô hình lưu trữ ba lớp, cùng các ranh giới nhất quán và đánh đổi thiết kế.
 
-\textbf{Committing Peer} (\texttt{commitingpeer/}, Go, metrics \texttt{:8081})
-là trạm cuối của pipeline: nhận block đã sắp xếp, kiểm tra hợp lệ, rồi ghi vĩnh
-viễn. File \texttt{chain.block} và LevelDB ở đây mới là sổ cái thật. Quan trọng:
-Committing Peer \textbf{không} chạy thuật toán đồng thuận --- nó \textit{tin
-tưởng} rằng block từ Ordering Service đã là thứ tự cuối, việc của nó là kiểm tra
-tính hợp lệ mật mã rồi ghi.
+\subsection{Vai trò và nguyên tắc thiết kế}
+\label{sec:cp-role}
 
-Bên trong, ba tầng được tách rời bằng channel để mỗi tầng chạy với tốc độ riêng
-(Hình~\ref{fig:cp-pipeline}).
+Điểm mấu chốt về ranh giới trách nhiệm: Committing Peer \textbf{không} chạy thuật
+toán đồng thuận và \textbf{không} sắp xếp lại thứ tự giao dịch. Nó \textit{tin
+tưởng} rằng block đến từ Ordering Service đã mang thứ tự cuối cùng; nhiệm vụ của nó
+gồm hai việc: (i)~\textbf{kiểm tra} rằng block không bị sửa đổi trên đường truyền
+và mọi giao dịch hợp đồng đều mang chữ ký endorsement hợp lệ từ khóa tin cậy; và
+(ii)~\textbf{ghi} block vào sổ cái đồng thời cập nhật world state một cách nguyên
+tử. Ngoài ra, peer còn đóng ba vai phụ: làm \textit{endorser} ký xác nhận giao
+dịch cho Core Service, làm \textit{nguồn ground truth} đo hiệu năng, và phục vụ
+\textit{truy vấn UTXO} cho client.
 
-\begin{figure}[H]
-\centering
-\caption{Kiến trúc đường ống ba tầng của Committing Peer.}
-\label{fig:cp-pipeline}
-\end{figure}
+Ba nguyên tắc thiết kế xuyên suốt thành phần:
 
-\subsection{Nhận block và tự kết nối lại}
+\begin{itemize}
+  \item \textbf{Tách trách nhiệm theo gói.} Mỗi mối quan tâm --- nhận block, kiểm
+  tra, lưu file, lưu world state, mirror, khám phá orderer, đo lường, mật mã ---
+  được đặt trong một gói riêng với giao diện hẹp. Một bộ điều phối trung tâm ghép
+  các gói này lại và định nghĩa luồng dữ liệu giữa chúng.
+  \item \textbf{Tách tốc độ bằng kênh.} Các tầng có tốc độ khác nhau (nhận block
+  qua mạng, kiểm tra + ghi đĩa, mirror sang cơ sở dữ liệu) được nối bằng kênh có
+  đệm, để một tầng chậm không ghì lại tầng nhanh.
+  \item \textbf{Sổ cái thật không phụ thuộc cơ sở dữ liệu ngoài.} Một block được
+  coi là đã commit ngay khi đã ghi xong file và world state cục bộ; việc ghi
+  PostgreSQL diễn ra bất đồng bộ sau đó và không bao giờ là điều kiện để commit
+  thành công.
+\end{itemize}
 
-Committing Peer dựng libp2p host, đăng ký nhận block qua
-\texttt{/raft-order-service/deliver/1.0.0}. Luồng \texttt{Subscribe()} parse
-multiaddr orderer, kết nối, mở stream, gửi \texttt{DeliverRequest\{FromIndex\}}
-(``tôi đã có tới block X, gửi tiếp từ X+1''), rồi một goroutine nền lặp
-\texttt{Decode(\&block)} và đẩy vào \texttt{blockChan}. Khi Leader đổi hoặc
-stream đứt, \texttt{deliverReconnectLoop()} khám phá orderer mới và kết nối lại
-với \texttt{fromIndex = lastCommittedBlock + 1} --- \textbf{không mất block nào}
---- dùng exponential backoff (1s $\rightarrow$ tối đa 30s) để tránh dội kết nối.
+\subsection{Kiến trúc tổ chức theo gói}
+\label{sec:cp-architecture}
 
-Committing Peer cũng đóng vai \textbf{endorser}: đăng ký handler
-\texttt{/fabric-enterprise/commit-peer/tx-sign/1.0.0}; khi Core gửi một giao
-dịch chưa ký, peer ký trên thông điệp \texttt{txid + contractName + payload}
-(cùng bố cục \texttt{TxMessage} với Core và Ordering Service), thêm một
-\texttt{EndorsementEntry} kèm trường \texttt{algorithm}, rồi trả lại. Thuật toán
-ký được chọn lúc khởi động peer (\texttt{ed25519} mặc định hoặc \texttt{mldsa-44}
-hậu lượng tử). Khóa công khai tương ứng nằm trong danh sách endorser tin cậy
-(\texttt{TRUSTED\_ENDORSER\_PUBLIC\_KEYS}), định dạng \texttt{algo:pubhex} hoặc
-hex thuần (mặc định hiểu là Ed25519).
-
-\subsection{Hỗ trợ đa thuật toán ký endorsement}
-\label{sec:cp-multi-algo}
-
-Để so sánh tính kiên cường hậu lượng tử mà không phá pipeline hiện có, Committing
-Peer được mở rộng từ một lớp ký Ed25519 cố định sang kiến trúc \textbf{pluggable
-signer}: interface \texttt{Signer} (\texttt{internal/crypto/signer.go}) gói sinh
-khóa, ký, xác minh và định dạng khóa tin cậy. Hai triển khai song song:
-\textbf{Ed25519} (\texttt{ed25519\_signer.go}, thư viện \texttt{crypto/ed25519},
-chữ ký 64\,byte) là đường mặc định cho benchmark; \textbf{ML-DSA-44}
-(\texttt{mldsa\_signer.go}, chuẩn FIPS\,204 qua \texttt{cloudflare/circl},
-khóa công khai 1312\,byte, chữ ký 2420\,byte, tên wire \texttt{mldsa-44}) phục vụ
-kịch bản hậu lượng tử.
-
-\textbf{Thông điệp được ký} giữ nguyên giữa hai thuật toán:
-\texttt{TxMessage = txid + contractName + string(payload)}. Layout không đổi nên
-có thể so sánh hiệu năng và độ trễ E2E trên cùng pipeline, chỉ thay tầng ký.
-
-Khi khởi động, \texttt{LoadOrGenerateSigner()} đọc \texttt{COMMIT\_PEER\_KEY\_ALGO}
-(hoặc prompt \texttt{1}/\texttt{2}), nạp khóa từ \texttt{COMMIT\_PEER\_PRIVATE\_KEY}
-hoặc file \texttt{endorsement.key} / \texttt{endorsement.mldsa44.key}, hoặc sinh
-mới. \texttt{ResolveKeyAlgorithm()} kiểm tra độ dài khóa hex để tránh gán nhầm
-scheme. Khóa tin cậy trả về dạng \texttt{ed25519:...} hoặc \texttt{mldsa-44:...}
-qua \texttt{TrustedKey()}.
-
-Handler \texttt{RegisterTxSignHandler()} nhận JSON từ Core, ký bằng
-\texttt{signer.SignTx()}, gắn \texttt{EndorsementEntry} (kèm \texttt{algorithm}),
-đồng bộ \texttt{sender\_pubkey}/\texttt{signature}, rồi tự xác minh trước khi
-trả về. Ở tầng validate block, \texttt{validateEndorsedTx()} gọi
-\texttt{VerifyEndorsement()} theo \texttt{algorithm}; nếu trường này rỗng (relay
-cũ thiếu metadata), \texttt{InferAlgorithmFromWire()} suy luận từ độ dài hex
-pubkey/chữ ký. Endorser tin cậy được so khớp theo cặp \texttt{algo:pubhex}. Trường
-\texttt{algorithm} cũng được relay qua Core và Ordering Service để block JSON
-giữ đủ metadata trên toàn pipeline.
+Toàn bộ thành phần được lắp ráp từ một số gói con, mỗi gói một trách nhiệm rõ ràng.
+Bảng~\ref{tab:cp-packages} liệt kê các gói chính và vai trò của chúng, còn
+Hình~\ref{fig:cp-pipeline} minh họa cách chúng ghép nối thành một đường ống.
 
 \begin{table}[H]
 \centering
-\caption{So sánh hai scheme endorsement trên Committing Peer}
-\label{tab:endorsement-algos}
-\begin{tabular}{@{}lcc@{}}
+\caption{Các gói con của Committing Peer và trách nhiệm}
+\label{tab:cp-packages}
+\begin{tabular}{@{}p{3.2cm}p{9.6cm}@{}}
 \toprule
-\textbf{Thuộc tính} & \textbf{Ed25519} & \textbf{ML-DSA-44} \\
+\textbf{Gói} & \textbf{Trách nhiệm} \\
 \midrule
-Tên wire & \texttt{ed25519} & \texttt{mldsa-44} \\
-Khóa công khai (hex) & 64 ký tự & 2624 ký tự \\
-Chữ ký (hex) & 128 ký tự & 4840 ký tự \\
-File khóa mặc định & \texttt{endorsement.key} & \texttt{endorsement.mldsa44.key} \\
-Kháng lượng tử & Không & Có (NIST) \\
+Bộ điều phối & Lắp ráp mọi gói con, sở hữu kênh nội bộ nối tầng nhận block với vòng commit, giữ số liệu runtime (số block, hash cuối), điều phối vòng commit. \\
+Deliver client & Bọc một host libp2p; đăng ký nhận dòng block từ orderer, đăng ký handler ký giao dịch (endorser) và handler truy vấn UTXO. \\
+Discovery & Cache danh sách thành viên của cluster orderer và chọn orderer còn sống để kết nối lại sau khi Leader đổi. \\
+Validation & Kiểm tra toàn vẹn cấu trúc block (Merkle, hash) và tính hợp lệ endorsement của từng giao dịch hợp đồng. \\
+Block storage & Ghi chuỗi block vào file chỉ-thêm (append-only); là sổ cái bất biến. \\
+World state & UTXO set trên LevelDB; áp dụng block theo lô nguyên tử. \\
+Postgres mirror & Ghi bản sao block/giao dịch sang PostgreSQL bất đồng bộ, ngoài luồng commit. \\
+Metrics & Ghi thời điểm commit trong RAM và phục vụ API đo throughput/độ trễ. \\
+Crypto & Sinh khóa, ký và xác minh Ed25519; tính lại hash block và gốc Merkle để kiểm tra. \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-Một peer chỉ chạy một \texttt{Signer} tại thời điểm khởi động; block hash, Merkle
-root và world state không phụ thuộc thuật toán endorsement. Thực nghiệm cho thấy
-ML-DSA làm tăng kích thước wire và thời gian ký trên hot-path tx-sign, throughput
-commit thấp hơn Ed25519 dù logic validate/commit giữ nguyên.
+\begin{figure}[H]
+\centering
+\caption{Kiến trúc đường ống và các gói con của Committing Peer.}
+\label{fig:cp-pipeline}
+\end{figure}
 
-\subsection{Kiểm tra hợp lệ (Validation)}
+Cách ghép nối tuân theo nguyên tắc \textit{tiêm phụ thuộc} (dependency injection):
+bộ điều phối được khởi tạo với các phụ thuộc đã dựng sẵn (deliver client, engine
+kiểm tra, block storage, world state, kết nối PostgreSQL). Nhờ vậy mỗi gói con có
+thể được kiểm thử và suy luận độc lập, còn bộ điều phối chỉ tập trung vào việc định
+nghĩa \textit{trình tự} và \textit{luồng dữ liệu} giữa chúng, chứ không chứa chi
+tiết cài đặt của từng tầng.
+
+\subsection{Đường ống xử lý bằng kênh}
+\label{sec:cp-pipeline-flow}
+
+Trái tim của thành phần là một đường ống ba chặng, các chặng được tách rời bằng
+kênh để chạy với tốc độ riêng:
+
+\begin{enumerate}
+  \item \textbf{Chặng nhận (producer).} Một goroutine của deliver client đọc liên
+  tục các block từ stream của orderer và đẩy mỗi block vào một \textit{kênh nội
+  bộ} có đệm (sức chứa 64 block). Chặng này chỉ giải mã và chuyển tiếp, không làm
+  việc nặng.
+  \item \textbf{Chặng commit (consumer).} Một vòng lặp commit rút từng block ra
+  khỏi kênh nội bộ và xử lý tuần tự: kiểm tra hợp lệ, ghi file, áp dụng world
+  state, ghi nhận số liệu, rồi đẩy công việc mirror sang chặng ba. Việc xử lý tuần
+  tự ở đây bảo đảm các block được ghi vào sổ cái đúng thứ tự chúng được commit.
+  \item \textbf{Chặng mirror (bất đồng bộ).} Một nhóm worker nền nhận công việc
+  mirror qua một kênh riêng và ghi sang PostgreSQL. Chặng này nằm hoàn toàn ngoài
+  đường commit: dù nó chậm hay lỗi, sổ cái thật vẫn tiến triển bình thường.
+\end{enumerate}
+
+Việc dùng kênh có đệm giữa chặng nhận và chặng commit đóng vai một \textit{bộ giảm
+xóc}: khi orderer phát block dồn dập, kênh hấp thụ các đỉnh tải ngắn để vòng commit
+xử lý kịp mà không làm nghẽn stream. Nếu tải cao kéo dài và kênh đầy, chặng nhận sẽ
+tự nhiên bị chặn nhẹ (backpressure) --- một cơ chế điều tiết lành mạnh thay vì mất
+block.
+
+\textbf{Thứ tự các thao tác trong một lần commit.} Với mỗi block, vòng commit thực
+hiện đúng trình tự sau, và thứ tự này có ý nghĩa về mặt nhất quán:
+
+\begin{enumerate}
+  \item Kiểm tra hợp lệ (Merkle, hash, endorsement). Nếu sai, block bị ghi log và
+  \textbf{bỏ qua} --- không ghi gì, pipeline tiếp tục với block sau.
+  \item Ghi block vào file sổ cái (chỉ-thêm).
+  \item Áp dụng block vào world state (một lô ghi nguyên tử trên LevelDB).
+  \item Tăng bộ đếm số block và cập nhật số liệu runtime (hash cuối, thời điểm, số
+  giao dịch).
+  \item Ghi thời điểm commit vào bộ đo trong RAM (phục vụ benchmark).
+  \item Đẩy một công việc mirror sang chặng ba (không chặn).
+\end{enumerate}
+
+Ranh giới ``đã commit'' được đặt sau bước 3: khi cả file và world state đã ghi
+xong, block coi như bền vững. Các bước 4--6 chỉ là số liệu và bản sao phụ trợ.
+
+\subsection{Nhận block và tự phục hồi}
+\label{sec:cp-deliver}
+
+Committing Peer nhận block theo mô hình \textit{đăng ký dòng} (streaming
+subscribe). Khi khởi động, nó mở một stream tới một orderer và gửi kèm một yêu cầu
+cho biết \textit{``tôi đã có tới block thứ mấy, hãy gửi tiếp từ block kế''}. Chỉ số
+bắt đầu này được tính bằng \textbf{số block đang có trên file cộng một}. Nhờ đó,
+sau khi khởi động lại, peer không tải lại các block đã có (tránh xử lý trùng) mà
+cũng không bỏ sót block nào. Orderer đáp lại bằng cách gửi ngay các block còn thiếu
+rồi tiếp tục đẩy các block tương lai trên cùng stream giữ mở.
+
+\textbf{Tự kết nối lại sau khi Leader đổi.} Vì Leader của cluster orderer có thể
+thay đổi (do bầu cử lại), stream nhận block có thể đứt bất cứ lúc nào. Một vòng
+\textit{kết nối lại} thường trực xử lý việc này: khi stream đứt, peer hỏi gói
+Discovery để tìm một orderer còn sống, rồi mở lại stream với chỉ số bắt đầu được
+tính lại từ file (luôn là block kế tiếp chưa có) --- \textbf{không mất block nào}.
+Để tránh dội kết nối khi cluster đang bất ổn, vòng này dùng \textit{khoảng lùi tăng
+dần} (exponential backoff): thời gian chờ giữa các lần thử tăng gấp đôi sau mỗi
+thất bại, từ 1 giây tới tối đa 30 giây, và được đặt lại về 1 giây ngay khi kết nối
+thành công.
+
+\textbf{Gói Discovery.} Gói khám phá duy trì một bản cache danh sách thành viên của
+cluster orderer. Nó định kỳ làm mới danh sách này (mỗi vài giây) và cache lại trong
+một khoảng ngắn (mặc định 8 giây) để không phải truy vấn liên tục. Khi phát hiện
+một orderer không còn phản hồi, peer \textit{vô hiệu hóa} cache nóng để lần chọn kế
+tiếp lấy danh sách mới; nếu tạm thời không truy vấn được cluster, gói vẫn dùng bản
+tốt cuối cùng còn hiệu lực (trong một cửa sổ vài phút) làm phương án dự phòng. Khi
+cần chọn orderer để kết nối lại, peer duyệt lần lượt các orderer còn sống theo kiểu
+xoay vòng, nên qua vài lần thử nó sẽ chạm tới Leader mới mà không cần biết trước ai
+là Leader. Cơ chế cache cộng dự phòng này giúp peer chịu được việc Leader đổi mà
+không cần cấu hình lại hay khởi động lại.
+
+\subsection{Vai trò endorser và tính hợp lệ endorsement}
+\label{sec:cp-endorse}
+
+Ngoài việc nhận block, Committing Peer còn đăng ký một handler để \textbf{ký xác
+nhận} (endorse) giao dịch cho Core Service. Khi Core gửi một giao dịch vừa ``chạy
+thử'' xong, peer thực hiện: xác minh các chữ ký endorsement đã có (nếu có) là hợp
+lệ; ký thêm chữ ký của mình; tự kiểm tra lại chữ ký vừa tạo; rồi trả giao dịch đã
+có endorsement về cho Core. Chỉ khi tự kiểm tra thành công peer mới trả kết quả ---
+nó không bao giờ phát ra một chữ ký mà chính nó không xác minh được.
+
+\textbf{Thông điệp được ký.} Điểm thiết kế quan trọng để cả hệ thống nhất quán là
+\textit{bố cục thông điệp ký} giống hệt nhau ở mọi tầng: chữ ký được đặt trên chuỗi
+ghép \texttt{txid + tên hợp đồng + payload}. Nhờ layout thống nhất này, chữ ký do
+Committing Peer tạo lúc endorse có thể được chính nó (hoặc peer khác) xác minh lại
+y hệt lúc kiểm tra block, không phụ thuộc vào thứ tự trường hay cách tuần tự hóa
+JSON. Thuật toán ký là \textbf{Ed25519}: khóa riêng và khóa công khai biểu diễn
+dưới dạng hex, chữ ký 64\,byte. Mỗi chữ ký được lưu thành một mục endorsement gồm
+khóa công khai và chữ ký; nếu peer ký lại một giao dịch mà mình đã ký trước đó,
+mục cũ được thay thế thay vì thêm trùng.
+
+\textbf{Tập khóa tin cậy.} Peer được cấu hình một \textit{danh sách khóa công khai
+endorser tin cậy} (các chuỗi hex, phân tách bằng dấu phẩy; nếu không cấu hình thì
+mặc định tin chính khóa của peer). Danh sách này là gốc tin cậy khi kiểm tra block:
+một giao dịch hợp đồng chỉ được chấp nhận nếu có ít nhất một endorsement đến từ một
+khóa nằm trong tập tin cậy. Đây là ranh giới an ninh mấu chốt --- Ordering Service
+không xác minh endorsement, nên toàn bộ trách nhiệm chứng thực rơi vào tầng kiểm
+tra của Committing Peer.
+
+\subsection{Kiểm tra hợp lệ block}
 \label{sec:validation}
 
-Trước khi ghi, \texttt{ValidateBlock()} kiểm tra hai phần. \textbf{Toàn vẹn cấu
-trúc} (\texttt{verifyBlockIntegrity()}): tính lại Merkle root từ các \texttt{txid}
-và so với \texttt{MerkleRoot} của block; tính lại block hash (double-SHA256 của
-header) và so với \texttt{Hash}; lệch thì từ chối. Việc tính lại độc lập đảm bảo
-block không bị sửa đổi trên đường truyền, và hàm hash/merkle phải khớp y hệt cách
-Ordering Service tính. \textbf{Kiểm tra endorsement}
-(\texttt{validateEndorsedTx()}): với mỗi giao dịch smart-contract, phải có mảng
-\texttt{Endorsements[]} không rỗng, xác minh từng chữ ký bằng
-\texttt{VerifyEndorsement()} theo \texttt{algorithm}, và ít nhất một khóa
-endorser phải nằm trong tập tin cậy (định dạng \texttt{algo:pubhex}).
+Trước khi ghi bất kỳ block nào, engine kiểm tra thực hiện hai nhóm kiểm tra.
 
-\textbf{Phạm vi hiện tại (theo mã nguồn):} một số kiểm tra chưa được thực thi
-đầy đủ trên hot-path. Việc kiểm tra liên tục chuỗi (\texttt{PrevHash} của block
-khớp \texttt{Hash} block trước) hiện đang bị tắt ở engine --- block hash vẫn
-\textit{bao gồm} prevHash để toàn vẹn cấu trúc, nhưng liên kết chuỗi chỉ được
-xác minh đầy đủ ở luồng sync của orderer. Hàm \texttt{ValidateTransaction()} mức
-từng giao dịch hiện là \textit{stub} (kiểm tra double-spend UTXO, chữ ký input
-chưa thực thi đầy đủ). Đây là các điểm rủi ro được ghi nhận để cải thiện về bảo
-mật. Về tính kiên cường, một block không hợp lệ chỉ bị ghi log mà không làm sập
-pipeline --- peer tiếp tục xử lý block sau.
+\textbf{Toàn vẹn cấu trúc.} Engine \textit{tính lại độc lập} hai giá trị rồi so với
+những gì block mang theo: (i)~gốc cây Merkle, tính từ danh sách định danh giao
+dịch; và (ii)~hash của block, tính bằng double-SHA256 trên header (gồm phiên bản,
+prev hash, gốc Merkle, nhãn thời gian, và nonce). Nếu một trong hai lệch, block bị
+từ chối. Việc tính lại độc lập bảo đảm block không bị sửa đổi trên đường truyền, và
+--- rất quan trọng --- hàm băm cùng cách tính Merkle của Committing Peer phải
+\textbf{trùng khớp tuyệt đối} với cách Ordering Service tạo ra chúng, nếu không một
+block hợp lệ sẽ bị từ chối oan. Sự trùng khớp này đạt được bằng cách hiện thực cùng
+một bố cục header kiểu Bitcoin (các trường 32-byte được đệm trái đồng nhất) ở cả
+hai thành phần.
 
-\subsection{Lưu trữ: ba lớp}
+\textbf{Kiểm tra endorsement.} Nếu có cấu hình tập khóa tin cậy, mỗi giao dịch
+\textit{hợp đồng} (có payload và tên hợp đồng) trong block phải: có mảng
+endorsement không rỗng; mỗi endorsement có đủ khóa công khai và chữ ký, và chữ ký
+xác minh hợp lệ trên thông điệp ký chuẩn; và ít nhất một khóa endorser thuộc tập
+tin cậy. Giao dịch dạng UTXO thuần (không có payload/hợp đồng) được miễn kiểm tra
+endorsement. Việc chỉ dựa vào mảng endorsement tường minh (bỏ qua các trường chữ
+ký kiểu cũ) giữ cho quy tắc kiểm tra rõ ràng và không mơ hồ.
+
+\textbf{Tính kiên cường.} Một block không hợp lệ \textbf{không} làm sập pipeline:
+nó chỉ bị ghi log và bỏ qua, peer tiếp tục xử lý block kế tiếp. Cách xử lý này ưu
+tiên tính sẵn sàng của dịch vụ ghi sổ trước các block dị thường lẻ tẻ.
+
+\textbf{Phạm vi kiểm tra hiện tại.} Theo mã nguồn, một số kiểm tra ở mức sâu hơn
+chưa được thực thi trên đường nóng. Việc kiểm tra liên kết chuỗi ở mức peer (prev
+hash của block khớp hash của block liền trước trên đĩa) hiện được bỏ qua ở engine
+--- tuy prev hash vẫn nằm trong dữ liệu băm để bảo đảm toàn vẹn cấu trúc, và liên
+kết chuỗi vẫn được xác minh đầy đủ ở luồng đồng bộ của Ordering Service. Kiểm tra
+hợp lệ ở mức từng giao dịch UTXO (chống tiêu hai lần, xác minh chữ ký đầu vào) hiện
+để trống. Đây là ranh giới phạm vi của bản hiện thực, cần được nêu rõ để đánh giá
+đúng mô hình tin cậy: hệ thống dựa vào tính đúng đắn của thứ tự do Ordering Service
+cung cấp và vào chứng thực endorsement, chứ chưa thực thi đầy đủ ngữ nghĩa UTXO tại
+tầng commit.
+
+\subsection{Mô hình lưu trữ ba lớp}
 \label{sec:cp-storage}
 
-Committing Peer giữ ba lớp lưu trữ, mỗi lớp một mục đích (Bảng~\ref{tab:storage-layers}).
+Committing Peer tổ chức lưu trữ thành ba lớp tách bạch, mỗi lớp một công nghệ và
+một mục đích riêng (Bảng~\ref{tab:storage-layers}). Đây là điểm cốt lõi của thiết
+kế tổ chức thành phần.
 
 \begin{table}[H]
 \centering
@@ -1003,44 +1496,210 @@ Committing Peer giữ ba lớp lưu trữ, mỗi lớp một mục đích (Bản
 \toprule
 \textbf{Lớp} & \textbf{Công nghệ} & \textbf{Đặc tính} & \textbf{Mục đích} \\
 \midrule
-Block storage & File append-only & Bất biến, ghi tuần tự & Sổ cái thật, kiểm toán \\
-World state & LevelDB & Ghi đè, atomic batch & Tra UTXO hiện tại \\
-Mirror & PostgreSQL & Index, JSONB, async & Explorer \& báo cáo \\
+Block storage & File chỉ-thêm & Bất biến, ghi tuần tự & Sổ cái thật, kiểm toán \\
+World state & LevelDB & Ghi đè, lô nguyên tử & Tra UTXO hiện tại \\
+Mirror & PostgreSQL & Chỉ mục, JSONB, bất đồng bộ & Explorer \& báo cáo \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\textbf{Block storage:} chuỗi block lưu trong một file append-only
-(\texttt{chain.block}), mỗi block là một dòng JSON. File mở với cờ
-\texttt{O\_APPEND | O\_CREATE | O\_WRONLY}, \textbf{không bao giờ} truncate ---
-đảm bảo ``bất biến ở mức file''. Đọc lại dùng \texttt{bufio.Scanner} với buffer
-tới 16\,MB (chứa được block nhiều giao dịch).
+\subsubsection{Lớp 1 --- Block storage (sổ cái bất biến)}
 
-\textbf{World state:} UTXO set lưu trong LevelDB. Hàm \texttt{ApplyBlock()} cập
-nhật \textbf{nguyên tử}: với mỗi block tạo một \texttt{leveldb.Batch}, mỗi VIN là
-\texttt{batch.Delete}, mỗi VOUT là \texttt{batch.Put}, rồi \texttt{db.Write(batch)}
---- một thao tác tất-cả-hoặc-không. Điều này quan trọng vì nếu ghi nửa chừng (xóa
-input nhưng chưa tạo output) rồi crash, world state sẽ sai.
+Chuỗi block được lưu trong một file chỉ-thêm, mỗi block là một dòng JSON. File
+được mở ở chế độ \textit{chỉ ghi vào cuối} và \textbf{không bao giờ} bị cắt ngắn
+(truncate) --- bảo đảm tính ``bất biến ở mức file'': một khi đã ghi, block không bị
+sửa hay xóa. Khi khởi động, peer đọc lại toàn bộ file để khôi phục hai giá trị:
+\textit{số block đã có} và \textit{hash của block cuối}. Hai giá trị này dùng để
+tính chỉ số bắt đầu nhận block (Mục~\ref{sec:cp-deliver}) và để đồng bộ lại các bộ
+đếm runtime sau khi khởi động lại, nhờ đó chiều cao block và số liệu tiếp tục đúng.
+Việc đọc lại dùng bộ đệm lớn (tới 16\,MB mỗi dòng) để chứa được các block chứa hàng
+nghìn giao dịch. Định dạng ``một dòng JSON một block'' được chọn vì vừa dễ ghi
+nối tiếp, vừa đọc được bằng mắt và bằng công cụ, thuận tiện cho kiểm toán.
 
-\textbf{PostgreSQL mirror:} bản sao bất đồng bộ, không nằm trong luồng commit.
-Block được coi là \textit{đã commit ngay khi ghi xong file + world state}; việc
-ghi PostgreSQL diễn ra sau, ở các worker nền (hàng đợi mặc định 512, số worker
-mặc định 2). Nếu hàng đợi đầy thì sinh goroutine ghi ngay (non-blocking).
-\textbf{Triết lý:} tốc độ commit blockchain không bị phụ thuộc vào tốc độ ghi
-PostgreSQL.
+\subsubsection{Lớp 2 --- World state (UTXO trên LevelDB)}
+
+World state là ảnh chụp trạng thái hiện tại: tập các đầu ra chưa tiêu (UTXO). Nó
+được lưu trên LevelDB theo một lược đồ khóa đơn giản: mỗi UTXO là một cặp khóa
+\texttt{utxo:$\langle$txid$\rangle$:$\langle$vout$\rangle$} ánh xạ tới nội dung đầu
+ra được tuần tự hóa. Khi áp dụng một block, mỗi đầu vào (VIN) \textit{xóa} UTXO mà
+nó tiêu, mỗi đầu ra (VOUT) \textit{tạo} một UTXO mới.
+
+Điểm thiết kế quan trọng nhất ở lớp này là tính \textbf{nguyên tử}: toàn bộ thay
+đổi của một block --- mọi thao tác xóa và thêm --- được gom vào \textit{một lô}
+(batch) và ghi xuống LevelDB trong một thao tác duy nhất kiểu ``tất-cả-hoặc-không''.
+Điều này ngăn tình trạng world state bị sai lệch nếu tiến trình gặp sự cố giữa
+chừng: sẽ không có chuyện một đầu vào đã bị xóa nhưng đầu ra tương ứng chưa kịp
+tạo. Nhờ vậy, world state luôn phản ánh đúng kết quả của một tập block trọn vẹn.
+Lớp này cũng cung cấp các thao tác tra cứu (một UTXO theo cặp txid/chỉ số, liệt kê
+toàn bộ UTXO, đếm số UTXO) phục vụ truy vấn của client và lệnh quản trị.
+
+\subsubsection{Lớp 3 --- PostgreSQL mirror (bản sao tra cứu)}
+
+Lớp thứ ba là một bản sao trên PostgreSQL, phục vụ Explorer và báo cáo. Điểm cốt
+lõi trong thiết kế: lớp này nằm \textbf{hoàn toàn ngoài đường commit}. Sau khi một
+block đã được ghi file và áp dụng world state (tức đã commit), peer chỉ \textit{đẩy
+một công việc mirror} vào một kênh rồi tiếp tục ngay với block kế. Một nhóm worker
+nền (mặc định 2 worker, hàng đợi 512 công việc) nhận và ghi các công việc này sang
+PostgreSQL. Nếu hàng đợi đầy, peer không chặn đường commit mà sinh một goroutine
+ghi ngay công việc đó. Mỗi block được ghi trong \textit{một giao dịch cơ sở dữ
+liệu} gồm một bản ghi block và các bản ghi giao dịch của nó, với ràng buộc chống
+trùng (nếu block đã tồn tại thì bỏ qua) để việc ghi lại không gây lỗi. Kết nối tới
+PostgreSQL dùng một pool giới hạn số kết nối để không làm quá tải cơ sở dữ liệu
+dưới tải cao.
+
+\textbf{Triết lý.} Việc tách mirror ra khỏi đường commit thể hiện rõ nguyên tắc
+``sổ cái thật không phụ thuộc cơ sở dữ liệu ngoài'': tốc độ và tính đúng đắn của
+việc ghi blockchain không bị ràng buộc bởi tốc độ hay tình trạng của PostgreSQL.
+Nếu PostgreSQL chậm hoặc tạm thời chết, blockchain vẫn tiếp tục commit; mirror sẽ
+đuổi kịp sau. Đổi lại, Explorer đọc từ mirror có thể trễ hơn một chút so với thời
+điểm commit thật --- điều chấp nhận được với mục đích khám phá ledger, nhưng vì thế
+mirror \textbf{không} được dùng làm nguồn chuẩn khi đo hiệu năng (xem
+Mục~\ref{sec:cp-metrics}).
 
 \subsection{Metrics --- nguồn ground truth}
+\label{sec:cp-metrics}
 
 Vì Committing Peer là nơi giao dịch được commit thật, nó là nguồn ``sự thật mặt
-đất'' tốt nhất để đo throughput và E2E latency. \texttt{recorder.go} ghi thời
-điểm commit \textit{ngay trong RAM} (map \texttt{txid $\rightarrow$ thời điểm}),
-không lệ thuộc độ trễ ghi PostgreSQL nên chính xác hơn khi benchmark. Server
-metrics tại \texttt{:8081} cung cấp \texttt{/metrics/throughput},
-\texttt{/metrics/benchmark} và \texttt{/metrics/commit-lookup}; Core Service gọi
-các endpoint này (qua \texttt{COMMIT\_PEER\_METRICS\_URL}) để tổng hợp benchmark
-E2E. Thời điểm \texttt{RecordBlock()} không phụ thuộc thuật toán ký, nên so sánh
-Ed25519 và ML-DSA trên cùng API metrics chỉ cần đổi \texttt{COMMIT\_PEER\_KEY\_ALGO}
-và khởi động lại peer.
+đất'' (ground truth) tốt nhất để đo throughput và độ trễ đầu-cuối. Thiết kế đo
+lường ở đây có một quyết định quan trọng: thời điểm commit của mỗi giao dịch được
+ghi \textbf{ngay trong bộ nhớ} (một bản đồ định danh giao dịch $\rightarrow$ thời
+điểm, kèm danh sách block), \textit{không} đọc lại từ PostgreSQL. Lý do là độ trễ
+ghi mirror bất đồng bộ sẽ làm sai lệch số đo nếu dùng mốc thời gian từ cơ sở dữ
+liệu; đo trong RAM cho con số chính xác về đúng thời điểm block được chốt.
+
+Bộ đo tự dọn các bản ghi cũ theo một cửa sổ lưu giữ (mặc định vài giờ) để không
+phình bộ nhớ trong các phiên benchmark dài. Một máy chủ HTTP nhẹ (mặc định cổng
+\texttt{:8081}) mở các endpoint đo throughput, tổng hợp benchmark, và tra cứu thời
+điểm commit theo định danh giao dịch; Core Service gọi các endpoint này để tổng hợp
+số liệu đầu-cuối. Vì thời điểm commit được ghi độc lập với tầng ký và tầng mirror,
+số đo giữ nguyên ý nghĩa bất kể cấu hình các tầng đó.
+
+\subsection{Phục vụ truy vấn UTXO cho client}
+\label{sec:cp-query}
+
+Committing Peer còn mở một giao thức để client (ví UTXO) truy vấn số dư. Khi nhận
+một yêu cầu kèm địa chỉ ví, peer duyệt world state và trả về mọi UTXO có địa chỉ
+người nhận khớp với địa chỉ được hỏi. Đây là cách một ví ngoài đồng bộ tập UTXO khả
+dụng của mình trực tiếp từ sổ cái đã chốt, thay vì phải tự dựng lại trạng thái từ
+toàn bộ lịch sử block. Chức năng này tái dùng chính host libp2p của deliver client
+(một handler giao thức khác trên cùng host), nên không cần thêm cổng mạng riêng.
+
+\subsection{Khởi động và cấu hình}
+\label{sec:cp-startup}
+
+Trình tự khởi động của peer thể hiện rõ cách các gói được lắp ráp: (1)~nạp hoặc
+sinh khóa endorsement (ưu tiên biến môi trường, rồi tới file, cuối cùng mới sinh
+mới và lưu lại); (2)~mở block storage và world state; (3)~kết nối PostgreSQL cho
+mirror; (4)~dựng deliver client và đăng ký handler ký giao dịch; (5)~dựng engine
+kiểm tra với tập khóa tin cậy; (6)~lắp bộ điều phối từ các phụ thuộc trên và đăng
+ký handler truy vấn UTXO; (7)~bật gói Discovery với vòng làm mới định kỳ;
+(8)~tính chỉ số bắt đầu nhận block từ số block đang có trên đĩa rồi khởi động đường
+ống; và (9)~bật máy chủ metrics. Nhiều tham số vận hành được điều khiển qua biến
+môi trường (Bảng~\ref{tab:cp-env}), cho phép tinh chỉnh mà không cần biên dịch lại.
+
+\begin{table}[H]
+\centering
+\caption{Một số biến môi trường cấu hình Committing Peer}
+\label{tab:cp-env}
+\begin{tabular}{@{}p{5.2cm}p{2.2cm}p{5cm}@{}}
+\toprule
+\textbf{Biến} & \textbf{Mặc định} & \textbf{Tác dụng} \\
+\midrule
+\texttt{TRUSTED\_ENDORSER\_PUBLIC\_KEYS} & khóa của peer & Danh sách khóa endorser tin cậy khi kiểm tra block \\
+\texttt{POSTGRES\_URL} & default nội bộ & Chuỗi kết nối PostgreSQL cho mirror \\
+\texttt{COMMIT\_PEER\_METRICS\_ADDR} & \texttt{:8081} & Cổng máy chủ metrics (\texttt{0} để tắt) \\
+\texttt{COMMIT\_PEER\_PG\_MIRROR} & bật & Bật/tắt mirror sang PostgreSQL \\
+\texttt{COMMIT\_PEER\_PG\_WORKERS} & 2 & Số worker ghi mirror \\
+\texttt{COMMIT\_PEER\_PG\_QUEUE} & 512 & Sức chứa hàng đợi mirror \\
+\texttt{COMMIT\_PEER\_METRICS\_RETENTION} & vài giờ & Cửa sổ lưu giữ số liệu commit trong RAM \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Mô hình đồng thời và an toàn luồng}
+\label{sec:cp-concurrency}
+
+Vì Committing Peer xử lý nhiều luồng công việc song song --- nhận block qua mạng,
+commit tuần tự, ghi mirror nền, ký giao dịch cho Core, phục vụ truy vấn UTXO,
+làm mới danh sách orderer --- thiết kế đồng thời cần được tổ chức cẩn thận để vừa
+an toàn vừa không tạo nút thắt. Cách tổ chức tuân theo hai ý tưởng bổ trợ nhau:
+\textit{dùng kênh làm ranh giới giữa các luồng} và \textit{dùng khóa cục bộ, phạm
+vi hẹp cho trạng thái chia sẻ}.
+
+\textbf{Kênh làm ranh giới.} Hai điểm nối quan trọng nhất giữa các luồng là kênh:
+kênh nội bộ nối chặng nhận block với vòng commit, và kênh công việc nối vòng commit
+với các worker mirror. Nhờ giao tiếp qua kênh thay vì cùng thao tác trên một vùng
+nhớ, các chặng gần như không cần khóa chung: mỗi block đi qua đường ống theo kiểu
+``trao tay'' (một producer, một consumer cho mỗi kênh), loại bỏ phần lớn nguy cơ
+tranh chấp. Vòng commit là điểm tuần tự hóa duy nhất cho việc ghi sổ, nên thứ tự
+block và tính nhất quán của world state được bảo đảm một cách tự nhiên mà không cần
+đồng bộ hóa phức tạp.
+
+\textbf{Khóa cục bộ, phạm vi hẹp.} Với các trạng thái buộc phải chia sẻ giữa nhiều
+luồng, mỗi trạng thái được bảo vệ bằng một cơ chế riêng, đủ hẹp để không cản trở
+đường nóng (Bảng~\ref{tab:cp-concurrency}). Lớp ghi file dùng một khóa riêng bảo vệ
+thao tác ghi nối và hai giá trị suy ra (số block, hash cuối). World state dựa vào
+bảo đảm nội tại của LevelDB cho một lô ghi nguyên tử, nên không cần khóa ở tầng
+ứng dụng. Bộ đếm số block dùng thao tác nguyên tử (atomic) thay vì khóa, vì nó được
+đọc/ghi rất thường xuyên. Các số liệu runtime hiển thị (hash cuối, thời điểm, số
+giao dịch của block cuối) được bảo vệ bằng một khóa đọc--ghi, cho phép nhiều luồng
+đọc trạng thái đồng thời trong khi vòng commit thỉnh thoảng cập nhật. Bộ đo trong
+RAM có khóa riêng của nó. Việc phân tách khóa theo trách nhiệm như vậy giúp một
+luồng chậm (ví dụ một truy vấn trạng thái) không chặn đường commit.
+
+\begin{table}[H]
+\centering
+\caption{Trạng thái chia sẻ và cơ chế an toàn luồng tương ứng}
+\label{tab:cp-concurrency}
+\begin{tabular}{@{}p{4.6cm}p{4.2cm}p{4cm}@{}}
+\toprule
+\textbf{Trạng thái} & \textbf{Cơ chế bảo vệ} & \textbf{Lý do} \\
+\midrule
+Ghi file + số block/hash cuối trên đĩa & Khóa riêng của lớp ghi file & Ghi nối phải tuần tự \\
+World state (UTXO) & Lô ghi nguyên tử của LevelDB & Tất-cả-hoặc-không cho mỗi block \\
+Bộ đếm số block đã commit & Thao tác nguyên tử (atomic) & Đọc/ghi rất thường xuyên \\
+Số liệu runtime hiển thị & Khóa đọc--ghi & Nhiều đọc, ít ghi \\
+Bộ đo commit trong RAM & Khóa riêng của bộ đo & Tách khỏi đường ghi sổ \\
+Đường ống block \& mirror & Kênh có đệm & Trao tay một chiều, không cần khóa chung \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Tắt mượt.} Toàn bộ các luồng nền được ràng vào một ngữ cảnh hủy chung: khi
+peer dừng, ngữ cảnh bị hủy làm các vòng lặp nhận block, commit, mirror và làm mới
+danh sách orderer thoát trật tự, sau đó các tài nguyên (host libp2p, file sổ cái,
+world state, kết nối cơ sở dữ liệu) được đóng lại. Nhờ đó không có luồng nào bị bỏ
+rơi và dữ liệu đang ghi được hoàn tất trước khi thoát.
+
+\subsection{Ranh giới nhất quán và đánh đổi thiết kế}
+\label{sec:cp-tradeoffs}
+
+Kết lại, thiết kế của Committing Peer phản ánh một số ranh giới và đánh đổi có chủ
+đích:
+
+\textbf{Định nghĩa ``đã commit''.} Một block bền vững ngay khi đã ghi file và áp
+dụng world state, độc lập với PostgreSQL. Ranh giới rõ ràng này giúp lập luận về
+tính nhất quán và tách tốc độ blockchain khỏi tốc độ cơ sở dữ liệu ngoài.
+
+\textbf{Nguyên tử ở mức world state, tuần tự ở mức block.} World state được cập
+nhật nguyên tử cho từng block, còn các block được commit tuần tự đúng thứ tự nhận.
+Hai tính chất này cùng nhau giữ cho trạng thái luôn tương ứng với một tiền tố hợp
+lệ của chuỗi.
+
+\textbf{Mô hình tin cậy.} Peer tin thứ tự do Ordering Service cung cấp và chỉ thực
+thi kiểm tra mật mã (toàn vẹn block, chứng thực endorsement từ khóa tin cậy). Các
+kiểm tra ngữ nghĩa UTXO ở mức từng giao dịch hiện chưa được thực thi đầy đủ trên
+đường commit --- một ranh giới phạm vi cần nêu rõ khi đánh giá đảm bảo an ninh của
+hệ thống.
+
+\textbf{Số đo trong RAM.} Metrics ground truth nằm trong bộ nhớ nên chính xác về
+thời điểm nhưng không bền qua khởi động lại; đây là đánh đổi hợp lý vì mục đích của
+chúng là benchmark, còn dữ liệu bền phục vụ tra cứu đã có ở mirror.
+
+\textbf{Kiên cường trước lỗi cục bộ.} Block dị thường bị bỏ qua thay vì làm sập
+tiến trình; stream đứt được kết nối lại tự động không mất block; hàng đợi mirror đầy
+không chặn đường commit. Các lựa chọn này cùng hướng tới việc giữ dịch vụ ghi sổ
+luôn tiến triển dưới điều kiện vận hành thực tế.
 
 % Blockchain Explorer + PostgreSQL — section hoàn chỉnh cho báo cáo / luận văn
 % Paste vào main.tex: \input{docs/report-explorer-postgres}
