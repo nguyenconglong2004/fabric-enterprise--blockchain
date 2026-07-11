@@ -1,4 +1,4 @@
-This is pdfTeX, Version 3.141592653-2.6-1.40.28 (MiKTeX 25.12) (preloaded format=pdflatex 2026.6.30)  11 JUL 2026 17:19
+This is pdfTeX, Version 3.141592653-2.6-1.40.28 (MiKTeX 25.12) (preloaded format=pdflatex 2026.6.30)  11 JUL 2026 23:44
 entering extended mode
  restricted \write18 enabled.
  %&-line parsing enabled.
@@ -1264,7 +1264,8 @@ File: l3backend-pdftex.def 2025-10-09 L3 backend support: PDF output (pdfTeX)
 ) (main.aux (Cover_Page/cover-page.aux)
 (Beginning/commitment.aux) (Beginning/acknowledgement.aux)
 (Content/Abstract/abstract.aux) (Content/Chapter_1/introduction.aux)
-(Content/Chapter_2/related-work.aux) (Content/Chapter_3/methodology.aux))
+(Content/Chapter_2/related-work.aux) (Content/Chapter_3/methodology.aux)
+(Content/Chapter_4/evaluation.aux) (Content/Chapter_5/future-work.aux))
 \openout1 = `main.aux'.
 
 LaTeX Font Info:    Checking defaults for OML/cmm/m/it on input line 77.
@@ -1408,32 +1409,78 @@ Overfull \hbox (6.74063pt too wide) in paragraph at lines 3--11
 
 
 
-] (main.toc)
+] (main.toc
+LaTeX Font Info:    Calculating math sizes for size <13> on input line 1.
+LaTeX Font Info:    Trying to load font information for OT1+lmr on input line 1
+.
+
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/lm\ot1lmr.fd
+File: ot1lmr.fd 2015/05/01 v1.6.1 Font defs for Latin Modern
+)
+LaTeX Font Info:    Trying to load font information for OML+lmm on input line 1
+.
+
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/lm\omllmm.fd
+File: omllmm.fd 2015/05/01 v1.6.1 Font defs for Latin Modern
+)
+LaTeX Font Info:    Trying to load font information for OMS+lmsy on input line 
+1.
+
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/lm\omslmsy.fd
+File: omslmsy.fd 2015/05/01 v1.6.1 Font defs for Latin Modern
+)
+LaTeX Font Info:    Trying to load font information for OMX+lmex on input line 
+1.
+
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/lm\omxlmex.fd
+File: omxlmex.fd 2015/05/01 v1.6.1 Font defs for Latin Modern
+)
+LaTeX Font Info:    External font `lmex10' loaded for size
+(Font)              <13> on input line 1.
+LaTeX Font Info:    External font `lmex10' loaded for size
+(Font)              <9.09996> on input line 1.
+LaTeX Font Info:    External font `lmex10' loaded for size
+(Font)              <6.5> on input line 1.
+LaTeX Font Info:    Trying to load font information for U+msa on input line 1.
+
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/amsfonts\umsa.f
+d
+File: umsa.fd 2013/01/14 v3.01 AMS symbols A
+)
+LaTeX Font Info:    Trying to load font information for U+msb on input line 1.
+
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/amsfonts\umsb.f
+d
+File: umsb.fd 2013/01/14 v3.01 AMS symbols B
+) [3
+
+
+
+
+{C:/Users/long.nguyen18/AppData/Local/Programs/MiKTeX/fonts/enc/dvips/lm/lm-mat
+hit.enc}])
 \tf@toc=\write5
 \openout5 = `main.toc'.
 
- [3
-
-
-
-
-] (main.lof)
+ [4] (main.lof)
 \tf@lof=\write6
 \openout6 = `main.lof'.
 
- [4
+ [5
 
-]
-(main.lot)
+{C:/Users/long.nguyen18/AppData/Local/Programs/MiKTeX/fonts/enc/dvips/lm/lm-mat
+hsy.enc}{C:/Users/long.nguyen18/AppData/Local/Programs/MiKTeX/fonts/enc/dvips/l
+m/lm-rm.enc}] (main.lot [6
+
+])
 \tf@lot=\write7
 \openout7 = `main.lot'.
 
- [5
-
-]
+ [7]
 \openout2 = `Content/Abstract/abstract.aux'.
 
- (Content/Abstract/abstract.tex
+
+(Content/Abstract/abstract.tex
 LaTeX Font Info:    Trying to load font information for T5+lmtt on input line 1
 4.
 
@@ -1453,240 +1500,52 @@ l.42 \end{abstract}
 
  (Content/Chapter_1/introduction.tex
 Chapter 1.
-LaTeX Font Info:    Calculating math sizes for size <13> on input line 4.
-LaTeX Font Info:    Trying to load font information for OT1+lmr on input line 4
-.
-(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/lm\ot1lmr.fd
-File: ot1lmr.fd 2015/05/01 v1.6.1 Font defs for Latin Modern
-)
-LaTeX Font Info:    Trying to load font information for OML+lmm on input line 4
-.
-
-(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/lm\omllmm.fd
-File: omllmm.fd 2015/05/01 v1.6.1 Font defs for Latin Modern
-)
-LaTeX Font Info:    Trying to load font information for OMS+lmsy on input line 
-4.
-
-(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/lm\omslmsy.fd
-File: omslmsy.fd 2015/05/01 v1.6.1 Font defs for Latin Modern
-)
-LaTeX Font Info:    Trying to load font information for OMX+lmex on input line 
-4.
-
-(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/lm\omxlmex.fd
-File: omxlmex.fd 2015/05/01 v1.6.1 Font defs for Latin Modern
-)
-LaTeX Font Info:    External font `lmex10' loaded for size
-(Font)              <13> on input line 4.
-LaTeX Font Info:    External font `lmex10' loaded for size
-(Font)              <9.09996> on input line 4.
-LaTeX Font Info:    External font `lmex10' loaded for size
-(Font)              <6.5> on input line 4.
-LaTeX Font Info:    Trying to load font information for U+msa on input line 4.
-
-(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/amsfonts\umsa.f
-d
-File: umsa.fd 2013/01/14 v3.01 AMS symbols A
-)
-LaTeX Font Info:    Trying to load font information for U+msb on input line 4.
-
-(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/amsfonts\umsb.f
-d
-File: umsb.fd 2013/01/14 v3.01 AMS symbols B
-)
-
-LaTeX Warning: Citation `nakamoto2008bitcoin' on page 3 undefined on input line
- 8.
-
-
-LaTeX Warning: Citation `nq57' on page 3 undefined on input line 22.
-
-
-LaTeX Warning: Citation `qd1236' on page 3 undefined on input line 24.
-
-
-LaTeX Warning: Citation `qd1236' on page 3 undefined on input line 31.
-
 [3
 
 
 
 
 ]
-
-LaTeX Warning: Citation `androulaki2018hyperledger' on page 4 undefined on inpu
-t line 43.
-
-
-LaTeX Warning: Citation `ongaro2014raft' on page 4 undefined on input line 45.
-
-
-LaTeX Warning: Citation `nakamoto2008bitcoin' on page 4 undefined on input line
- 57.
-
-
-LaTeX Warning: Citation `buterin2014ethereum' on page 4 undefined on input line
- 58.
-
-
-LaTeX Warning: Citation `castro1999pbft' on page 4 undefined on input line 69.
-
 LaTeX Font Info:    External font `lmex10' loaded for size
 (Font)              <9> on input line 77.
 LaTeX Font Info:    External font `lmex10' loaded for size
 (Font)              <6> on input line 77.
 LaTeX Font Info:    External font `lmex10' loaded for size
 (Font)              <5> on input line 77.
-[4]
-
-LaTeX Warning: Citation `fischer1985flp' on page 5 undefined on input line 110.
-
-
-[5
+ [4] [5
 pdfTeX warning (ext4): destination with the same identifier (name{table.1}) has
  been already used, duplicate ignored
 <argument> ...shipout:D \box_use:N \l_shipout_box 
                                                   \__shipout_drop_firstpage_...
 l.125   \item \textbf
                      {B√†i to√°n hi·ªáu nƒÉng.} L√†m th·∫ø n√†o ƒë·ªÉ ƒë·∫°t...
-] [6{C:/Users/long.nguyen18/AppData/Local/Programs/MiKTeX/fonts/enc/dvips/lm/lm
--mathsy.enc}]
-
-LaTeX Warning: Citation `little1961law' on page 7 undefined on input line 210.
-
-[7] [8]) [9]
+] [6] [7] [8]) [9]
 \openout2 = `Content/Chapter_2/related-work.aux'.
 
  (Content/Chapter_2/related-work.tex
 Chapter 2.
-
-LaTeX Warning: Citation `fips180' on page 10 undefined on input line 28.
-
-
-LaTeX Warning: Citation `nakamoto2008bitcoin' on page 10 undefined on input lin
-e 28.
-
-
-LaTeX Warning: Citation `merkle1979' on page 10 undefined on input line 34.
-
 [10
 
 
 
 
-]
-
-LaTeX Warning: Citation `nakamoto2008bitcoin' on page 11 undefined on input lin
-e 47.
-
-
-LaTeX Warning: Citation `buterin2014ethereum' on page 11 undefined on input lin
-e 73.
-
-
-LaTeX Warning: Citation `wood2014ethereum' on page 11 undefined on input line 7
-3.
-
-[11{C:/Users/long.nguyen18/AppData/Local/Programs/MiKTeX/fonts/enc/dvips/lm/lm-
-mathit.enc}{C:/Users/long.nguyen18/AppData/Local/Programs/MiKTeX/fonts/enc/dvip
-s/lm/lm-rm.enc}]
-
-LaTeX Warning: Citation `androulaki2018hyperledger' on page 12 undefined on inp
-ut line 96.
-
-[12]
-
-LaTeX Warning: Citation `fischer1985flp' on page 13 undefined on input line 152
-.
-
-
-LaTeX Warning: Citation `lamport1998paxos' on page 13 undefined on input line 1
-61.
-
-[13
+] [11] [12] [13
 pdfTeX warning (ext4): destination with the same identifier (name{table.2}) has
  been already used, duplicate ignored
 <argument> ...shipout:D \box_use:N \l_shipout_box 
                                                   \__shipout_drop_firstpage_...
 l.165 
-      ]
-
-LaTeX Warning: Citation `ongaro2014raft' on page 14 undefined on input line 169
-.
-
-
-LaTeX Warning: Citation `lamport1982byzantine' on page 14 undefined on input li
-ne 202.
-
-
-LaTeX Warning: Citation `castro1999pbft' on page 14 undefined on input line 204
-.
-
-[14]
-
-LaTeX Warning: Citation `cachin2017blockchain' on page 15 undefined on input li
-ne 209.
-
-
-LaTeX Warning: Citation `haas2017wasm' on page 15 undefined on input line 237.
-
-
-LaTeX Warning: Citation `wasmspec' on page 15 undefined on input line 237.
-
-
-LaTeX Warning: Citation `wasi' on page 15 undefined on input line 248.
-
-[15
+      ] [14] [15
 pdfTeX warning (ext4): destination with the same identifier (name{table.3}) has
  been already used, duplicate ignored
 <argument> ...shipout:D \box_use:N \l_shipout_box 
                                                   \__shipout_drop_firstpage_...
 l.249 
-      ]
-
-LaTeX Warning: Citation `libp2p' on page 16 undefined on input line 263.
-
-
-LaTeX Warning: Citation `benet2014ipfs' on page 16 undefined on input line 264.
-
-
-
-LaTeX Warning: Citation `leveldb' on page 16 undefined on input line 275.
-
-
-LaTeX Warning: Citation `dinh2017blockbench' on page 16 undefined on input line
- 286.
-
-[16]
-
-LaTeX Warning: Citation `little1961law' on page 17 undefined on input line 293.
-
-
-
-LaTeX Warning: Citation `androulaki2018hyperledger' on page 17 undefined on inp
-ut line 306.
-
-
-LaTeX Warning: Citation `ongaro2014raft' on page 17 undefined on input line 308
-.
-
-
-LaTeX Warning: Citation `haas2017wasm' on page 17 undefined on input line 312.
-
-
-Overfull \hbox (25.38434pt too wide) in paragraph at lines 312--314
+      ] [16]
+Overfull \hbox (31.20724pt too wide) in paragraph at lines 312--314
 []\T5/lmr/bx/n/13 V∑ hÒp ^^_Áng thÊng minh: \T5/lmr/m/n/13 dÚng We-bAssem-bly [
-\T5/lmr/bx/n/13 ?\T5/lmr/m/n/13 ] (giËng Polka-dot/CosmWasm)
+[]] (giËng Polka-dot/CosmWasm)
  []
-
-
-LaTeX Warning: Citation `nakamoto2008bitcoin' on page 17 undefined on input lin
-e 315.
-
-
-LaTeX Warning: Citation `buterin2014ethereum' on page 17 undefined on input lin
-e 316.
 
 ) [17]
 \openout2 = `Content/Chapter_3/methodology.aux'.
@@ -1704,24 +1563,23 @@ pdfTeX warning (ext4): destination with the same identifier (name{table.4}) has
 <argument> ...shipout:D \box_use:N \l_shipout_box 
                                                   \__shipout_drop_firstpage_...
 l.45 
-     ]
+     ] [19]
+<Images/tx_journey.png, id=591, 970.62625pt x 3030.32124pt>
+File: Images/tx_journey.png Graphic file (type png)
+<use Images/tx_journey.png>
+Package pdftex.def Info: Images/tx_journey.png  used on input line 96.
+(pdftex.def)             Requested size: 308.71106pt x 963.80405pt.
+ [20]
+Overfull \vbox (329.10107pt too high) has occurred while \output is active []
 
-LaTeX Warning: Reference `fig:overall-arch' on page 19 undefined on input line 
-50.
 
-<Images/fg_1_architecture.png, id=264, 2826.56pt x 1541.76pt>
-File: Images/fg_1_architecture.png Graphic file (type png)
-<use Images/fg_1_architecture.png>
-Package pdftex.def Info: Images/fg_1_architecture.png  used on input line 53.
-(pdftex.def)             Requested size: 441.01773pt x 240.54652pt.
-[19
+[21
 pdfTeX warning (ext4): destination with the same identifier (name{figure.1}) ha
 s been already used, duplicate ignored
 <argument> ...shipout:D \box_use:N \l_shipout_box 
                                                   \__shipout_drop_firstpage_...
-l.73   \item \textbf
-                    {T·∫°o \& g·ª≠i:} Ng∆∞·ªùi d√πng ƒëi·ªÅn form tr√™n Expl...
- <./Images/fg_1_architecture.png>]
+l.100 
+       <./Images/tx_journey.png>]
 (C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/listings\lstlan
 g1.sty
 File: lstlang1.sty 2025/11/14 1.11b listings language file
@@ -1735,558 +1593,317 @@ g3.sty
 File: lstlang3.sty 2025/11/14 1.11b listings language file
 )
 Package hyperref Info: bookmark level for unknown lstlisting defaults to 0 on i
-nput line 110.
+nput line 113.
 LaTeX Font Info:    Font shape `T5/lmtt/bx/n' in size <9> not available
-(Font)              Font shape `T5/lmtt/b/n' tried instead on input line 111.
- [20]
-Overfull \hbox (14.10014pt too wide) in paragraph at lines 131--136
-\T5/lmr/m/n/13 JSON, \T5/lmtt/m/n/13 Payload \T5/lmr/m/n/13 ^^_˜Òc m¢ h‚a hex t
-hÊng qua c°c h†m \T5/lmtt/m/n/13 MarshalJSON\T5/lmr/m/n/13 /\T5/lmtt/m/n/13 Unm
-arshalJSON
- []
-
-[21]
-
-LaTeX Warning: Reference `sec:cp-storage' on page 22 undefined on input line 16
-6.
-
-[22]
-Overfull \hbox (7.78922pt too wide) in paragraph at lines 235--244
-\T5/lmr/m/n/13 Con-tract \T5/lmr/bx/n/13 nh™p \T5/lmr/m/n/13 qua \T5/lmtt/m/n/1
-3 //go:wasmimport env PutState\T5/lmr/m/n/13 : host ^^_Âc \T5/lmtt/m/n/13 keyPt
-r/keySize\T5/lmr/m/n/13 ,
- []
-
-[23]
-
-LaTeX Warning: Reference `fig:wasm-abi' on page 24 undefined on input line 248.
-
-
-LaTeX Font Info:    Font shape `T5/lmtt/bx/n' in size <13> not available
-(Font)              Font shape `T5/lmtt/b/n' tried instead on input line 256.
-
-Overfull \hbox (32.54683pt too wide) in paragraph at lines 272--277
-[]\T5/lmr/m/it/13 B˜Óc C --- ^^^˜a pay-load v†o sand-box. \T5/lmr/m/n/13 N∏u \T
-5/lmtt/m/n/13 len(tx.Payload)>0\T5/lmr/m/n/13 : gÂi \T5/lmtt/m/n/13 allocate(le
-n)\T5/lmr/m/n/13 ,
- []
-
-
-Overfull \hbox (8.06735pt too wide) in paragraph at lines 284--288
-[]\T5/lmr/m/it/13 B˜Óc E --- Tr£ sand-box. \T5/lmtt/m/n/13 defer release(runOK)
-\T5/lmr/m/n/13 : n∏u th†nh cÊng, \T5/lmtt/m/n/13 runOK=true\T5/lmr/m/n/13 ,
- []
-
-[24
+(Font)              Font shape `T5/lmtt/b/n' tried instead on input line 114.
+ [22] [23]
+<Images/core_components.png, id=652, 2509.375pt x 1830.84pt>
+File: Images/core_components.png Graphic file (type png)
+<use Images/core_components.png>
+Package pdftex.def Info: Images/core_components.png  used on input line 205.
+(pdftex.def)             Requested size: 441.01773pt x 321.74275pt.
+ [24] [25
 pdfTeX warning (ext4): destination with the same identifier (name{figure.2}) ha
 s been already used, duplicate ignored
 <argument> ...shipout:D \box_use:N \l_shipout_box 
                                                   \__shipout_drop_firstpage_...
-l.288 
-      ]
-Underfull \hbox (badness 6016) in paragraph at lines 310--311
-[]\T5/lmtt/m/n/9 debug\T5/lmr/m/n/9 : log cold/warm, WASM std-
- []
-
-
-(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/listings\lstlan
-g1.sty
-File: lstlang1.sty 2025/11/14 1.11b listings language file
-)
-(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/listings\lstlan
-g1.sty
-File: lstlang1.sty 2025/11/14 1.11b listings language file
-)
-Overfull \hbox (116.30183pt too wide) in paragraph at lines 315--317
-[]\T5/lmr/bx/n/13 Bi∂n d‡ch v† tri∫n khai con-tract. \T5/lmr/m/n/13 Source n¨m 
-trong \T5/lmtt/m/n/13 coreservice/contracts/<ten>/main.go\T5/lmr/m/n/13 .
- []
-
-
-Overfull \hbox (34.03333pt too wide) in paragraph at lines 322--329
-\T5/lmr/m/n/13 (browser) k≤o \T5/lmtt/m/n/13 gojs \T5/lmr/m/n/13 --- host b°o \
-T5/lmtt/m/n/13 module[gojs] not instantiated\T5/lmr/m/n/13 . \T5/lmtt/m/n/13 -s
-cheduler=none\T5/lmr/m/n/13 :
- []
-
-[25
-pdfTeX warning (ext4): destination with the same identifier (name{table.5}) has
- been already used, duplicate ignored
-<argument> ...shipout:D \box_use:N \l_shipout_box 
-                                                  \__shipout_drop_firstpage_...
-l.336 
-      ]
-
-LaTeX Warning: Reference `tab:sample-contracts' on page 26 undefined on input l
-ine 337.
-
-
-Underfull \hbox (badness 5189) in paragraph at lines 347--348
-[]\T5/lmtt/m/n/9 action=="create"\T5/lmr/m/n/9 : key \T5/lmtt/m/n/9 Asset_<id>\
-T5/lmr/m/n/9 ,
- []
-
-
-Underfull \hbox (badness 5133) in paragraph at lines 347--348
-\T5/lmr/m/n/9 value = raw JSON pay-load, qua
- []
-
-
-Underfull \hbox (badness 10000) in paragraph at lines 348--349
-[]\T5/lmtt/m/n/9 op=="register"\T5/lmr/m/n/9 , \T5/lmtt/m/n/9 qty>=0\T5/lmr/m/n
-/9 : key
- []
-
-
-Underfull \hbox (badness 1584) in paragraph at lines 349--350
-[]\T5/lmtt/m/n/9 size<=512\T5/lmr/m/n/9 , \T5/lmtt/m/n/9 1<=len(v)<=128\T5/lmr/
-m/n/9 ; val-i-date
- []
-
-[26
-pdfTeX warning (ext4): destination with the same identifier (name{table.6}) has
- been already used, duplicate ignored
-<argument> ...shipout:D \box_use:N \l_shipout_box 
-                                                  \__shipout_drop_firstpage_...
-l.389 
-      ]
-
-LaTeX Warning: Citation `bernstein2012ed25519' on page 27 undefined on input li
-ne 392.
-
-
-LaTeX Warning: Citation `rfc8032' on page 27 undefined on input line 392.
-
-
-Overfull \hbox (2.43803pt too wide) in paragraph at lines 396--402
-\T5/lmtt/m/n/13 cloudflare/circl/sign/mldsa/mldsa44\T5/lmr/m/n/13 . Kh‚a cÊng k
-hai 1312byte (2624 hex),
- []
-
-
-Overfull \hbox (34.5904pt too wide) in paragraph at lines 403--407
-\T5/lmtt/m/n/13 VerifyTransaction \T5/lmr/m/n/13 Ed25519 (dev/legacy). Pro-duc-
-tion luÊn \T5/lmtt/m/n/13 signTxViaCommitPeer()
- []
-
-[27
-pdfTeX warning (ext4): destination with the same identifier (name{table.7}) has
- been already used, duplicate ignored
-<argument> ...shipout:D \box_use:N \l_shipout_box 
-                                                  \__shipout_drop_firstpage_...
-l.436 
-      ]
-Overfull \hbox (24.6133pt too wide) in paragraph at lines 445--450
-[]\T5/lmr/bx/n/13 Kh‚a tin c™y. \T5/lmr/m/n/13 Com-mit peer val-i-date block vÓ
-i \T5/lmtt/m/n/13 TRUSTED_ENDORSER_PUBLIC_KEYS\T5/lmr/m/n/13 :
- []
-
-
-LaTeX Warning: Reference `sec:wasm-engine' on page 28 undefined on input line 4
-68.
-
-[28]
-Overfull \hbox (64.15353pt too wide) in paragraph at lines 481--487
-[]\T5/lmr/m/it/13 B˜Óc 4. \T5/lmtt/m/n/13 sendEndorsementAsync\T5/lmr/m/n/13 : 
-n∏u c‚ or-derer dis-cov-ery, \T5/lmtt/m/n/13 discovery.SendEndorsement
- []
-
-
-Overfull \hbox (55.28323pt too wide) in paragraph at lines 481--487
-\T5/lmr/m/n/13 g˚i tx JSON (^^_¢ en-dorse) tÓi Raft leader qua \T5/lmtt/m/n/13 
-/raft-order-service/endorsement/1.0.0\T5/lmr/m/n/13 .
- []
-
-
-Overfull \hbox (125.6626pt too wide) in paragraph at lines 501--508
-\T5/lmr/m/n/13 ˘ng (\T5/lmtt/m/n/13 endorsement.key \T5/lmr/m/n/13 / \T5/lmtt/m
-/n/13 endorsement.mldsa44.key\T5/lmr/m/n/13 ); (ii) c™p nh™t \T5/lmtt/m/n/13 TR
-USTED_ENDORSER_PUBLIC_KEYS\T5/lmr/m/n/13 ;
- []
-
-
-Overfull \hbox (2.54349pt too wide) in paragraph at lines 527--530
-[]\T5/lmr/m/n/13 Bi∏n thu™t to°n (\T5/lmtt/m/n/13 COMMIT_PEER_KEY_ALGO\T5/lmr/m
-/n/13 , \T5/lmtt/m/n/13 TRUSTED_ENDORSER_PUBLIC_KEYS\T5/lmr/m/n/13 )
- []
-
-[29
-pdfTeX warning (ext4): destination with the same identifier (name{table.8}) has
- been already used, duplicate ignored
-<argument> ...shipout:D \box_use:N \l_shipout_box 
-                                                  \__shipout_drop_firstpage_...
-l.532 \subsection
-                 {M·∫°ng libp2p v√† Discovery}]
-
-LaTeX Warning: Reference `tab:protocols' on page 30 undefined on input line 536
-.
-
-
-Overfull \hbox (35.6337pt too wide) in paragraph at lines 560--567
-[]\T5/lmr/m/n/13 MÎt chi ti∏t tËi ˜u ^^_°ng chÛ ˛ l† \T5/lmtt/m/n/13 SubmitReco
-rder \T5/lmr/m/n/13 (\T5/lmtt/m/n/13 storage/submit_recorder.go\T5/lmr/m/n/13 )
-:
- []
-
-
-LaTeX Warning: Reference `tab:core-api' on page 30 undefined on input line 571.
-
-
-
-Underfull \hbox (badness 10000) in paragraph at lines 586--586
-[]\T5/lmr/m/n/9 GET
- []
-
-[30]
-
-LaTeX Warning: Citation `ongaro2014raft' on page 31 undefined on input line 604
-.
-
-[31
-pdfTeX warning (ext4): destination with the same identifier (name{table.9}) has
- been already used, duplicate ignored
-<argument> ...shipout:D \box_use:N \l_shipout_box 
-                                                  \__shipout_drop_firstpage_...
-l.628 
-      ]
-
-LaTeX Warning: Reference `sec:committing-peer' on page 32 undefined on input li
-ne 634.
-
-
-LaTeX Warning: Reference `sec:ordering-tradeoffs' on page 32 undefined on input
- line 642.
-
-
-LaTeX Warning: Reference `tab:raft-components' on page 32 undefined on input li
-ne 651.
-
-[32]
-
-LaTeX Warning: Reference `tab:raft-messages' on page 33 undefined on input line
- 697.
-
-[33
-pdfTeX warning (ext4): destination with the same identifier (name{table.10}) ha
-s been already used, duplicate ignored
-<argument> ...shipout:D \box_use:N \l_shipout_box 
-                                                  \__shipout_drop_firstpage_...
-l.699 
-      ]
-Underfull \hbox (badness 1533) in paragraph at lines 714--715
-\T5/lmr/m/n/9 t‰a to†n bÎ danh s°ch th†nh vi∂n (t¯
- []
-
-
-Overfull \hbox (1.744pt too wide) in paragraph at lines 716--716
-[]\T5/lmr/m/n/9 MembershipRequest/Response| 
- []
-
-[34
-pdfTeX warning (ext4): destination with the same identifier (name{table.11}) ha
-s been already used, duplicate ignored
-<argument> ...shipout:D \box_use:N \l_shipout_box 
-                                                  \__shipout_drop_firstpage_...
-l.741 
-      ]
-
-LaTeX Warning: Reference `fig:raft-states' on page 35 undefined on input line 7
-62.
-
-[35
+l.233 
+       <./Images/core_components.png>] [26
 pdfTeX warning (ext4): destination with the same identifier (name{figure.3}) ha
 s been already used, duplicate ignored
 <argument> ...shipout:D \box_use:N \l_shipout_box 
                                                   \__shipout_drop_firstpage_...
-l.786 
+l.274 
       ]
+Underfull \hbox (badness 5622) in paragraph at lines 315--316
+[]\T5/lmr/m/n/9 debug: log cold/warm, WASM std-
+ []
 
-LaTeX Warning: Reference `sec:leader-election' on page 36 undefined on input li
-ne 793.
-
-[36{C:/Users/long.nguyen18/AppData/Local/Programs/MiKTeX/fonts/enc/dvips/lm/lm-
-mathex.enc}]
-
-LaTeX Warning: Reference `tab:raft-vs-standard' on page 37 undefined on input l
-ine 852.
+[27]
+Overfull \hbox (95.10364pt too wide) in paragraph at lines 320--322
+[]\T5/lmr/m/n/13 V∑ bi∂n d‡ch v† tri∫n khai, m¢ nguÁn con-tract n¨m trong core-
+ser-vice/contracts/<ten>/main.go
+ []
 
 
-Underfull \hbox (badness 10000) in paragraph at lines 867--868
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/listings\lstlan
+g1.sty
+File: lstlang1.sty 2025/11/14 1.11b listings language file
+)
+(C:\Users\long.nguyen18\AppData\Local\Programs\MiKTeX\tex/latex/listings\lstlan
+g1.sty
+File: lstlang1.sty 2025/11/14 1.11b listings language file
+)
+Underfull \hbox (badness 7869) in paragraph at lines 356--357
+[]\T5/lmr/m/n/9 action=="create": key As-set_<id>,
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 357--358
+[]\T5/lmr/m/n/9 op=="register", qty>=0: key
+ []
+
+[28
+pdfTeX warning (ext4): destination with the same identifier (name{table.5}) has
+ been already used, duplicate ignored
+<argument> ...shipout:D \box_use:N \l_shipout_box 
+                                                  \__shipout_drop_firstpage_...
+l.362 
+      ] [29
+pdfTeX warning (ext4): destination with the same identifier (name{table.6}) has
+ been already used, duplicate ignored
+<argument> ...shipout:D \box_use:N \l_shipout_box 
+                                                  \__shipout_drop_firstpage_...
+l.405 
+      ] [30
+pdfTeX warning (ext4): destination with the same identifier (name{table.7}) has
+ been already used, duplicate ignored
+<argument> ...shipout:D \box_use:N \l_shipout_box 
+                                                  \__shipout_drop_firstpage_...
+l.450 
+      ] [31] [32]
+Overfull \hbox (16.77824pt too wide) in paragraph at lines 540--540
+[]\T5/lmr/m/n/9 CORE_ASYNC_ENDORSE| 
+ []
+
+
+Overfull \hbox (34.76147pt too wide) in paragraph at lines 541--541
+[]\T5/lmr/m/n/9 CORE_ENDORSE_FALLBACK| 
+ []
+
+
+Overfull \hbox (6.69472pt too wide) in paragraph at lines 543--543
+[]\T5/lmr/m/n/9 CORE_SIGN_TIMEOUT| 
+ []
+
+
+Overfull \hbox (16.3937pt too wide) in paragraph at lines 544--544
+[]\T5/lmr/m/n/9 CORE_RECORD_SUBMIT| 
+ []
+
+
+Overfull \hbox (31.35031pt too wide) in paragraph at lines 549--553
+[]\T5/lmr/m/n/13 C¶n l˜u ˛ r¨ng c°c bi∏n li∂n quan tÓi thu™t to°n (COM-MIT_PEER
+_KEY_ALGO,
+ []
+
+[33
+pdfTeX warning (ext4): destination with the same identifier (name{table.8}) has
+ been already used, duplicate ignored
+<argument> ...shipout:D \box_use:N \l_shipout_box 
+                                                  \__shipout_drop_firstpage_...
+l.576 
+      ]
+Overfull \hbox (28.34134pt too wide) in paragraph at lines 585--593
+[]\T5/lmr/m/n/13 MÎt chi ti∏t tËi ˜u ^^_°ng chÛ ˛ l† bÎ ghi nh™n sub-mit (stor-
+age/submit_recorder.go).
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 612--612
+[]\T5/lmr/m/n/9 GET
+ []
+
+[34] [35
+pdfTeX warning (ext4): destination with the same identifier (name{table.9}) has
+ been already used, duplicate ignored
+<argument> ...shipout:D \box_use:N \l_shipout_box 
+                                                  \__shipout_drop_firstpage_...
+l.656 
+      ] [36]
+<Images/ordering_components.png, id=751, 2892.8075pt x 2656.92625pt>
+File: Images/ordering_components.png Graphic file (type png)
+<use Images/ordering_components.png>
+Package pdftex.def Info: Images/ordering_components.png  used on input line 708
+.
+(pdftex.def)             Requested size: 441.01773pt x 405.0489pt.
+ [37
+pdfTeX warning (ext4): destination with the same identifier (name{table.10}) ha
+s been already used, duplicate ignored
+<argument> ...shipout:D \box_use:N \l_shipout_box 
+                                                  \__shipout_drop_firstpage_...
+l.712 
+      ] [38
+pdfTeX warning (ext4): destination with the same identifier (name{figure.4}) ha
+s been already used, duplicate ignored
+<argument> ...shipout:D \box_use:N \l_shipout_box 
+                                                  \__shipout_drop_firstpage_...
+l.729 
+       <./Images/ordering_components.png>]
+Underfull \hbox (badness 1533) in paragraph at lines 752--753
+\T5/lmr/m/n/9 t‰a to†n bÎ danh s°ch th†nh vi∂n (t¯
+ []
+
+
+Overfull \hbox (1.744pt too wide) in paragraph at lines 754--754
+[]\T5/lmr/m/n/9 MembershipRequest/Response| 
+ []
+
+[39] [40
+pdfTeX warning (ext4): destination with the same identifier (name{table.11}) ha
+s been already used, duplicate ignored
+<argument> ...shipout:D \box_use:N \l_shipout_box 
+                                                  \__shipout_drop_firstpage_...
+l.780 \subsection
+                 {V√≤ng ƒë·ªùi v√† c√°c tr·∫°ng th√°i c·ªßa node}] [41
+pdfTeX warning (ext4): destination with the same identifier (name{figure.5}) ha
+s been already used, duplicate ignored
+<argument> ...shipout:D \box_use:N \l_shipout_box 
+                                                  \__shipout_drop_firstpage_...
+l.825 ...∆∞u ti√™n g√°n theo th·ª© t·ª± tham gia.}
+                                                   Khi m·ªôt node ƒë∆∞·ª£c k...
+] [42{C:/Users/long.nguyen18/AppData/Local/Programs/MiKTeX/fonts/enc/dvips/lm/l
+m-mathex.enc}]
+Underfull \hbox (badness 10000) in paragraph at lines 905--906
 []\T5/lmr/bx/n/9 To†n bÎ trong RAM
  []
 
 
-Underfull \hbox (badness 2922) in paragraph at lines 867--868
+Underfull \hbox (badness 2922) in paragraph at lines 905--906
 \T5/lmr/m/n/9 (nhanh, mßt khi crash, bÚ
  []
 
 
-Underfull \hbox (badness 10000) in paragraph at lines 868--868
+Underfull \hbox (badness 10000) in paragraph at lines 906--906
 []\T5/lmtt/m/n/9 etcd/raft\T5/lmr/m/n/9 ,
  []
 
-[37]
-
-LaTeX Warning: Reference `tab:timing' on page 38 undefined on input line 881.
-
-
-LaTeX Warning: Reference `fig:election' on page 38 undefined on input line 904.
-
-
-[38
+[43] [44
 pdfTeX warning (ext4): destination with the same identifier (name{table.12}) ha
 s been already used, duplicate ignored
 <argument> ...shipout:D \box_use:N \l_shipout_box 
                                                   \__shipout_drop_firstpage_...
-l.907 ...{B∆∞·ªõc 1 --- X√°c ƒë·ªãnh ·ª©ng vi√™n.}
+l.945 ...{B∆∞·ªõc 1 --- X√°c ƒë·ªãnh ·ª©ng vi√™n.}
                                                    Node ƒë√°nh d·∫•u Leader ...
 
 pdfTeX warning (ext4): destination with the same identifier (name{table.13}) ha
 s been already used, duplicate ignored
 <argument> ...shipout:D \box_use:N \l_shipout_box 
                                                   \__shipout_drop_firstpage_...
-l.907 ...{B∆∞·ªõc 1 --- X√°c ƒë·ªãnh ·ª©ng vi√™n.}
+l.945 ...{B∆∞·ªõc 1 --- X√°c ƒë·ªãnh ·ª©ng vi√™n.}
                                                    Node ƒë√°nh d·∫•u Leader ...
-]
-
-LaTeX Warning: Reference `sec:ordering-splitbrain' on page 39 undefined on inpu
-t line 935.
-
-[39]
-
-LaTeX Warning: Reference `sec:quorum' on page 40 undefined on input line 976.
-
-[40
-pdfTeX warning (ext4): destination with the same identifier (name{figure.4}) ha
-s been already used, duplicate ignored
-<argument> ...shipout:D \box_use:N \l_shipout_box 
-                                                  \__shipout_drop_firstpage_...
-l.989 \textbf{L·ªõp 3 --- Tho√°i v·ªã theo term.}
-                                                  Term ƒë√≥ng vai tr√≤ ƒë·ªì...
-]
-
-LaTeX Warning: Reference `sec:block-cutting' on page 41 undefined on input line
- 1002.
-
-[41] [42]
-
-LaTeX Warning: Reference `fig:block-pipeline' on page 43 undefined on input lin
-e 1067.
-
-[43
-pdfTeX warning (ext4): destination with the same identifier (name{figure.5}) ha
-s been already used, duplicate ignored
-<argument> ...shipout:D \box_use:N \l_shipout_box 
-                                                  \__shipout_drop_firstpage_...
-l.1110 
-       ] [44]
-
-LaTeX Warning: Reference `tab:protocols' on page 45 undefined on input line 118
-5.
-
-[45]
-Underfull \hbox (badness 2012) in paragraph at lines 1201--1202
-[]\T5/lmr/m/n/9 Client $\OMS/lmsy/m/n/9 !$ \T5/lmr/m/n/9 Com-mit-ting Peer: tru
-y vßn
- []
-
-[46
-pdfTeX warning (ext4): destination with the same identifier (name{table.14}) ha
-s been already used, duplicate ignored
-<argument> ...shipout:D \box_use:N \l_shipout_box 
-                                                  \__shipout_drop_firstpage_...
-l.1233 ...∫°ng th√°i trong RAM, kh√¥ng ghi b·ªÅn.}
-                                                   RaftLog v√† chu·ªói block...
-]
-
-LaTeX Warning: Reference `sec:deliver-sync' on page 47 undefined on input line 
-1237.
-
-
-LaTeX Warning: Reference `sec:ordering-splitbrain' on page 47 undefined on inpu
-t line 1253.
-
-[47]
-
-LaTeX Warning: Reference `tab:cp-packages' on page 48 undefined on input line 1
-305.
-
-
-LaTeX Warning: Reference `fig:cp-pipeline' on page 48 undefined on input line 1
-306.
-
-[48] [49
-pdfTeX warning (ext4): destination with the same identifier (name{table.15}) ha
-s been already used, duplicate ignored
-<argument> ...shipout:D \box_use:N \l_shipout_box 
-                                                  \__shipout_drop_firstpage_...
-l.1357   \item \textbf
-                      {Ch·∫∑ng mirror (b·∫•t ƒë·ªìng b·ªô).} M·ªôt nh√≥m wor...
-
+] [45] [46
 pdfTeX warning (ext4): destination with the same identifier (name{figure.6}) ha
 s been already used, duplicate ignored
 <argument> ...shipout:D \box_use:N \l_shipout_box 
                                                   \__shipout_drop_firstpage_...
-l.1357   \item \textbf
-                      {Ch·∫∑ng mirror (b·∫•t ƒë·ªìng b·ªô).} M·ªôt nh√≥m wor...
-] [50] [51] [52]
+l.1027 \textbf{L·ªõp 3 --- Tho√°i v·ªã theo term.}
+                                                   Term ƒë√≥ng vai tr√≤ ƒë·ª...
+] [47] [48]
+<Images/block_pipeline.png, id=826, 2208.25pt x 2211.26125pt>
+File: Images/block_pipeline.png Graphic file (type png)
+<use Images/block_pipeline.png>
+Package pdftex.def Info: Images/block_pipeline.png  used on input line 1139.
+(pdftex.def)             Requested size: 374.86775pt x 375.36958pt.
+ [49] [50
+pdfTeX warning (ext4): destination with the same identifier (name{figure.7}) ha
+s been already used, duplicate ignored
+<argument> ...shipout:D \box_use:N \l_shipout_box 
+                                                  \__shipout_drop_firstpage_...
+l.1162 
+        <./Images/block_pipeline.png>] [51]
+Underfull \hbox (badness 2012) in paragraph at lines 1240--1241
+[]\T5/lmr/m/n/9 Client $\OMS/lmsy/m/n/9 !$ \T5/lmr/m/n/9 Com-mit-ting Peer: tru
+y vßn
+ []
 
-LaTeX Warning: Reference `tab:storage-layers' on page 53 undefined on input lin
-e 1488.
-
-
-Underfull \hbox (badness 2662) in paragraph at lines 1500--1501
+[52
+pdfTeX warning (ext4): destination with the same identifier (name{table.14}) ha
+s been already used, duplicate ignored
+<argument> ...shipout:D \box_use:N \l_shipout_box 
+                                                  \__shipout_drop_firstpage_...
+l.1252 
+       ] [53] [54]
+<Images/cp_components.png, id=864, 3131.7pt x 2255.42625pt>
+File: Images/cp_components.png Graphic file (type png)
+<use Images/cp_components.png>
+Package pdftex.def Info: Images/cp_components.png  used on input line 1366.
+(pdftex.def)             Requested size: 441.01773pt x 317.61594pt.
+ [55
+pdfTeX warning (ext4): destination with the same identifier (name{table.15}) ha
+s been already used, duplicate ignored
+<argument> ...shipout:D \box_use:N \l_shipout_box 
+                                                  \__shipout_drop_firstpage_...
+l.1370 
+       ] [56
+pdfTeX warning (ext4): destination with the same identifier (name{figure.8}) ha
+s been already used, duplicate ignored
+<argument> ...shipout:D \box_use:N \l_shipout_box 
+                                                  \__shipout_drop_firstpage_...
+l.1393 
+        <./Images/cp_components.png>] [57] [58] [59]
+Underfull \hbox (badness 2662) in paragraph at lines 1530--1531
 []\T5/lmr/m/n/9 Tra UTXO hiªn
  []
 
 
-Underfull \hbox (badness 4995) in paragraph at lines 1501--1502
+Underfull \hbox (badness 4995) in paragraph at lines 1531--1532
 []\T5/lmr/m/n/9 Explorer & b°o
  []
 
-
-LaTeX Warning: Reference `sec:cp-deliver' on page 53 undefined on input line 15
-13.
-
-[53
+[60
 pdfTeX warning (ext4): destination with the same identifier (name{table.16}) ha
 s been already used, duplicate ignored
 <argument> ...shipout:D \box_use:N \l_shipout_box 
                                                   \__shipout_drop_firstpage_...
-l.1519 \subsubsection
-                     {L·ªõp 2 --- World state (UTXO tr√™n LevelDB)}]
+l.1557 
+       ] [61] [62]
+Overfull \hbox (31.88405pt too wide) in paragraph at lines 1643--1643
+[]\T5/lmr/m/n/9 TRUSTED_ENDORSER_PUBLIC_KEYS| 
+ []
 
-LaTeX Warning: Reference `sec:cp-metrics' on page 54 undefined on input line 15
-57.
 
-[54]
+Overfull \hbox (10.68896pt too wide) in paragraph at lines 1645--1645
+[]\T5/lmr/m/n/9 COMMIT_PEER_METRICS_ADDR| 
+ []
 
-LaTeX Warning: Reference `tab:cp-env' on page 55 undefined on input line 1598.
 
-[55] [56
+Overfull \hbox (1.63356pt too wide) in paragraph at lines 1647--1647
+[]\T5/lmr/m/n/9 COMMIT_PEER_PG_WORKERS| 
+ []
+
+
+Overfull \hbox (39.97841pt too wide) in paragraph at lines 1649--1649
+[]\T5/lmr/m/n/9 COMMIT_PEER_METRICS_RETENTION| 
+ []
+
+[63
 pdfTeX warning (ext4): destination with the same identifier (name{table.17}) ha
 s been already used, duplicate ignored
 <argument> ...shipout:D \box_use:N \l_shipout_box 
                                                   \__shipout_drop_firstpage_...
-l.1638 \textbf{Kh√≥a c·ª•c b·ªô, ph·∫°m vi h·∫πp.}
-                                                   V·ªõi c√°c tr·∫°ng th√°i ...
-]
-
-LaTeX Warning: Reference `tab:cp-concurrency' on page 57 undefined on input lin
-e 1640.
-
-[57
+l.1678 V
+        ·ªÅ kh·∫£ nƒÉng ch·ªãu l·ªói c·ª•c b·ªô, block d·ªã th∆∞·ªùng b·ªã b...
+] [64
 pdfTeX warning (ext4): destination with the same identifier (name{table.18}) ha
 s been already used, duplicate ignored
 <argument> ...shipout:D \box_use:N \l_shipout_box 
                                                   \__shipout_drop_firstpage_...
-l.1684 ...rld state, tu·∫ßn t·ª± ·ªü m·ª©c block.}
-                                                   World state ƒë∆∞·ª£c c·∫≠p]
-
-LaTeX Warning: Reference `tab:frontend-stack' on page 58 undefined on input lin
-e 1715.
-
-
-Underfull \hbox (badness 10000) in paragraph at lines 1731--1732
-[]\T5/lmr/m/n/9 B´m SHA-256 (d˙ liªu mock
- []
-
-[58]
-Overfull \hbox (7.33948pt too wide) in paragraph at lines 1736--1740
-[]\T5/lmr/m/n/13 Ÿng dˆng dÚng Re-act Router vÓi ba tuy∏n ^^_˜Ìng (\T5/lmtt/m/n
-/13 /transactions\T5/lmr/m/n/13 , \T5/lmtt/m/n/13 /transfer\T5/lmr/m/n/13 ,
- []
-
-
-Overfull \hbox (73.07109pt too wide) in paragraph at lines 1749--1756
-\T5/lmr/m/n/13 DRESS), ti∏t kiªm $[]\OT1/lmr/m/n/13 70%$ \T5/lmr/m/n/13 so vÓi 
-JSON; v† (2) \T5/lmr/bx/n/13 hª pay-load con-tract \T5/lmr/m/n/13 (\T5/lmtt/m/n
-/13 transactionUtils.js\T5/lmr/m/n/13 ):
- []
-
-[59
+l.1726 \subsection
+                  {M√£ h√≥a payload nh·ªã ph√¢n}] [65] [66
 pdfTeX warning (ext4): destination with the same identifier (name{table.19}) ha
 s been already used, duplicate ignored
 <argument> ...shipout:D \box_use:N \l_shipout_box 
                                                   \__shipout_drop_firstpage_...
-l.1774 
-       ]
-Overfull \hbox (30.41078pt too wide) in paragraph at lines 1775--1780
-[]\T5/lmr/m/n/13 N∏u SSE ^^_˘t, Dash-board chuy∫n sang \T5/lmr/bx/n/13 polling 
-d¸ ph·ng \T5/lmr/m/n/13 (gÂi \T5/lmtt/m/n/13 /api/transactions
- []
-
-
-LaTeX Warning: Reference `tab:schemas' on page 60 undefined on input line 1788.
-
-
-
-Overfull \hbox (31.68007pt too wide) in paragraph at lines 1811--1815
-[]\T5/lmtt/b/n/13 core_service.tx_submit_times\T5/lmr/bx/n/13 : \T5/lmtt/m/n/13
- txid \T5/lmr/m/n/13 PRI-MARY KEY, \T5/lmtt/m/n/13 submitted_at \T5/lmr/m/n/13 
-TIMES-
- []
-
-[60
+l.1813 \subsection
+                  {Ghi mirror v√† ƒëo benchmark}] [67
 pdfTeX warning (ext4): destination with the same identifier (name{table.20}) ha
 s been already used, duplicate ignored
 <argument> ...shipout:D \box_use:N \l_shipout_box 
                                                   \__shipout_drop_firstpage_...
-l.1820 ...ttt{commit\_peer.ledger\_transactions}:}
-                                                   li√™n k·∫øt \texttt{block...
-]
-Overfull \hbox (6.54214pt too wide) in paragraph at lines 1820--1824
-[]\T5/lmtt/b/n/13 commit_peer.ledger_transactions\T5/lmr/bx/n/13 : \T5/lmr/m/n/
-13 li∂n k∏t \T5/lmtt/m/n/13 block_id $\OMS/lmsy/m/n/13 !$ \T5/lmtt/m/n/13 ledge
-r.id\T5/lmr/m/n/13 , \T5/lmtt/m/n/13 txid\T5/lmr/m/n/13 ,
- []
+l.1863 
+       ]
 
+LaTeX Warning: Reference `sec:opts' on page 68 undefined on input line 1899.
 
-Overfull \hbox (1.82747pt too wide) in paragraph at lines 1820--1824
-\T5/lmtt/m/n/13 tx_index\T5/lmr/m/n/13 , \T5/lmtt/m/n/13 tx_data \T5/lmr/m/n/13
- JSONB (pay-load hex, en-dorse-ments, \T5/lmtt/m/n/13 algorithm\T5/lmr/m/n/13 )
-, kh‚a ngo§i
- []
-
-
-LaTeX Warning: Reference `tab:three-layers' on page 61 undefined on input line 
-1847.
-
-
-Overfull \hbox (12.79826pt too wide) in paragraph at lines 1858--1858
-[]\T5/lmtt/m/n/9 core_service.tx_submit_times| 
- []
-
-[61
+[68
 pdfTeX warning (ext4): destination with the same identifier (name{table.21}) ha
 s been already used, duplicate ignored
 <argument> ...shipout:D \box_use:N \l_shipout_box 
                                                   \__shipout_drop_firstpage_...
-l.1875 
-       ]
-
-LaTeX Warning: Citation `little1961law' on page 62 undefined on input line 1881
-.
-
-
-LaTeX Warning: Reference `tab:bench-results' on page 62 undefined on input line
- 1888.
-
-
-LaTeX Warning: Reference `sec:opts' on page 62 undefined on input line 1908.
-
-
-LaTeX Warning: Reference `tab:tech-problem' on page 62 undefined on input line 
-1917.
-
-[62
+l.1904 
+       ]) [69
 pdfTeX warning (ext4): destination with the same identifier (name{table.22}) ha
-s been already used, duplicate ignored
-<argument> ...shipout:D \box_use:N \l_shipout_box 
-                                                  \__shipout_drop_firstpage_...
-l.1938 \end{table}
-                  ]) [63
-pdfTeX warning (ext4): destination with the same identifier (name{table.23}) ha
 s been already used, duplicate ignored
 <argument> ...shipout:D \box_use:N \l_shipout_box 
                                                   \__shipout_drop_firstpage_...
@@ -2297,39 +1914,18 @@ l.121 \include{Content/Chapter_3/methodology}
 
 (Content/Chapter_4/evaluation.tex
 Chapter 4.
-
-LaTeX Warning: Reference `sec:measurement' on page 64 undefined on input line 1
-1.
-
-
-LaTeX Warning: Reference `sec:measurement' on page 64 undefined on input line 1
-6.
-
-
-LaTeX Warning: Reference `tab:eval-env' on page 64 undefined on input line 44.
-
-[64
+[70
 
 
 
 
-]
-
-LaTeX Warning: Reference `sec:eval-threats' on page 65 undefined on input line 
-83.
-
-[65
-pdfTeX warning (ext4): destination with the same identifier (name{table.24}) ha
+] [71
+pdfTeX warning (ext4): destination with the same identifier (name{table.23}) ha
 s been already used, duplicate ignored
 <argument> ...shipout:D \box_use:N \l_shipout_box 
                                                   \__shipout_drop_firstpage_...
 l.90 \subsection
                 {Ma tr·∫≠n tham s·ªë}]
-
-LaTeX Warning: Reference `tab:eval-matrix' on page 66 undefined on input line 9
-4.
-
-
 Underfull \hbox (badness 10000) in paragraph at lines 106--106
 []\T5/lmr/m/n/9 block $\OMS/lmsy/m/n/9 2
  []
@@ -2342,45 +1938,20 @@ Overfull \hbox (4.58344pt too wide) in paragraph at lines 106--106
  
  []
 
-
-LaTeX Warning: Reference `sec:eval-interval' on page 66 undefined on input line
- 115.
-
-
-LaTeX Warning: Reference `sec:eval-blocksize' on page 66 undefined on input lin
-e 117.
-
-
-LaTeX Warning: Reference `tab:eval-tps' on page 66 undefined on input line 125.
-
-
-
-LaTeX Warning: Reference `fig:eval-tps' on page 66 undefined on input line 125.
-
-
-[66
-pdfTeX warning (ext4): destination with the same identifier (name{table.25}) ha
+[72
+pdfTeX warning (ext4): destination with the same identifier (name{table.24}) ha
 s been already used, duplicate ignored
 <argument> ...shipout:D \box_use:N \l_shipout_box 
                                                   \__shipout_drop_firstpage_...
 l.146 
-      ]
-
-LaTeX Warning: Reference `tab:eval-blocksize' on page 67 undefined on input lin
-e 185.
-
-
-LaTeX Warning: Reference `fig:eval-blocksize' on page 67 undefined on input lin
-e 185.
-
-[67
-pdfTeX warning (ext4): destination with the same identifier (name{table.26}) ha
+      ] [73
+pdfTeX warning (ext4): destination with the same identifier (name{table.25}) ha
 s been already used, duplicate ignored
 <argument> ...shipout:D \box_use:N \l_shipout_box 
                                                   \__shipout_drop_firstpage_...
 l.204 \end{table}
                  
-pdfTeX warning (ext4): destination with the same identifier (name{figure.7}) ha
+pdfTeX warning (ext4): destination with the same identifier (name{figure.9}) ha
 s been already used, duplicate ignored
 <argument> ...shipout:D \box_use:N \l_shipout_box 
                                                   \__shipout_drop_firstpage_...
@@ -2388,134 +1959,79 @@ l.204 \end{table}
                  ]
 Package pgfplots info on input line 219: Using 'lua backend=false' for axis: xm
 ode=log unsupported (yet).
- [68
+ [74
+pdfTeX warning (ext4): destination with the same identifier (name{table.26}) ha
+s been already used, duplicate ignored
+<argument> ...shipout:D \box_use:N \l_shipout_box 
+                                                  \__shipout_drop_firstpage_...
+l.241 
+      
+pdfTeX warning (ext4): destination with the same identifier (name{figure.10}) h
+as been already used, duplicate ignored
+<argument> ...shipout:D \box_use:N \l_shipout_box 
+                                                  \__shipout_drop_firstpage_...
+l.241 
+      ] [75
 pdfTeX warning (ext4): destination with the same identifier (name{table.27}) ha
 s been already used, duplicate ignored
 <argument> ...shipout:D \box_use:N \l_shipout_box 
                                                   \__shipout_drop_firstpage_...
-l.241 
+l.298 
       
-pdfTeX warning (ext4): destination with the same identifier (name{figure.8}) ha
-s been already used, duplicate ignored
+pdfTeX warning (ext4): destination with the same identifier (name{figure.11}) h
+as been already used, duplicate ignored
 <argument> ...shipout:D \box_use:N \l_shipout_box 
                                                   \__shipout_drop_firstpage_...
-l.241 
-      ]
-
-LaTeX Warning: Reference `tab:eval-interval' on page 69 undefined on input line
- 251.
-
-[69
+l.298 
+      ] [76
 pdfTeX warning (ext4): destination with the same identifier (name{table.28}) ha
-s been already used, duplicate ignored
-<argument> ...shipout:D \box_use:N \l_shipout_box 
-                                                  \__shipout_drop_firstpage_...
-l.298 
-      
-pdfTeX warning (ext4): destination with the same identifier (name{figure.9}) ha
-s been already used, duplicate ignored
-<argument> ...shipout:D \box_use:N \l_shipout_box 
-                                                  \__shipout_drop_firstpage_...
-l.298 
-      ]
-
-LaTeX Warning: Reference `tab:eval-workers' on page 70 undefined on input line 
-304.
-
-
-LaTeX Warning: Reference `fig:eval-workers' on page 70 undefined on input line 
-304.
-
-[70
-pdfTeX warning (ext4): destination with the same identifier (name{table.29}) ha
 s been already used, duplicate ignored
 <argument> ...shipout:D \box_use:N \l_shipout_box 
                                                   \__shipout_drop_firstpage_...
 l.348 \section
               {C·∫•u h√¨nh khuy·∫øn ngh·ªã}
-pdfTeX warning (ext4): destination with the same identifier (name{figure.10}) h
+pdfTeX warning (ext4): destination with the same identifier (name{figure.12}) h
 as been already used, duplicate ignored
 <argument> ...shipout:D \box_use:N \l_shipout_box 
                                                   \__shipout_drop_firstpage_...
 l.348 \section
               {C·∫•u h√¨nh khuy·∫øn ngh·ªã}]
 
-LaTeX Warning: Reference `tab:eval-best' on page 71 undefined on input line 352
-.
+LaTeX Warning: Reference `sec:opts' on page 77 undefined on input line 384.
 
-
-LaTeX Warning: Reference `sec:measurement' on page 71 undefined on input line 3
-81.
-
-
-LaTeX Warning: Reference `sec:opts' on page 71 undefined on input line 384.
-
-) [71
-pdfTeX warning (ext4): destination with the same identifier (name{table.30}) ha
+) [77
+pdfTeX warning (ext4): destination with the same identifier (name{table.29}) ha
 s been already used, duplicate ignored
 <argument> ...shipout:D \box_use:N \l_shipout_box 
                                                   \__shipout_drop_firstpage_...
 l.122 \include{Content/Chapter_4/evaluation}
-                                            ] [72]
+                                            ] [78]
 \openout2 = `Content/Chapter_5/future-work.aux'.
 
 
 (Content/Chapter_5/future-work.tex
 Chapter 5.
-
-LaTeX Warning: Reference `chap:evaluation' on page 73 undefined on input line 8
-.
-
-
-LaTeX Warning: Reference `chap:evaluation' on page 73 undefined on input line 3
-2.
-
-[73
+[79
 
 
 
 
-]
-
-LaTeX Warning: Reference `sec:eval-threats' on page 74 undefined on input line 
-55.
-
-
-LaTeX Warning: Reference `chap:evaluation' on page 74 undefined on input line 6
-7.
+] [80] [81]) [82] [83] (main.bbl
+Underfull \hbox (badness 1968) in paragraph at lines 39--44
+[]\T5/lmr/m/n/13 E. An-droulaki, A. Barger, V. Bort-nikov, C. Cachin, K. Chris-
+tidis,
+ []
 
 
-LaTeX Warning: Reference `sec:ordering-messages' on page 74 undefined on input 
-line 85.
+Underfull \hbox (badness 1005) in paragraph at lines 39--44
+\T5/lmr/m/n/13 ``Hy-per-ledger fab-ric: A dis-tributed op-er-at-ing sys-tem for
+ per-mis-sioned
+ []
+
+[84
 
 
-LaTeX Warning: Citation `castro1999pbft' on page 74 undefined on input line 87.
-
-
-[74]
-
-LaTeX Warning: Reference `sec:deliver-sync' on page 75 undefined on input line 
-98.
-
-
-LaTeX Warning: Reference `sec:eval-threats' on page 75 undefined on input line 
-109.
-
-
-LaTeX Warning: Reference `sec:eval-threats' on page 75 undefined on input line 
-117.
-
-[75]
-
-LaTeX Warning: Reference `chap:evaluation' on page 76 undefined on input line 1
-26.
-
-
-LaTeX Warning: Reference `sec:quorum' on page 76 undefined on input line 140.
-
-) [76] [77]
-No file main.bbl.
-(main.aux (Cover_Page/cover-page.aux) (Beginning/commitment.aux)
+]) [85] (main.aux (Cover_Page/cover-page.aux) (Beginning/commitment.aux)
 (Beginning/acknowledgement.aux) (Content/Abstract/abstract.aux)
 (Content/Chapter_1/introduction.aux) (Content/Chapter_2/related-work.aux)
 (Content/Chapter_3/methodology.aux) (Content/Chapter_4/evaluation.aux)
@@ -2528,24 +2044,15 @@ L3 programming layer <2025-12-24>
 
 LaTeX Warning: There were undefined references.
 
-
-LaTeX Warning: Label(s) may have changed. Rerun to get cross-references right.
-
-
-Package rerunfilecheck Warning: File `main.out' has changed.
-(rerunfilecheck)                Rerun to get outlines right
-(rerunfilecheck)                or use package `bookmark'.
-
-Package rerunfilecheck Info: Checksums for `main.out':
-(rerunfilecheck)             Before: 2B90D39FC6AE5EB3090F2DDE442D6660;5189
-(rerunfilecheck)             After:  1F4FEEDF63AE587DCC07777CE140D3C2;8778.
+Package rerunfilecheck Info: File `main.out' has not changed.
+(rerunfilecheck)             Checksum: BBEE87FF0566F6E5436BB937F62F1157;8879.
  ) 
 Here is how much of TeX's memory you used:
- 36558 strings out of 467871
- 833602 string characters out of 5414504
- 1523713 words of memory out of 5000000
- 64419 multiletter control sequences out of 15000+600000
- 796062 words of font info for 107 fonts, out of 8000000 for 9000
+ 36667 strings out of 467871
+ 836073 string characters out of 5414504
+ 1534500 words of memory out of 5000000
+ 64497 multiletter control sequences out of 15000+600000
+ 782883 words of font info for 102 fonts, out of 8000000 for 9000
  1141 hyphenation exceptions out of 8191
  84i,19n,94p,727b,2280s stack positions out of 10000i,1000n,20000p,200000b,200000s
 <C:/Users/long.nguyen18/AppData/Local/Programs/MiKTeX/fonts/type1/public/lm/l
@@ -2567,9 +2074,9 @@ pe1/public/lm/lmtk10.pfb><C:/Users/long.nguyen18/AppData/Local/Programs/MiKTeX/
 fonts/type1/public/lm/lmtt12.pfb><C:/Users/long.nguyen18/AppData/Local/Programs
 /MiKTeX/fonts/type1/public/lm/lmtt9.pfb><C:/Users/long.nguyen18/AppData/Local/P
 rograms/MiKTeX/fonts/type1/public/lm/lmtti10.pfb>
-Output written on main.pdf (84 pages, 5279839 bytes).
+Output written on main.pdf (94 pages, 1831247 bytes).
 PDF statistics:
- 862 PDF objects out of 1000 (max. 8388607)
- 324 named destinations out of 1000 (max. 500000)
- 226 words of extra memory for PDF output out of 10000 (max. 10000000)
+ 1245 PDF objects out of 1440 (max. 8388607)
+ 350 named destinations out of 1000 (max. 500000)
+ 398 words of extra memory for PDF output out of 10000 (max. 10000000)
 

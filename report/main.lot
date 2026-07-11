@@ -5,31 +5,30 @@
 \contentsline {table}{\numberline {3}{\ignorespaces So sánh các thuật toán đồng thuận}}{15}{table.3}%
 \addvspace {10\p@ }
 \contentsline {table}{\numberline {4}{\ignorespaces Ba tầng trách nhiệm và ranh giới của chúng}}{18}{table.4}%
-\contentsline {table}{\numberline {5}{\ignorespaces Tham số và gỡ lỗi WASM engine}}{25}{table.5}%
-\contentsline {table}{\numberline {6}{\ignorespaces Ba hợp đồng mẫu trong repository}}{26}{table.6}%
-\contentsline {table}{\numberline {7}{\ignorespaces So sánh endorsement Ed25519 và ML-DSA-44 (góc nhìn Core)}}{27}{table.7}%
-\contentsline {table}{\numberline {8}{\ignorespaces Biến môi trường endorsement trên Core Service}}{29}{table.8}%
-\contentsline {table}{\numberline {9}{\ignorespaces Các endpoint chính của Core Service}}{31}{table.9}%
-\contentsline {table}{\numberline {10}{\ignorespaces Các thành phần bên trong một node của Ordering Service}}{33}{table.10}%
-\contentsline {table}{\numberline {11}{\ignorespaces Các loại thông điệp của tầng đồng thuận}}{34}{table.11}%
-\contentsline {table}{\numberline {12}{\ignorespaces So sánh Raft nguyên bản và Raft của dự án}}{38}{table.12}%
-\contentsline {table}{\numberline {13}{\ignorespaces Các hằng số thời gian của tầng đồng thuận}}{38}{table.13}%
-\contentsline {table}{\numberline {14}{\ignorespaces Các Protocol ID libp2p dùng trong hệ thống}}{46}{table.14}%
-\contentsline {table}{\numberline {15}{\ignorespaces Các gói con của Committing Peer và trách nhiệm}}{49}{table.15}%
-\contentsline {table}{\numberline {16}{\ignorespaces Ba lớp lưu trữ của Committing Peer}}{53}{table.16}%
-\contentsline {table}{\numberline {17}{\ignorespaces Một số biến môi trường cấu hình Committing Peer}}{56}{table.17}%
-\contentsline {table}{\numberline {18}{\ignorespaces Trạng thái chia sẻ và cơ chế an toàn luồng tương ứng}}{57}{table.18}%
-\contentsline {table}{\numberline {19}{\ignorespaces Công nghệ của Blockchain Explorer}}{59}{table.19}%
-\contentsline {table}{\numberline {20}{\ignorespaces Ba schema của cơ sở dữ liệu}}{60}{table.20}%
-\contentsline {table}{\numberline {21}{\ignorespaces Ba lớp đo lường hiệu năng}}{61}{table.21}%
-\contentsline {table}{\numberline {22}{\ignorespaces Kết quả benchmark tham khảo (5000 req/s, 60s)}}{62}{table.22}%
-\contentsline {table}{\numberline {23}{\ignorespaces Ánh xạ ``vấn đề $\leftrightarrow $ công nghệ''}}{63}{table.23}%
+\contentsline {table}{\numberline {5}{\ignorespaces Tham số và gỡ lỗi WASM engine}}{28}{table.5}%
+\contentsline {table}{\numberline {6}{\ignorespaces Ba hợp đồng mẫu trong repository}}{29}{table.6}%
+\contentsline {table}{\numberline {7}{\ignorespaces So sánh endorsement Ed25519 và ML-DSA-44 (góc nhìn Core)}}{30}{table.7}%
+\contentsline {table}{\numberline {8}{\ignorespaces Biến môi trường endorsement trên Core Service}}{33}{table.8}%
+\contentsline {table}{\numberline {9}{\ignorespaces Các endpoint chính của Core Service}}{35}{table.9}%
+\contentsline {table}{\numberline {10}{\ignorespaces Các thành phần bên trong một node của Ordering Service}}{37}{table.10}%
+\contentsline {table}{\numberline {11}{\ignorespaces Các loại thông điệp của tầng đồng thuận}}{40}{table.11}%
+\contentsline {table}{\numberline {12}{\ignorespaces So sánh Raft nguyên bản và Raft của dự án}}{44}{table.12}%
+\contentsline {table}{\numberline {13}{\ignorespaces Các hằng số thời gian của tầng đồng thuận}}{44}{table.13}%
+\contentsline {table}{\numberline {14}{\ignorespaces Các Protocol ID libp2p dùng trong hệ thống}}{52}{table.14}%
+\contentsline {table}{\numberline {15}{\ignorespaces Các gói con của Committing Peer và trách nhiệm}}{55}{table.15}%
+\contentsline {table}{\numberline {16}{\ignorespaces Ba lớp lưu trữ của Committing Peer}}{60}{table.16}%
+\contentsline {table}{\numberline {17}{\ignorespaces Một số biến môi trường cấu hình Committing Peer}}{63}{table.17}%
+\contentsline {table}{\numberline {18}{\ignorespaces Công nghệ của Blockchain Explorer}}{64}{table.18}%
+\contentsline {table}{\numberline {19}{\ignorespaces Ba schema của cơ sở dữ liệu}}{66}{table.19}%
+\contentsline {table}{\numberline {20}{\ignorespaces Ba lớp đo lường hiệu năng}}{67}{table.20}%
+\contentsline {table}{\numberline {21}{\ignorespaces Kết quả benchmark tham khảo (5000 req/s, 60s)}}{68}{table.21}%
+\contentsline {table}{\numberline {22}{\ignorespaces Ánh xạ ``vấn đề $\leftrightarrow $ công nghệ''}}{69}{table.22}%
 \addvspace {10\p@ }
-\contentsline {table}{\numberline {24}{\ignorespaces Môi trường thực nghiệm}}{65}{table.24}%
-\contentsline {table}{\numberline {25}{\ignorespaces Ma trận tham số thực nghiệm (mỗi cấu hình chạy 3 lần)}}{66}{table.25}%
-\contentsline {table}{\numberline {26}{\ignorespaces Ảnh hưởng của tốc độ gửi (block=1000, iv=100ms, 32 luồng)}}{67}{table.26}%
-\contentsline {table}{\numberline {27}{\ignorespaces Ảnh hưởng của kích thước block (tps=$\infty $, iv=100ms, 32 luồng)}}{68}{table.27}%
-\contentsline {table}{\numberline {28}{\ignorespaces Ảnh hưởng của chu kỳ đề xuất ở tải dưới bão hòa (tps=5.000, block=1.000, 32 luồng)}}{69}{table.28}%
-\contentsline {table}{\numberline {29}{\ignorespaces Ảnh hưởng của số luồng gửi (block=500, tps=$\infty $, iv=100ms)}}{70}{table.29}%
-\contentsline {table}{\numberline {30}{\ignorespaces Bộ tham số khuyến nghị cho Ordering Service}}{71}{table.30}%
+\contentsline {table}{\numberline {23}{\ignorespaces Môi trường thực nghiệm}}{71}{table.23}%
+\contentsline {table}{\numberline {24}{\ignorespaces Ma trận tham số thực nghiệm (mỗi cấu hình chạy 3 lần)}}{72}{table.24}%
+\contentsline {table}{\numberline {25}{\ignorespaces Ảnh hưởng của tốc độ gửi (block=1000, iv=100ms, 32 luồng)}}{73}{table.25}%
+\contentsline {table}{\numberline {26}{\ignorespaces Ảnh hưởng của kích thước block (tps=$\infty $, iv=100ms, 32 luồng)}}{74}{table.26}%
+\contentsline {table}{\numberline {27}{\ignorespaces Ảnh hưởng của chu kỳ đề xuất ở tải dưới bão hòa (tps=5.000, block=1.000, 32 luồng)}}{75}{table.27}%
+\contentsline {table}{\numberline {28}{\ignorespaces Ảnh hưởng của số luồng gửi (block=500, tps=$\infty $, iv=100ms)}}{76}{table.28}%
+\contentsline {table}{\numberline {29}{\ignorespaces Bộ tham số khuyến nghị cho Ordering Service}}{77}{table.29}%
 \addvspace {10\p@ }

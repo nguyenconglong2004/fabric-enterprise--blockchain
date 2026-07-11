@@ -1,3 +1,6 @@
+% Dat file nay vao Content/Chapter_X/evaluation.tex (hoac \input tu main thesis).
+% Can: float, booktabs, pgfplots, tikz.
+
 \chapter{Thực nghiệm và Đánh giá hiệu năng}
 \label{chap:evaluation}
 
@@ -394,3 +397,301 @@ lượng sẽ thấp hơn do cộng thêm RTT đồng thuận và chi phí I/O; 
 block=250--500) được kỳ vọng giữ nguyên vì chúng bắt nguồn từ cơ chế gom lô độc
 lập với số node. (v)~Phép đo thực hiện trên một máy chia sẻ tài nguyên nên còn
 nhiễu; việc lặp ba lần và lấy trung vị nhằm giảm thiểu ảnh hưởng này.
+
+% ============================================================================
+% PHẦN BỔ SUNG: ĐÁNH GIÁ END-TO-END (FULL PIPELINE)
+% ============================================================================
+
+\section{Đánh giá end-to-end toàn pipeline}
+\label{sec:e2e-eval}
+
+Sau khi xác định trần và bộ tham số tối ưu cho Ordering Service
+(Mục~\ref{sec:eval-best}), khóa luận tiếp tục đo toàn bộ đường ống từ client tới
+ledger để trả lời câu hỏi thực tế hơn: khi Core thực thi WASM, Committing Peer
+ký endorsement và mirror PostgreSQL chạy song song, hệ thống chịu được bao
+nhiêu giao dịch mỗi giây?
+
+Mọi phép đo end-to-end dùng đúng bộ tham số đã tối ưu ở phần trên cho kích
+thước block và chu kỳ đề xuất. Lựa chọn kích thước block bằng 500 (thay vì
+250) cân bằng thông lượng đóng block cao (${\sim}77.800$ tx/s ở
+Mục~\ref{sec:eval-blocksize}) với số block/s vừa phải hơn cho Committing Peer
+và PostgreSQL. Như vậy, nếu pipeline end-to-end bão hòa, ta có thể loại trừ
+orderer là nguyên nhân --- mọi giới hạn đo được phải đến từ các tầng phía
+trước hoặc sau ordering.
+
+\subsection{Mục tiêu và câu hỏi thực nghiệm}
+\label{sec:e2e-goals}
+
+Chương này tiếp tục trả lời năm câu hỏi thực nghiệm ở tầng end-to-end. Câu hỏi
+đầu tiên là trần bền vững: tốc độ commit qua toàn pipeline là bao nhiêu khi
+tăng dần tốc độ gửi từ k6? Câu hỏi thứ hai là điểm bão hòa thực tế: ở mức
+offer rate nào submit và commit ngừng bám nhau và lượng giao dịch tồn đọng
+(backlog) bắt đầu tích lũy? Câu hỏi thứ ba xoay quanh độ trễ end-to-end: p95
+thay đổi thế nào khi hệ thống tiến tới bão hòa, và sự gia tăng đó đến từ thời
+gian xử lý hay thời gian chờ trong hàng đợi? Câu hỏi thứ tư so sánh ảnh hưởng
+của thuật toán ký: ML-DSA-44 (post-quantum) so với Ed25519 trên cùng một hợp
+đồng benchmark và cùng cấu hình orderer. Câu hỏi cuối cùng xác nhận lại nút
+thắt: liệu orderer đã tối ưu có còn là cổ chai so với trần end-to-end đo được
+hay không.
+
+\subsection{Thiết lập thực nghiệm}
+\label{sec:e2e-setup}
+
+Pipeline được đo trải qua năm chặng: k6 gửi tải, Core Service thực thi WASM,
+Ordering Service sắp xếp, Committing Peer ghi sổ, và PostgreSQL nhận mirror.
+Client gửi giao dịch qua endpoint submit của Core; Core gọi hợp đồng benchmark
+trên engine WASM, ủy quyền ký cho Committing Peer qua libp2p, rồi relay giao
+dịch đã ký sang orderer. Chỉ số được lấy từ endpoint benchmark của Core trong
+đúng cửa sổ gửi tải, theo cùng nguyên tắc ``During load'' đã dùng khi đo riêng
+lớp ordering.
+
+\begin{table}[H]
+\centering
+\caption{Thiết lập thực nghiệm end-to-end}
+\label{tab:e2e-setup}
+\begin{tabular}{@{}p{4.5cm}p{8cm}@{}}
+\toprule
+Thành phần & Chi tiết \\
+\midrule
+Công cụ tải & k6, kịch bản gửi giao dịch benchmark \\
+Hợp đồng & bench\_ping (no-op, cô lập chi phí WASM tối thiểu) \\
+Orderer & block=500, iv=100ms (Mục~\ref{sec:eval-best}) \\
+Thuật toán ký & ML-DSA-44 hoặc Ed25519, chọn qua biến cấu hình thuật toán ký trên Committing Peer \\
+Cửa sổ load & 60\,s (15\,s cho smoke 1k); drain 90--120\,s \\
+Tiền tố giao dịch & Riêng cho mỗi lần chạy, dùng để lọc số liệu \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Hai sweep độc lập được thực hiện: một với ML-DSA-44 ở offer rate từ 1.000 tới
+4.000 tx/s, một với Ed25519 ở offer rate từ 2.000 tới 6.000 tx/s. Trước mỗi
+run tải cao, toàn bộ stack được khởi động lại sạch để tránh backlog từ run
+trước làm méo số liệu tồn đọng và độ trễ.
+
+\subsection{Kết quả với ML-DSA-44}
+\label{sec:e2e-mldsa}
+
+Bảng~\ref{tab:e2e-mldsa} và Hình~\ref{fig:e2e-mldsa} tổng hợp kết quả với
+thuật toán ký post-quantum ML-DSA-44.
+
+\begin{table}[H]
+\centering
+\caption{Sweep end-to-end ML-DSA-44 (orderer block=500, iv=100ms)}
+\label{tab:e2e-mldsa}
+\begin{tabular}{@{}rrrrrr@{}}
+\toprule
+Rate đặt & Submit/s & Commit/s & E2E p50 & E2E p95 & Pending \\
+\midrule
+1.000  & 1.000 & 992  & 85 ms   & 131 ms  & 0 \\
+2.000  & 1.967 & 1.955 & 146 ms  & 619 ms  & 410 \\
+2.500  & 2.449 & 2.040 & 634 ms  & 5,6 s   & 23.358 \\
+3.000  & 2.634 & 1.984 & 5,2 s   & 12,4 s  & 3.184 \\
+4.000  & 2.906 & 1.013 & 13,2 s  & 48,2 s  & 79.831 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}
+\begin{axis}[
+    width=0.82\textwidth, height=6.2cm,
+    xlabel={Offer rate đặt (tx/s)}, ylabel={Throughput (tx/s)},
+    xmin=0, xmax=4200, ymin=0,
+    legend pos=north west, grid=both, grid style={gray!20},
+    scaled ticks=false, tick label style={/pgf/number format/1000 sep={}},
+]
+\addplot[dashed, gray, domain=0:4000] {x};
+\addlegendentry{Lý tưởng (submit = rate)}
+\addplot[mark=square*, thick, orange] coordinates {
+    (1000,1000)(2000,1967)(2500,2449)(3000,2634)(4000,2906)};
+\addlegendentry{Submit/s}
+\addplot[mark=*, thick, blue] coordinates {
+    (1000,992)(2000,1955)(2500,2040)(3000,1984)(4000,1013)};
+\addlegendentry{Commit/s}
+\end{axis}
+\end{tikzpicture}
+\caption{ML-DSA-44: submit và commit bám nhau tới ${\sim}2$k tx/s; từ 2,5k trở
+lên commit suy giảm dù submit vẫn tăng --- dấu hiệu bão hòa pipeline.}
+\label{fig:e2e-mldsa}
+\end{figure}
+
+Ở 1--2k tx/s, pipeline xử lý kịp: commit bám sát submit (sai lệch dưới 2\%),
+E2E p95 dưới 620\,ms, backlog gần bằng 0. Tại 2,5k tx/s, điểm bão hòa xuất
+hiện: commit giảm còn 2.040/s trong khi submit vẫn 2.449/s, và E2E p95 vọt
+lên 5,6\,s --- phần lớn là thời gian chờ hàng đợi, không phải chi phí xử lý
+một giao dịch đơn lẻ. Ở 3k, xu hướng này tiếp diễn rõ ràng hơn: commit giữ ở
+mức 1.984/s trong khi submit đạt 2.634/s, và độ trễ tiếp tục xấu đi đúng như
+kỳ vọng --- p50 tăng lên 5,2\,s và p95 lên 12,4\,s, cao hơn hẳn so với mốc
+2,5k. Ở 4k, commit sụt còn khoảng 1.000/s với p95 gần 50\,s. Trần bền vững
+với ML-DSA-44 nằm quanh 2.000 tx/s commit; burst ngắn có thể đạt 3--6k tx/s
+nhưng không duy trì được trong cửa sổ 60\,s.
+
+Cần lưu ý một giới hạn khi đọc cột số giao dịch tồn đọng (pending) trong
+Bảng~\ref{tab:e2e-mldsa}: giá trị này được chụp tại cuối cửa sổ đo (bao gồm cả
+pha drain), nên phụ thuộc vào thời gian chờ drain được cấu hình cho từng lần
+chạy. Nếu các mức tải khác nhau không dùng cùng một thời gian drain, cột này
+sẽ không phản ánh đúng mức độ bão hòa tương đối giữa chúng và không nên dùng
+để so sánh trực tiếp qua các hàng; hai chỉ số phản ánh đáng tin cậy hơn cho
+mức độ bão hòa là commit sustained và độ trễ p95/p99 trong đúng cửa sổ tải.
+
+\subsection{Kết quả với Ed25519}
+\label{sec:e2e-ed25519}
+
+Bảng~\ref{tab:e2e-ed25519} và Hình~\ref{fig:e2e-ed25519} cho thuật toán
+Ed25519 mặc định, cùng cấu hình orderer.
+
+\begin{table}[H]
+\centering
+\caption{Sweep end-to-end Ed25519 (orderer block=500, iv=100ms)}
+\label{tab:e2e-ed25519}
+\begin{tabular}{@{}rrrrrr@{}}
+\toprule
+Rate đặt & Submit/s & Commit/s & E2E p50 & E2E p95 & Pending \\
+\midrule
+2.000  & 1.998 & 1.993 & 60 ms  & 106 ms & 190 \\
+3.000  & 2.999 & 2.993 & 67 ms  & 112 ms & 137 \\
+4.000  & 3.993 & 3.987 & 74 ms  & 123 ms & 183 \\
+5.000  & 4.900 & 4.843 & 150 ms & 237 ms & 2.835 \\
+6.000  & 5.481 & 5.242 & 163 ms & 564 ms & 13.033 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}
+\begin{axis}[
+    width=0.82\textwidth, height=6.2cm,
+    xlabel={Offer rate đặt (tx/s)}, ylabel={Throughput (tx/s)},
+    xmin=0, xmax=6200, ymin=0,
+    legend pos=north west, grid=both, grid style={gray!20},
+    scaled ticks=false, tick label style={/pgf/number format/1000 sep={}},
+]
+\addplot[dashed, gray, domain=0:6000] {x};
+\addlegendentry{Lý tưởng (submit = rate)}
+\addplot[mark=square*, thick, orange] coordinates {
+    (2000,1998)(3000,2999)(4000,3993)(5000,4900)(6000,5481)};
+\addlegendentry{Submit/s}
+\addplot[mark=*, thick, green!60!black] coordinates {
+    (2000,1993)(3000,2993)(4000,3987)(5000,4843)(6000,5242)};
+\addlegendentry{Commit/s}
+\end{axis}
+\end{tikzpicture}
+\caption{Ed25519: pipeline bám offer rate tới 4k tx/s; bão hòa nhẹ từ 5k với commit
+${\sim}4,8$--$5,2$k tx/s.}
+\label{fig:e2e-ed25519}
+\end{figure}
+
+Ed25519 cho thông lượng cao hơn ML-DSA rõ rệt trên cùng pipeline. Tới 4k
+tx/s, submit và commit vẫn khớp nhau (${\sim}3.990$ tx/s), E2E p95 chỉ
+123\,ms --- orderer với kích thước block 500 (khoảng 10 block/s, khoảng 400
+tx/block) hoàn toàn theo kịp. Tại 5k, khoảng cách nhỏ giữa commit (4.843) và
+submit (4.900) báo hiệu hệ thống đã sát ngưỡng bão hòa; ở 6k, commit duy trì
+khoảng 5.242 tx/s nhưng submit chỉ đạt 5.481/s (tỷ lệ lỗi phía Core/k6 khoảng
+9\%), lượng tồn đọng lên tới 13 nghìn và p95 là 564\,ms. Trần bền vững của
+Ed25519 nằm quanh 5.000--5.200 tx/s commit, cao hơn ML-DSA khoảng 2,5 lần.
+
+\subsection{So sánh thuật toán ký}
+\label{sec:e2e-crypto-compare}
+
+Hình~\ref{fig:e2e-latency-compare} so sánh E2E p95 tại các mức tải tương
+đương.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}
+\begin{axis}[
+    width=0.82\textwidth, height=6cm,
+    xlabel={Commit throughput (tx/s)}, ylabel={E2E p95 (ms)},
+    xmin=900, xmax=5300,
+    ymin=0, ymax=6000,
+    legend pos=north west, grid=both, grid style={gray!20},
+    scaled ticks=false, tick label style={/pgf/number format/1000 sep={}},
+]
+\addplot[mark=*, thick, blue] coordinates {
+    (992,131)(1955,619)(2040,5613)(1984,12413)(1013,48200)};
+\addlegendentry{ML-DSA-44}
+\addplot[mark=square*, thick, green!60!black] coordinates {
+    (1993,106)(2993,112)(3987,123)(4843,237)(5242,564)};
+\addlegendentry{Ed25519}
+\end{axis}
+\end{tikzpicture}
+\caption{E2E p95 theo commit throughput: Ed25519 giữ độ trễ thấp tới ${\sim}5$k tx/s;
+ML-DSA-44 tăng vọt khi vượt trần ${\sim}2$k tx/s.}
+\label{fig:e2e-latency-compare}
+\end{figure}
+
+Ở cùng mức 2k tx/s, hai scheme cho thông lượng gần nhau (1.955 so với 1.993
+commit/s) nhưng độ trễ khác biệt mạnh: p95 là 619\,ms với ML-DSA so với
+106\,ms với Ed25519 --- chênh nhau khoảng 6 lần. Nguyên nhân chính là kích
+thước khóa và chữ ký của ML-DSA lớn hơn nhiều so với Ed25519 trên đường
+truyền, làm tăng chi phí ký trên Committing Peer, chi phí serialize JSON và
+chi phí truyền qua libp2p. Khi offer rate vượt trần xử lý, độ trễ không còn
+phản ánh thời gian xử lý đơn lẻ mà chủ yếu là thời gian chờ trong hàng đợi
+nội bộ của Core và TxPool của orderer.
+
+\section{Kết luận: trần hiệu năng và điểm nghẽn}
+\label{sec:eval-conclusion}
+
+Tổng hợp hai lớp đo --- ordering thuần
+(Mục~\ref{sec:eval-results}--\ref{sec:eval-best}) và end-to-end
+(Mục~\ref{sec:e2e-eval}) --- cho bức tranh phân tầng rõ ràng về giới hạn hiệu
+năng của hệ thống (Bảng~\ref{tab:eval-summary}).
+
+\begin{table}[H]
+\centering
+\caption{Tóm tắt trần hiệu năng theo lớp đo}
+\label{tab:eval-summary}
+\begin{tabular}{@{}p{4.5cm}p{3.5cm}p{5cm}@{}}
+\toprule
+Lớp / phép đo & Trần bền vững & Ghi chú \\
+\midrule
+Ordering (loadgen, 1 node) & ${\sim}73$--$82$k tx/s & block=250--500, iv=100ms \\
+E2E + ML-DSA-44 & ${\sim}2$k commit/s & Orderer block=500 (đã tối ưu) \\
+E2E + Ed25519 & ${\sim}5$k commit/s & Cùng cấu hình orderer \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Sau khi cấu hình orderer theo Mục~\ref{sec:eval-best} (block=500, iv=100ms),
+trần đóng block (${\sim}78$k tx/s) cao hơn trần pipeline đo được ít nhất
+15--40 lần, tùy thuật toán ký. Trong các run end-to-end, orderer đóng block
+với nhịp khoảng 10 block/s và lô khoảng 200--500 tx/block --- xa dưới năng
+lực tối đa. Điều này khẳng định Ordering Service không phải là nút thắt của
+pipeline end-to-end: mọi điểm bão hòa quan sát ở
+Mục~\ref{sec:e2e-mldsa} và~\ref{sec:e2e-ed25519} phải quy về đường xử lý của
+Core và bước ký endorsement (thực thi WASM, ký trên Committing Peer, relay
+qua HTTP/libp2p), chứ không phải cơ chế gom lô Raft.
+
+Với hợp đồng bench\_ping (WASM tối thiểu), chi phí thực thi contract gần như
+không đáng kể; phần lớn thời gian trên hot-path nằm ở bước ký giao dịch tại
+Committing Peer và bước serialize payload. ML-DSA-44 làm trần hệ thống giảm
+từ khoảng 5k xuống khoảng 2k tx/s --- một đánh đổi post-quantum rõ ràng, phù
+hợp với phân tích ở Mục~\ref{sec:core-crypto}. Ed25519 phù hợp khi ưu tiên
+thông lượng; ML-DSA-44 cần giảm offer rate hoặc mở rộng song song hóa bước ký
+(nhiều commit peer, ký theo lô) nếu muốn duy trì độ trễ tương đương.
+
+Khi offer rate vượt trần commit bền vững, lượng giao dịch tồn đọng tăng gần
+như tuyến tính và E2E p95 tăng theo cấp số --- đây là hành vi hàng đợi kinh
+điển kiểu M/M/1, không phải một regression hiệu năng ở từng thành phần riêng
+lẻ. Khi vận hành thực tế, nên đặt offer rate thấp hơn trần commit khoảng 20\%
+để giữ p95 ổn định; các run 2,5k (ML-DSA) và 5k (Ed25519) minh họa rõ ngưỡng
+cần cảnh báo.
+
+Một số giới hạn cần lưu ý khi đọc các kết quả trên. Phép đo end-to-end chạy
+trên một máy đơn với một node orderer, nên thông lượng của một cụm nhiều node
+sẽ thấp hơn do cộng thêm RTT của Raft (Mục~\ref{sec:opts}). PostgreSQL mirror
+chạy bất đồng bộ nên không nằm trên đường tới hạn trong các run này; tuy
+nhiên số block mỗi giây cao hơn (do block nhỏ hơn) vẫn làm tăng tải cho mirror
+về lâu dài. Chỉ một hợp đồng bench\_ping được đo; một contract nặng hơn về
+WASM nhiều khả năng sẽ hạ trần của Ed25519 thêm nữa. Việc khởi động lại giữa
+các run tải cao là bắt buộc để tránh backlog của run trước làm nhiễu số liệu,
+nên quy trình đo cần được chuẩn hóa khi lặp lại thí nghiệm.
+
+Từ hai phần thực nghiệm, có thể rút ra ba khuyến nghị triển khai: luôn cấu
+hình orderer với kích thước block từ 250 đến 500 và chu kỳ đề xuất 100ms; đặt
+giới hạn tốc độ gửi phía client theo thuật toán ký đang dùng --- không quá
+khoảng 2k tx/s với ML-DSA-44, không quá khoảng 5k tx/s với Ed25519 trên phần
+cứng tương đương; và giám sát lượng giao dịch tồn đọng cùng E2E p95 như tín
+hiệu bão hòa sớm, thay vì chỉ nhìn vào tốc độ submit.
