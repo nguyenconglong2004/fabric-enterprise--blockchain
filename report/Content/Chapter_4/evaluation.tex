@@ -7,8 +7,8 @@
 Chương này trình bày quá trình thực nghiệm đo hiệu năng của Ordering Service ---
 thành phần trọng tâm của hệ thống và cũng là nơi quyết định trần thông lượng đóng
 block. Mục tiêu là (i)~xác định \textit{điểm bão hòa} của dịch vụ, (ii)~đo ảnh
-hưởng của từng \textbf{tham số cấu hình} (kích thước block, chu kỳ đề xuất block)
-và của từng \textbf{tham số tải} (tốc độ gửi, số luồng gửi), rồi (iii)~từ đó rút
+hưởng của từng tham số cấu hình (kích thước block, chu kỳ đề xuất block)
+và của từng tham số tải (tốc độ gửi, số luồng gửi), rồi (iii)~từ đó rút
 ra bộ tham số cho hiệu năng tốt nhất. Toàn bộ số liệu trong chương được sinh ra
 bằng công cụ \texttt{loadgen} đã mô tả ở Chương~\ref{chap:methodology}
 (Mục~\ref{sec:measurement}), chạy trên cùng một máy để bảo đảm tính so sánh được.
@@ -18,7 +18,7 @@ bằng công cụ \texttt{loadgen} đã mô tả ở Chương~\ref{chap:methodol
 
 Ở Mục~\ref{sec:measurement}, khóa luận đã phân biệt ba lớp đo: lớp client (k6),
 lớp Core (submit), và lớp ledger (commit). Chương này tập trung hoàn toàn vào
-\textbf{lớp đóng block của Ordering Service} --- tức tốc độ mà leader lấy giao
+lớp đóng block của Ordering Service --- tức tốc độ mà leader lấy giao
 dịch khỏi TxPool, tạo block, đạt đồng thuận và phát block đã commit qua deliver
 stream. Việc cô lập đúng lớp này cho phép trả lời các câu hỏi sau mà không bị
 nhiễu bởi WASM, ký endorsement hay độ trễ mirror PostgreSQL:
@@ -67,14 +67,14 @@ Công cụ đo & \texttt{loadgen} (giao thức endorsement + deliver stream) \\
 \texttt{loadgen} gửi các giao dịch hợp đồng giả lập (\texttt{bench\_ping}) trực
 tiếp tới orderer qua đúng giao thức endorsement mà Core Service dùng, đồng thời
 subscribe deliver stream để đếm số block và số giao dịch được commit. Chỉ số báo
-cáo chính là \textbf{During load} --- số giao dịch/block được commit \textit{trong
+cáo chính là During load --- số giao dịch/block được commit \textit{trong
 đúng cửa sổ gửi tải}, phản ánh thông lượng bền vững của orderer; các block commit
 muộn trong pha drain không được tính vào chỉ số này để tránh làm loãng con số.
 
 \subsection{Mô hình một node và ý nghĩa của phép đo}
 \label{sec:eval-singlenode}
 
-Các phép đo dùng một cluster \textbf{một node} (leader tự đạt đa số --- self
+Các phép đo dùng một cluster một node (leader tự đạt đa số --- self
 majority), nên bước đồng thuận commit diễn ra tức thời. Lựa chọn này là có chủ
 đích: nó \textit{cô lập trần của đường ống đóng block} (TxPool $\rightarrow$ đề
 xuất $\rightarrow$ tính Merkle/hash $\rightarrow$ commit $\rightarrow$ deliver)
@@ -82,12 +82,12 @@ khỏi độ trễ vòng ACK giữa nhiều node. Vì hai tham số trọng tâm
 kích thước block và chu kỳ đề xuất --- chi phối cơ chế gom lô (batching) bất kể số
 node, đo trên một node cho tín hiệu sạch nhất về tác động của chúng. Trong cụm
 nhiều node, thông lượng sẽ thấp hơn do cộng thêm một số hạng RTT đồng thuận gần
-như cố định; con số một node vì vậy đóng vai \textbf{cận trên} của năng lực lớp
+như cố định; con số một node vì vậy đóng vai cận trên của năng lực lớp
 ordering (xem bàn luận ở Mục~\ref{sec:eval-threats}).
 
 Do các phép đo throughput nhạy với nhiễu (GC, lập lịch của hệ điều hành, chia sẻ
-CPU), mỗi cấu hình được chạy lặp lại \textbf{ba lần} và báo cáo theo giá trị
-\textbf{trung vị} (median) để giảm ảnh hưởng của các lần chạy dị thường. Mỗi lần
+CPU), mỗi cấu hình được chạy lặp lại ba lần và báo cáo theo giá trị
+trung vị (median) để giảm ảnh hưởng của các lần chạy dị thường. Mỗi lần
 chạy gồm 15\,s gửi tải và 8\,s drain.
 
 \subsection{Ma trận tham số}
@@ -169,9 +169,9 @@ tải không giới hạn là ${\sim}73.500$ tx/s.}
 \label{fig:eval-tps}
 \end{figure}
 
-\textbf{Nhận xét.} Trong khoảng 2.000--20.000 tx/s, tốc độ commit gần như trùng
+Nhận xét. Trong khoảng 2.000--20.000 tx/s, tốc độ commit gần như trùng
 tốc độ gửi (sai lệch $<1\%$): orderer xử lý kịp, chưa bão hòa. Điểm đáng chú ý là
-\textbf{tần suất đóng block} bị ghim ở ${\sim}9,87$ blocks/s khi tps $\le 10$k.
+tần suất đóng block bị ghim ở ${\sim}9,87$ blocks/s khi tps $\le 10$k.
 Nguyên nhân là cơ chế đề xuất theo sự kiện (event-driven) mô tả ở
 Chương~\ref{chap:methodology}: khi TxPool chưa gom đủ một lô đầy (1.000 tx) trong
 một chu kỳ, leader chờ hết chu kỳ 100ms rồi mới flush --- cho đúng $1/0{,}1 = 10$
@@ -179,7 +179,7 @@ block mỗi giây. Vì thế số tx mỗi block tăng tuyến tính theo tải 
 $\to$ 997) trong khi blocks/s giữ nguyên. Khi tải vượt ngưỡng lấp đầy lô
 (${\ge}15$k), pool đầy trước 100ms nên leader đề xuất ngay, blocks/s bắt đầu tăng
 (14,86 rồi 19,87). Ở tải không giới hạn, hệ thống đạt trần
-\textbf{${\sim}73.500$ tx/s} tương ứng ${\sim}73,5$ block/s --- đây là năng lực
+${\sim}73.500$ tx/s tương ứng ${\sim}73,5$ block/s --- đây là năng lực
 đóng block thuần của một leader trên môi trường thử nghiệm.
 
 \subsection{Q2 --- Ảnh hưởng của kích thước block}
@@ -197,7 +197,7 @@ tải bão hòa (tps không giới hạn) khi thay đổi kích thước block.
 \textbf{Block size} & \textbf{Commit (tx/s)} & \textbf{Blocks/s} & \textbf{Tx/block} \\
 \midrule
 100  & 74.546 & 745,5 & 100 \\
-250  & \textbf{82.497} & 330,0 & 250 \\
+250  & 82.497 & 330,0 & 250 \\
 500  & 77.774 & 155,6 & 500 \\
 1.000 & 57.439 & 57,4 & 1.000 \\
 2.000 & 67.307 & 33,7 & 2.000 \\
@@ -229,25 +229,25 @@ block=250, với một vùng trũng lặp lại được ở block=1.000.}
 \label{fig:eval-blocksize}
 \end{figure}
 
-\textbf{Nhận xét.} Tần suất đóng block tỉ lệ nghịch với kích thước block (blocks/s
+Nhận xét. Tần suất đóng block tỉ lệ nghịch với kích thước block (blocks/s
 $\times$ block size $\approx$ tx/s), đúng như kỳ vọng. Về thông lượng, tx/s giữ ở
-mức cao (${\sim}67$--$82$k) trên phần lớn dải, \textbf{đạt đỉnh ${\sim}82.500$ tx/s
-tại block=250}. Đáng chú ý, \texttt{block=1.000} --- giá trị mặc định --- lại là
-một \textbf{vùng trũng lặp lại được} (${\sim}57.400$ tx/s, thấp hơn hai lân cận),
+mức cao (${\sim}67$--$82$k) trên phần lớn dải, đạt đỉnh ${\sim}82.500$ tx/s
+tại block=250. Đáng chú ý, \texttt{block=1.000} --- giá trị mặc định --- lại là
+một vùng trũng lặp lại được (${\sim}57.400$ tx/s, thấp hơn hai lân cận),
 và các lần chạy tại điểm này cũng \textit{dao động mạnh nhất} (36k--83k giữa các
 lần đo). Điều này gợi ý \texttt{block=1.000} nằm gần một \textit{ranh giới bất ổn}:
 tốc độ lấp đầy lô dao động quanh đúng ngưỡng batch nên vòng đề xuất lúc thì chờ
 hết chu kỳ, lúc thì flush ngay --- tạo hành vi hai chế độ (bimodal). Các kích thước
 nhỏ hơn (250--500) hoặc lớn hơn (4.000) đều ổn định và cho thông lượng cao hơn.
-Đây là một kết quả thực nghiệm quan trọng: \textbf{giá trị mặc định 1.000 vừa
-không tối ưu về thông lượng vừa kém ổn định}.
+Đây là một kết quả thực nghiệm quan trọng: giá trị mặc định 1.000 vừa
+không tối ưu về thông lượng vừa kém ổn định.
 
 \subsection{Q3 --- Vai trò của chu kỳ đề xuất block}
 \label{sec:eval-interval}
 
 Cần phân biệt hai chế độ. Ở \textit{tải bão hòa}, TxPool luôn có sẵn hơn một lô
 đầy, nên vòng đề xuất theo sự kiện bỏ qua thời gian chờ chu kỳ --- do đó chu kỳ đề
-xuất \textbf{gần như không tác động} tới thông lượng (thí nghiệm đo tại
+xuất gần như không tác động tới thông lượng (thí nghiệm đo tại
 block=1.000, tps=$\infty$ cho các giá trị dao động 56k--76k không theo xu hướng rõ
 ràng, đúng với dự đoán rằng chu kỳ bị bỏ qua). Vai trò thực của chu kỳ chỉ lộ ra ở
 \textit{tải dưới bão hòa}, khi pool chưa gom đủ lô: khi đó chu kỳ quyết định nhịp
@@ -292,12 +292,12 @@ block lớn (bão hòa ở kích thước lô 1.000); thông lượng commit kh�
 \label{fig:eval-interval}
 \end{figure}
 
-\textbf{Nhận xét.} Ở tải 5.000 tx/s, tốc độ commit giữ nguyên ${\sim}5.000$ tx/s
-với mọi chu kỳ (orderer luôn theo kịp), nhưng \textbf{tần suất đóng block và số
-tx/block thay đổi rõ rệt}: chu kỳ ngắn cho nhiều block nhỏ (độ trễ đóng block
+Nhận xét. Ở tải 5.000 tx/s, tốc độ commit giữ nguyên ${\sim}5.000$ tx/s
+với mọi chu kỳ (orderer luôn theo kịp), nhưng tần suất đóng block và số
+tx/block thay đổi rõ rệt: chu kỳ ngắn cho nhiều block nhỏ (độ trễ đóng block
 thấp), chu kỳ dài cho ít block lớn (độ trễ cao hơn nhưng ít overhead trên mỗi
-giao dịch). Nói cách khác, chu kỳ đề xuất là \textbf{núm điều chỉnh đánh đổi độ
-trễ $\leftrightarrow$ độ mịn gom lô}, không phải núm điều chỉnh thông lượng.
+giao dịch). Nói cách khác, chu kỳ đề xuất là núm điều chỉnh đánh đổi độ
+trễ $\leftrightarrow$ độ mịn gom lô, không phải núm điều chỉnh thông lượng.
 
 \subsection{Q4 --- Ảnh hưởng của số luồng gửi}
 \label{sec:eval-workers}
@@ -316,7 +316,7 @@ Bảng~\ref{tab:eval-workers} và Hình~\ref{fig:eval-workers}.
 \midrule
 8  & 80.196 & 160,4 \\
 16 & 81.590 & 163,2 \\
-32 & \textbf{82.780} & 165,6 \\
+32 & 82.780 & 165,6 \\
 48 & 63.963 & 127,9 \\
 64 & 65.984 & 132,0 \\
 \bottomrule
@@ -342,7 +342,7 @@ Bảng~\ref{tab:eval-workers} và Hình~\ref{fig:eval-workers}.
 \label{fig:eval-workers}
 \end{figure}
 
-\textbf{Nhận xét.} Số luồng gửi ảnh hưởng tới \textit{tốc độ nạp} (ingest) chứ
+Nhận xét. Số luồng gửi ảnh hưởng tới \textit{tốc độ nạp} (ingest) chứ
 không phải năng lực đóng block của orderer; tuy nhiên nếu quá ít luồng thì không
 bơm đủ tải để orderer bão hòa, còn quá nhiều luồng lại gây tranh chấp (mỗi luồng
 giữ một stream libp2p) và làm giảm thông lượng đo được. Kết quả cho thấy một vùng
@@ -370,8 +370,8 @@ Số luồng gửi (loadgen) & 32 & Đủ bơm bão hòa mà chưa gây tranh ch
 \end{table}
 
 So với mặc định (block=1.000), chuyển sang \texttt{block=250}--\texttt{500} vừa
-\textbf{tăng thông lượng} (${\sim}57$k $\to$ ${\sim}78$--$82$k tx/s, cải thiện
-${\sim}35$--$44\%$) vừa \textbf{loại bỏ dao động} của điểm vận hành. Đánh đổi duy
+tăng thông lượng (${\sim}57$k $\to$ ${\sim}78$--$82$k tx/s, cải thiện
+${\sim}35$--$44\%$) vừa loại bỏ dao động của điểm vận hành. Đánh đổi duy
 nhất là số block nhiều hơn (blocks/s cao hơn), làm tăng chút overhead ở các thành
 phần hạ nguồn (Committing Peer, mirror PostgreSQL); tuy nhiên các thành phần này
 được thiết kế bất đồng bộ nên không nằm trên đường tới hạn của việc đóng block.
@@ -379,7 +379,7 @@ phần hạ nguồn (Committing Peer, mirror PostgreSQL); tuy nhiên các thành
 \section{Bàn luận và giới hạn}
 \label{sec:eval-threats}
 
-\textbf{Ordering không phải là nút thắt của hệ thống.} Trần đóng block thuần
+Ordering không phải là nút thắt của hệ thống. Trần đóng block thuần
 (${\sim}73$--$82$k tx/s) cao hơn nhiều lần so với thông lượng end-to-end tham khảo
 qua toàn pipeline (${\sim}3.900$ commit/s, Mục~\ref{sec:measurement}). Điều này
 khẳng định lớp ordering \textit{không} phải cổ chai: giới hạn thực tế nằm ở
@@ -387,7 +387,7 @@ khẳng định lớp ordering \textit{không} phải cổ chai: giới hạn th
 đồng thuận nhiều node (Mục~\ref{sec:opts}), chứ không ở năng lực gom lô/đóng block
 của leader.
 
-\textbf{Giới hạn của phép đo.} Các con số trên là \textbf{cận trên} của lớp
+Giới hạn của phép đo. Các con số trên là cận trên của lớp
 ordering, cần diễn giải trong phạm vi sau: (i)~cluster một node nên không có độ
 trễ ACK đồng thuận giữa nhiều node; (ii)~loopback nên không có độ trễ mạng thực;
 (iii)~trạng thái in-memory nên không có chi phí fsync xuống đĩa; (iv)~giao dịch

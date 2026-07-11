@@ -11,8 +11,8 @@ lĩnh vực: tài chính phi tập trung, truy xuất nguồn gốc hàng hóa, 
 sản số, định danh phi tập trung và hợp đồng thông minh. Bản chất của blockchain
 --- một \textit{sổ cái phân tán} (distributed ledger) bất biến, được nhiều bên
 không hoàn toàn tin tưởng nhau cùng duy trì --- mang lại ba thuộc tính đặc biệt
-giá trị với doanh nghiệp và nhà nước: tính \textbf{minh bạch}, tính
-\textbf{bất biến} và khả năng \textbf{kiểm toán} mà không cần một bên trung gian
+giá trị với doanh nghiệp và nhà nước: tính minh bạch, tính
+bất biến và khả năng kiểm toán mà không cần một bên trung gian
 duy nhất nắm giữ quyền lực tuyệt đối.
 
 Sự trưởng thành của công nghệ này đã được phản ánh trong định hướng chính sách
@@ -26,8 +26,8 @@ blockchain quốc gia ``Make in Vietnam'' với năng lực xử lý cao, độ 
 khả năng mở rộng tới hàng trăm nút xác thực phân tán.
 
 Một trong những yêu cầu kỹ thuật then chốt được nêu ra trong các đề án phát
-triển hạ tầng blockchain quốc gia là khả năng xử lý \textbf{tối thiểu 5.000 giao
-dịch mỗi giây} với độ trễ dưới một giây, đồng thời đảm bảo an toàn dữ liệu và
+triển hạ tầng blockchain quốc gia là khả năng xử lý tối thiểu 5.000 giao
+dịch mỗi giây với độ trễ dưới một giây, đồng thời đảm bảo an toàn dữ liệu và
 khả năng mở rộng~\cite{qd1236}. Đây không phải là những con số dễ đạt được:
 chúng đòi hỏi hiểu biết sâu sắc về kiến trúc hệ phân tán, thuật toán đồng thuận,
 tối ưu hiệu năng trên đường truyền mạng và tầng lưu trữ. Quan trọng hơn, để
@@ -41,8 +41,8 @@ Chính trong bối cảnh đó, khóa luận này đặt ra một mục tiêu h�
 hiểu thấu đáo cơ chế bên trong của một hệ thống sổ cái phân tán có cấp phép}.
 Chúng tôi không nhằm cạnh tranh với các nền tảng công nghiệp đã được kiểm chứng
 như Hyperledger Fabric~\cite{androulaki2018hyperledger}, mà coi việc tái hiện
-các nguyên lý thiết kế của chúng --- đặc biệt là việc \textbf{tự cài đặt thuật
-toán đồng thuận Raft}~\cite{ongaro2014raft} --- như một con đường để làm chủ tri
+các nguyên lý thiết kế của chúng --- đặc biệt là việc tự cài đặt thuật
+toán đồng thuận Raft~\cite{ongaro2014raft} --- như một con đường để làm chủ tri
 thức nền tảng, một bước chuẩn bị cho việc tham gia phát triển hạ tầng blockchain
 quốc gia trong tương lai.
 
@@ -51,7 +51,7 @@ quốc gia trong tương lai.
 
 Không phải mọi blockchain đều giống nhau. Một sự phân loại quan trọng --- và là
 nền tảng cho toàn bộ thiết kế của khóa luận --- là sự phân biệt giữa blockchain
-\textbf{công khai} (public/permissionless) và blockchain \textbf{có cấp phép}
+công khai (public/permissionless) và blockchain có cấp phép
 (permissioned).
 
 Blockchain công khai như Bitcoin~\cite{nakamoto2008bitcoin} hay
@@ -141,19 +141,19 @@ trên mã nguồn thực tế đã được hiện thực và kiểm thử.
 
 \subsection{Mục tiêu}
 
-Mục tiêu tổng quát của khóa luận là \textbf{thiết kế, hiện thực và đánh giá một
-nền tảng blockchain có cấp phép định hướng doanh nghiệp, tự xây dựng từ đầu}.
+Mục tiêu tổng quát của khóa luận là thiết kế, hiện thực và đánh giá một
+nền tảng blockchain có cấp phép định hướng doanh nghiệp, tự xây dựng từ đầu.
 Mục tiêu này được cụ thể hóa thành các mục tiêu thành phần:
 
 \begin{itemize}
-  \item Tự cài đặt thuật toán đồng thuận \textbf{Raft} từ đầu (không dùng thư
+  \item Tự cài đặt thuật toán đồng thuận Raft từ đầu (không dùng thư
   viện), bao gồm bầu lãnh đạo, nhân bản log, cắt block và đồng bộ --- với một
   biến thể bầu lãnh đạo theo độ ưu tiên.
 
-  \item Xây dựng một máy ảo hợp đồng thông minh dựa trên \textbf{WebAssembly},
+  \item Xây dựng một máy ảo hợp đồng thông minh dựa trên WebAssembly,
   cho phép viết hợp đồng bằng ngôn ngữ bậc cao và thực thi an toàn, xác định.
 
-  \item Hiện thực mô hình xác nhận giao dịch \textbf{Execute--Order--Validate}
+  \item Hiện thực mô hình xác nhận giao dịch Execute--Order--Validate
   theo triết lý của Hyperledger Fabric, với chữ ký số Ed25519 và kiểm tra
   endorsement.
 
@@ -168,14 +168,14 @@ Mục tiêu này được cụ thể hóa thành các mục tiêu thành phần:
 
 \subsection{Phạm vi}
 
-Để đảm bảo chiều sâu, khóa luận tập trung vào \textbf{luồng xử lý cốt lõi} của
+Để đảm bảo chiều sâu, khóa luận tập trung vào luồng xử lý cốt lõi của
 một giao dịch từ lúc được gửi đến lúc được ghi vĩnh viễn. Cụ thể, báo cáo đi sâu
 vào bốn thành phần: Core Service, Ordering Service (trọng tâm), Committing Peer
 và Blockchain Explorer, cùng cơ sở dữ liệu PostgreSQL đóng vai trò mirror.
 
 Một số thành phần phụ trợ phục vụ vận hành --- như công cụ điều phối cụm
 (orchestrator) và giao diện giám sát cụm trong thư mục \texttt{orderingservice/}
---- nằm \textbf{ngoài phạm vi} trình bày, vì chúng là công cụ quản trị, không
+--- nằm ngoài phạm vi trình bày, vì chúng là công cụ quản trị, không
 thuộc luồng xử lý giao dịch chính. Tương tự, khóa luận tập trung vào mô hình tin
 cậy của blockchain có cấp phép (chống lỗi dừng --- crash fault tolerance), và
 chỉ \textit{thảo luận} (chứ không hiện thực đầy đủ) khả năng chịu lỗi Byzantine.

@@ -12,7 +12,7 @@ trung vào luồng xử lý cốt lõi.
 \section{Kết luận}
 \label{sec:conclusion}
 
-Khóa luận đã \textbf{tìm hiểu, thiết kế và hiện thực từ đầu} một nền tảng
+Khóa luận đã tìm hiểu, thiết kế và hiện thực từ đầu một nền tảng
 blockchain có cấp phép định hướng doanh nghiệp, lấy cảm hứng từ kiến trúc
 Hyperledger Fabric. Thay vì tái sử dụng một nền tảng có sẵn, chúng tôi tự cài
 đặt từng thành phần lõi để làm chủ công nghệ: từ tầng mạng ngang hàng
@@ -20,7 +20,7 @@ Hyperledger Fabric. Thay vì tái sử dụng một nền tảng có sẵn, chú
 WebAssembly, cho tới tầng sổ cái bất biến và world state UTXO.
 
 Cụ thể, hệ thống hiện thực trọn vẹn triết lý tách ba trách nhiệm
-\textbf{Execute--Order--Validate} qua bốn tiến trình độc lập, với các đóng góp
+Execute--Order--Validate qua bốn tiến trình độc lập, với các đóng góp
 nổi bật: (i)~một hiện thực Raft hoàn chỉnh kèm biến thể bầu lãnh đạo theo độ ưu
 tiên loại bỏ chia phiếu và hội tụ xác định; (ii)~một máy ảo WASM với cache module
 và pool sandbox cho thực thi song song; (iii)~một cơ chế cắt block lai giữa kích
@@ -80,7 +80,7 @@ những giả định được cố ý đặt ra để giữ phạm vi:
 \label{sec:fw-bft}
 
 Hướng có giá trị học thuật cao nhất là thay/bổ sung tầng đồng thuận CFT hiện tại
-bằng một thuật toán \textbf{chịu lỗi Byzantine} (BFT). Do kiến trúc đã tách bạch
+bằng một thuật toán chịu lỗi Byzantine (BFT). Do kiến trúc đã tách bạch
 tầng ordering sau một giao diện thông điệp rõ ràng
 (Mục~\ref{sec:ordering-messages} về mô hình thông điệp và định tuyến), việc thay
 lõi đồng thuận không buộc phải viết lại Core hay Committing Peer. Các ứng viên:
@@ -93,8 +93,8 @@ tổ chức thành viên không hoàn toàn tin nhau.
 \subsection{Bền vững hoá và phục hồi tầng đồng thuận}
 \label{sec:fw-durability}
 
-Bổ sung \textbf{write-ahead log} có fsync cho log Raft, kèm cơ chế
-\textbf{snapshot và nén log} để tránh log tăng vô hạn và rút ngắn thời gian phục
+Bổ sung write-ahead log có fsync cho log Raft, kèm cơ chế
+snapshot và nén log để tránh log tăng vô hạn và rút ngắn thời gian phục
 hồi. Kết hợp với cơ chế sync bốn pha hiện có (Mục~\ref{sec:deliver-sync}), một
 node có thể khôi phục từ snapshot gần nhất rồi phát lại phần log còn thiếu, thay
 vì đồng bộ lại từ đầu. Đây là điều kiện tiên quyết để cluster sống sót qua sự cố
@@ -104,7 +104,7 @@ mất điện đồng thời và để chạy thực tế trong môi trường s
 \label{sec:fw-pipelining}
 
 Gỡ bỏ ràng buộc ``một block in-flight'' bằng cách cho phép leader đề xuất
-\textbf{nhiều block gối đầu} trước khi block trước đó được commit, tương tự cơ
+nhiều block gối đầu trước khi block trước đó được commit, tương tự cơ
 chế cửa sổ trượt. Hướng này trực tiếp nhắm vào cận trên thông lượng đã nhận diện
 ở Mục~\ref{sec:eval-threats} và được kỳ vọng thu hẹp khoảng cách giữa trần đóng
 block đo trên một node và thông lượng thực tế nhiều node, đổi lại độ phức tạp
@@ -115,16 +115,16 @@ trong quản lý trật tự commit và xử lý khi leader đổi.
 
 Vì thực nghiệm cho thấy cổ chai end-to-end nằm ở Core chứ không ở ordering
 (Mục~\ref{sec:eval-threats}), hướng tăng thông lượng toàn hệ thống hiệu quả nhất
-là tối ưu đường Core: (i)~\textbf{song song hoá xác minh chữ ký} endorsement và
-gộp lô kiểm tra; (ii)~xem xét \textbf{chữ ký tổng hợp} (ví dụ BLS) để giảm số
+là tối ưu đường Core: (i)~song song hoá xác minh chữ ký endorsement và
+gộp lô kiểm tra; (ii)~xem xét chữ ký tổng hợp (ví dụ BLS) để giảm số
 lần xác minh trên mỗi block; (iii)~mở rộng pool sandbox WASM và cache module theo
 tải; và (iv)~đo lại toàn pipeline sau tối ưu để xác định cổ chai kế tiếp.
 
 \subsection{Đánh giá trên cụm nhiều node và mạng thật}
 \label{sec:fw-multinode}
 
-Lặp lại bộ thực nghiệm ở Chương~\ref{chap:evaluation} trên cụm \textbf{nhiều
-node phân tán} qua mạng thật, với trạng thái ghi xuống đĩa và giao dịch thực thi
+Lặp lại bộ thực nghiệm ở Chương~\ref{chap:evaluation} trên cụm nhiều
+node phân tán qua mạng thật, với trạng thái ghi xuống đĩa và giao dịch thực thi
 WASM đầy đủ. Mục tiêu là lượng hoá phần chi phí mà các giả định hiện tại đã bỏ
 qua --- RTT đồng thuận, độ trễ mạng, chi phí fsync --- và kiểm chứng giả thuyết
 rằng thứ hạng tương đối giữa các cấu hình (đỉnh ở block=250--500, vùng trũng ở
@@ -134,8 +134,8 @@ số node.
 \subsection{Cấu hình lại thành viên lúc chạy}
 \label{sec:fw-membership}
 
-Hỗ trợ thêm/bớt node và điều chỉnh độ ưu tiên \textbf{trong lúc cluster đang
-chạy} mà không cần khởi động lại, dựa trên cơ chế thay đổi cấu hình an toàn của
+Hỗ trợ thêm/bớt node và điều chỉnh độ ưu tiên trong lúc cluster đang
+chạy mà không cần khởi động lại, dựa trên cơ chế thay đổi cấu hình an toàn của
 Raft (joint consensus). Hướng này cần bảo toàn nguyên tắc quorum tính trên tổng
 số thành viên (Mục~\ref{sec:quorum}) trong suốt quá trình chuyển đổi để
 tránh split-brain.
@@ -151,9 +151,9 @@ trần, đồng thời cung cấp cách ly dữ liệu giữa các nhóm tổ ch
 \subsection{Hoàn thiện hệ sinh thái hợp đồng thông minh}
 \label{sec:fw-contracts}
 
-Bổ sung một \textbf{SDK phát triển hợp đồng} đa ngôn ngữ (mọi ngôn ngữ biên dịch
-được sang WASM), cơ chế \textbf{vòng đời hợp đồng} (cài đặt, nâng cấp, thu hồi có
-kiểm soát), và \textbf{đo/giới hạn tài nguyên} (gas metering) để chống hợp đồng
+Bổ sung một SDK phát triển hợp đồng đa ngôn ngữ (mọi ngôn ngữ biên dịch
+được sang WASM), cơ chế vòng đời hợp đồng (cài đặt, nâng cấp, thu hồi có
+kiểm soát), và đo/giới hạn tài nguyên (gas metering) để chống hợp đồng
 độc hại hoặc vòng lặp vô hạn --- tận dụng khả năng cô lập sẵn có của
 \texttt{wazero}.
 
