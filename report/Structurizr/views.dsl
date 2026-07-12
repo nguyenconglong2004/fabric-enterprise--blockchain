@@ -46,7 +46,7 @@ dynamic bc "tx_journey" "Hành trình end-to-end của một giao dịch." {
     peer     -> postgres  "6. Kiểm tra, ghi sổ & mirror bất đồng bộ"
     core     -> postgres  "7. Đọc lại dữ liệu đã commit"
     core     -> explorer  "8. Đẩy cập nhật realtime (SSE)"
-    autoLayout tb
+    autoLayout lr
 }
 
 // Đường ống nhân bản & commit một block — thay cho fig:block-pipeline

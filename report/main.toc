@@ -1,125 +1,132 @@
 \contentsline {chapter}{Acknowledgement}{iii}{chapter*.2}%
 \contentsline {chapter}{Proposal}{iii}{section*.3}%
-\contentsline {chapter}{List of Figures}{v}{chapter*.5}%
-\contentsline {chapter}{List of Tables}{vii}{chapter*.6}%
+\contentsline {chapter}{List of Figures}{vi}{chapter*.5}%
+\contentsline {chapter}{List of Tables}{viii}{chapter*.6}%
 \contentsline {chapter}{Abstract}{1}{section*.7}%
-\contentsline {chapter}{\numberline {1}Giới thiệu}{3}{chapter.1}%
-\contentsline {section}{\numberline {1.1}Bối cảnh và động lực}{3}{section.1.1}%
-\contentsline {section}{\numberline {1.2}Blockchain công khai và blockchain có cấp phép}{4}{section.1.2}%
-\contentsline {section}{\numberline {1.3}Phát biểu bài toán}{5}{section.1.3}%
-\contentsline {section}{\numberline {1.4}Mục tiêu và phạm vi}{6}{section.1.4}%
-\contentsline {subsection}{\numberline {1.4.1}Mục tiêu}{6}{subsection.1.4.1}%
-\contentsline {subsection}{\numberline {1.4.2}Phạm vi}{7}{subsection.1.4.2}%
-\contentsline {section}{\numberline {1.5}Đóng góp của khóa luận}{7}{section.1.5}%
-\contentsline {section}{\numberline {1.6}Phương pháp tiếp cận}{8}{section.1.6}%
-\contentsline {section}{\numberline {1.7}Kết quả đạt được}{8}{section.1.7}%
-\contentsline {section}{\numberline {1.8}Cấu trúc khóa luận}{8}{section.1.8}%
-\contentsline {chapter}{\numberline {2}Các công trình liên quan}{10}{chapter.2}%
-\contentsline {section}{\numberline {2.1}Sổ cái phân tán và hàm băm mật mã}{10}{section.2.1}%
-\contentsline {subsection}{\numberline {2.1.1}Cây Merkle}{10}{subsection.2.1.1}%
-\contentsline {section}{\numberline {2.2}Bitcoin và mô hình UTXO}{11}{section.2.2}%
-\contentsline {section}{\numberline {2.3}Ethereum, mô hình tài khoản và hợp đồng thông minh}{11}{section.2.3}%
-\contentsline {section}{\numberline {2.4}Hyperledger Fabric và mô hình Execute--Order--Validate}{12}{section.2.4}%
-\contentsline {section}{\numberline {2.5}Bài toán đồng thuận và các thuật toán tiêu biểu}{13}{section.2.5}%
-\contentsline {subsection}{\numberline {2.5.1}Paxos}{14}{subsection.2.5.1}%
-\contentsline {subsection}{\numberline {2.5.2}Raft}{14}{subsection.2.5.2}%
-\contentsline {subsection}{\numberline {2.5.3}PBFT và đồng thuận chịu lỗi Byzantine}{14}{subsection.2.5.3}%
-\contentsline {section}{\numberline {2.6}WebAssembly cho hợp đồng thông minh}{15}{section.2.6}%
-\contentsline {section}{\numberline {2.7}Mạng ngang hàng và lưu trữ}{16}{section.2.7}%
-\contentsline {subsection}{\numberline {2.7.1}libp2p}{16}{subsection.2.7.1}%
-\contentsline {subsection}{\numberline {2.7.2}LevelDB và lưu trữ nhúng}{16}{subsection.2.7.2}%
-\contentsline {section}{\numberline {2.8}Đánh giá hiệu năng blockchain}{17}{section.2.8}%
-\contentsline {section}{\numberline {2.9}Định vị của khóa luận}{17}{section.2.9}%
-\contentsline {chapter}{\numberline {3}Phương pháp và Thiết kế hệ thống}{18}{chapter.3}%
-\contentsline {section}{\numberline {3.1}Tổng quan kiến trúc}{18}{section.3.1}%
-\contentsline {subsection}{\numberline {3.1.1}Triết lý thiết kế: tách ba trách nhiệm}{18}{subsection.3.1.1}%
-\contentsline {subsection}{\numberline {3.1.2}Sơ đồ tổng thể}{19}{subsection.3.1.2}%
-\contentsline {subsection}{\numberline {3.1.3}Hành trình của một giao dịch}{19}{subsection.3.1.3}%
-\contentsline {section}{\numberline {3.2}Mô hình dữ liệu}{22}{section.3.2}%
-\contentsline {subsection}{\numberline {3.2.1}Giao dịch (Transaction)}{22}{subsection.3.2.1}%
-\contentsline {subsection}{\numberline {3.2.2}Block}{22}{subsection.3.2.2}%
-\contentsline {subsection}{\numberline {3.2.3}World State và mô hình UTXO}{23}{subsection.3.2.3}%
-\contentsline {subsection}{\numberline {3.2.4}Log entry của Raft}{23}{subsection.3.2.4}%
-\contentsline {section}{\numberline {3.3}Core Service --- Cổng vào và Tầng tính toán}{24}{section.3.3}%
-\contentsline {subsection}{\numberline {3.3.1}Vai trò}{24}{subsection.3.3.1}%
-\contentsline {subsection}{\numberline {3.3.2}Luồng khởi động}{25}{subsection.3.3.2}%
-\contentsline {subsection}{\numberline {3.3.3}Máy ảo hợp đồng thông minh WASM}{25}{subsection.3.3.3}%
-\contentsline {subsection}{\numberline {3.3.4}Mật mã và quá trình endorsement}{30}{subsection.3.3.4}%
-\contentsline {subsection}{\numberline {3.3.5}Mạng libp2p và Discovery}{33}{subsection.3.3.5}%
-\contentsline {subsection}{\numberline {3.3.6}Lưu trữ}{34}{subsection.3.3.6}%
-\contentsline {subsection}{\numberline {3.3.7}REST API và realtime}{34}{subsection.3.3.7}%
-\contentsline {section}{\numberline {3.4}Ordering Service --- Đồng thuận Raft}{35}{section.3.4}%
-\contentsline {subsection}{\numberline {3.4.1}Vai trò và bài toán tổng sắp thứ tự}{36}{subsection.3.4.1}%
-\contentsline {subsection}{\numberline {3.4.2}Kiến trúc và các thành phần bên trong một node}{36}{subsection.3.4.2}%
-\contentsline {subsection}{\numberline {3.4.3}Mô hình thông điệp và định tuyến}{39}{subsection.3.4.3}%
-\contentsline {subsection}{\numberline {3.4.4}Vòng đời và các trạng thái của node}{41}{subsection.3.4.4}%
-\contentsline {subsection}{\numberline {3.4.5}Quản lý thành viên và độ ưu tiên}{41}{subsection.3.4.5}%
-\contentsline {subsection}{\numberline {3.4.6}Quá bán tính trên tổng số thành viên}{42}{subsection.3.4.6}%
-\contentsline {subsection}{\numberline {3.4.7}Bầu lãnh đạo theo độ ưu tiên}{43}{subsection.3.4.7}%
-\contentsline {subsubsection}{Phát hiện Leader mất tích}{44}{section*.8}%
-\contentsline {subsubsection}{Quy trình bầu cử}{45}{section*.9}%
-\contentsline {subsection}{\numberline {3.4.8}Chống phân ly não (split-brain)}{46}{subsection.3.4.8}%
-\contentsline {subsection}{\numberline {3.4.9}Nhân bản log và cắt block}{47}{subsection.3.4.9}%
-\contentsline {subsubsection}{TxPool và vòng cắt block lai}{48}{section*.10}%
-\contentsline {subsubsection}{Cấu trúc block và chuỗi hash}{48}{section*.11}%
-\contentsline {subsubsection}{Đề xuất, chấp nhận và commit}{49}{section*.12}%
-\contentsline {subsection}{\numberline {3.4.10}Giao block cho tầng ghi sổ (Deliver)}{50}{subsection.3.4.10}%
-\contentsline {subsection}{\numberline {3.4.11}Đồng bộ khi node tụt hậu (Sync)}{51}{subsection.3.4.11}%
-\contentsline {subsection}{\numberline {3.4.12}Tầng mạng}{52}{subsection.3.4.12}%
-\contentsline {subsection}{\numberline {3.4.13}Khởi động và gia nhập cluster}{53}{subsection.3.4.13}%
-\contentsline {subsection}{\numberline {3.4.14}Các đánh đổi thiết kế}{53}{subsection.3.4.14}%
-\contentsline {section}{\numberline {3.5}Committing Peer --- Kiểm tra và Ghi sổ}{54}{section.3.5}%
-\contentsline {subsection}{\numberline {3.5.1}Vai trò và nguyên tắc thiết kế}{54}{subsection.3.5.1}%
-\contentsline {subsection}{\numberline {3.5.2}Kiến trúc tổ chức theo gói}{55}{subsection.3.5.2}%
-\contentsline {subsection}{\numberline {3.5.3}Đường ống xử lý bằng kênh}{56}{subsection.3.5.3}%
-\contentsline {subsection}{\numberline {3.5.4}Nhận block và tự phục hồi}{57}{subsection.3.5.4}%
-\contentsline {subsection}{\numberline {3.5.5}Vai trò endorser và tính hợp lệ endorsement}{58}{subsection.3.5.5}%
-\contentsline {subsection}{\numberline {3.5.6}Kiểm tra hợp lệ block}{59}{subsection.3.5.6}%
-\contentsline {subsection}{\numberline {3.5.7}Mô hình lưu trữ ba lớp}{60}{subsection.3.5.7}%
-\contentsline {subsubsection}{Lớp 1 --- Block storage (sổ cái bất biến)}{60}{section*.13}%
-\contentsline {subsubsection}{Lớp 2 --- World state (UTXO trên LevelDB)}{61}{section*.14}%
-\contentsline {subsubsection}{Lớp 3 --- PostgreSQL mirror (bản sao tra cứu)}{61}{section*.15}%
-\contentsline {subsection}{\numberline {3.5.8}Metrics --- nguồn ground truth}{62}{subsection.3.5.8}%
-\contentsline {subsection}{\numberline {3.5.9}Phục vụ truy vấn UTXO cho client}{62}{subsection.3.5.9}%
-\contentsline {subsection}{\numberline {3.5.10}Khởi động và cấu hình}{62}{subsection.3.5.10}%
-\contentsline {subsection}{\numberline {3.5.11}Ranh giới nhất quán và đánh đổi thiết kế}{63}{subsection.3.5.11}%
-\contentsline {section}{\numberline {3.6}Blockchain Explorer --- Giao diện}{64}{section.3.6}%
-\contentsline {subsection}{\numberline {3.6.1}Tech stack và kiến trúc}{64}{subsection.3.6.1}%
-\contentsline {subsection}{\numberline {3.6.2}Mã hóa payload nhị phân}{65}{subsection.3.6.2}%
-\contentsline {subsection}{\numberline {3.6.3}Cập nhật realtime qua SSE}{65}{subsection.3.6.3}%
-\contentsline {section}{\numberline {3.7}Cơ sở dữ liệu PostgreSQL}{66}{section.3.7}%
-\contentsline {subsection}{\numberline {3.7.1}Các bảng chính}{66}{subsection.3.7.1}%
-\contentsline {subsection}{\numberline {3.7.2}Ghi mirror và đo benchmark}{67}{subsection.3.7.2}%
-\contentsline {section}{\numberline {3.8}Phương pháp đo lường hiệu năng}{67}{section.3.8}%
-\contentsline {subsection}{\numberline {3.8.1}Ba lớp đo lường}{67}{subsection.3.8.1}%
-\contentsline {subsection}{\numberline {3.8.2}Hai chỉ số cốt lõi}{68}{subsection.3.8.2}%
-\contentsline {subsection}{\numberline {3.8.3}Hiện tượng backlog và định luật Little}{68}{subsection.3.8.3}%
-\contentsline {subsection}{\numberline {3.8.4}Kết quả thực nghiệm tham khảo}{68}{subsection.3.8.4}%
-\contentsline {section}{\numberline {3.9}Tổng kết công nghệ}{69}{section.3.9}%
-\contentsline {chapter}{\numberline {4}Thực nghiệm và Đánh giá hiệu năng}{70}{chapter.4}%
-\contentsline {section}{\numberline {4.1}Mục tiêu và câu hỏi thực nghiệm}{70}{section.4.1}%
-\contentsline {section}{\numberline {4.2}Thiết lập thực nghiệm}{71}{section.4.2}%
-\contentsline {subsection}{\numberline {4.2.1}Môi trường và công cụ}{71}{subsection.4.2.1}%
-\contentsline {subsection}{\numberline {4.2.2}Mô hình một node và ý nghĩa của phép đo}{71}{subsection.4.2.2}%
-\contentsline {subsection}{\numberline {4.2.3}Ma trận tham số}{72}{subsection.4.2.3}%
-\contentsline {section}{\numberline {4.3}Kết quả}{72}{section.4.3}%
-\contentsline {subsection}{\numberline {4.3.1}Q1 --- Điểm bão hòa theo tốc độ gửi}{72}{subsection.4.3.1}%
-\contentsline {subsection}{\numberline {4.3.2}Q2 --- Ảnh hưởng của kích thước block}{74}{subsection.4.3.2}%
-\contentsline {subsection}{\numberline {4.3.3}Q3 --- Vai trò của chu kỳ đề xuất block}{75}{subsection.4.3.3}%
-\contentsline {subsection}{\numberline {4.3.4}Q4 --- Ảnh hưởng của số luồng gửi}{76}{subsection.4.3.4}%
-\contentsline {section}{\numberline {4.4}Cấu hình khuyến nghị}{77}{section.4.4}%
-\contentsline {section}{\numberline {4.5}Bàn luận và giới hạn}{77}{section.4.5}%
-\contentsline {chapter}{\numberline {5}Kết luận và Hướng phát triển}{79}{chapter.5}%
-\contentsline {section}{\numberline {5.1}Kết luận}{79}{section.5.1}%
-\contentsline {section}{\numberline {5.2}Giới hạn hiện tại}{80}{section.5.2}%
-\contentsline {section}{\numberline {5.3}Hướng phát triển}{81}{section.5.3}%
-\contentsline {subsection}{\numberline {5.3.1}Nâng cấp mô hình tin cậy lên chịu lỗi Byzantine}{81}{subsection.5.3.1}%
-\contentsline {subsection}{\numberline {5.3.2}Bền vững hoá và phục hồi tầng đồng thuận}{81}{subsection.5.3.2}%
-\contentsline {subsection}{\numberline {5.3.3}Đường ống hoá việc đóng block (pipelining)}{81}{subsection.5.3.3}%
-\contentsline {subsection}{\numberline {5.3.4}Tối ưu đường nóng của Core}{81}{subsection.5.3.4}%
-\contentsline {subsection}{\numberline {5.3.5}Đánh giá trên cụm nhiều node và mạng thật}{82}{subsection.5.3.5}%
-\contentsline {subsection}{\numberline {5.3.6}Cấu hình lại thành viên lúc chạy}{82}{subsection.5.3.6}%
-\contentsline {subsection}{\numberline {5.3.7}Mở rộng theo chiều ngang: đa kênh và phân mảnh}{82}{subsection.5.3.7}%
-\contentsline {subsection}{\numberline {5.3.8}Hoàn thiện hệ sinh thái hợp đồng thông minh}{82}{subsection.5.3.8}%
-\contentsline {subsection}{\numberline {5.3.9}Siết bảo mật và sẵn sàng vận hành}{83}{subsection.5.3.9}%
-\contentsline {chapter}{References}{84}{subsection.5.3.9}%
+\contentsline {chapter}{\numberline {1}Giới thiệu}{2}{chapter.1}%
+\contentsline {section}{\numberline {1.1}Bối cảnh và động lực}{2}{section.1.1}%
+\contentsline {section}{\numberline {1.2}Blockchain công khai và blockchain có cấp phép}{3}{section.1.2}%
+\contentsline {section}{\numberline {1.3}Phát biểu bài toán}{4}{section.1.3}%
+\contentsline {section}{\numberline {1.4}Mục tiêu và phạm vi}{5}{section.1.4}%
+\contentsline {subsection}{\numberline {1.4.1}Mục tiêu}{5}{subsection.1.4.1}%
+\contentsline {subsection}{\numberline {1.4.2}Phạm vi}{6}{subsection.1.4.2}%
+\contentsline {section}{\numberline {1.5}Đóng góp của khóa luận}{6}{section.1.5}%
+\contentsline {section}{\numberline {1.6}Phương pháp tiếp cận}{7}{section.1.6}%
+\contentsline {section}{\numberline {1.7}Kết quả đạt được}{7}{section.1.7}%
+\contentsline {section}{\numberline {1.8}Cấu trúc khóa luận}{7}{section.1.8}%
+\contentsline {chapter}{\numberline {2}Các công trình liên quan}{9}{chapter.2}%
+\contentsline {section}{\numberline {2.1}Sổ cái phân tán và hàm băm mật mã}{9}{section.2.1}%
+\contentsline {subsection}{\numberline {2.1.1}Cây Merkle}{9}{subsection.2.1.1}%
+\contentsline {section}{\numberline {2.2}Bitcoin và mô hình UTXO}{10}{section.2.2}%
+\contentsline {section}{\numberline {2.3}Ethereum, mô hình tài khoản và hợp đồng thông minh}{10}{section.2.3}%
+\contentsline {section}{\numberline {2.4}Hyperledger Fabric và mô hình Execute--Order--Validate}{11}{section.2.4}%
+\contentsline {section}{\numberline {2.5}Bài toán đồng thuận và các thuật toán tiêu biểu}{12}{section.2.5}%
+\contentsline {subsection}{\numberline {2.5.1}Paxos}{12}{subsection.2.5.1}%
+\contentsline {subsection}{\numberline {2.5.2}Raft}{13}{subsection.2.5.2}%
+\contentsline {subsection}{\numberline {2.5.3}PBFT và đồng thuận chịu lỗi Byzantine}{13}{subsection.2.5.3}%
+\contentsline {section}{\numberline {2.6}WebAssembly cho hợp đồng thông minh}{14}{section.2.6}%
+\contentsline {section}{\numberline {2.7}Mạng ngang hàng và lưu trữ}{15}{section.2.7}%
+\contentsline {subsection}{\numberline {2.7.1}libp2p}{15}{subsection.2.7.1}%
+\contentsline {subsection}{\numberline {2.7.2}LevelDB và lưu trữ nhúng}{15}{subsection.2.7.2}%
+\contentsline {section}{\numberline {2.8}Đánh giá hiệu năng blockchain}{15}{section.2.8}%
+\contentsline {section}{\numberline {2.9}Định vị của khóa luận}{16}{section.2.9}%
+\contentsline {chapter}{\numberline {3}Phương pháp và Thiết kế hệ thống}{17}{chapter.3}%
+\contentsline {section}{\numberline {3.1}Tổng quan kiến trúc}{17}{section.3.1}%
+\contentsline {subsection}{\numberline {3.1.1}Triết lý thiết kế: tách ba trách nhiệm}{17}{subsection.3.1.1}%
+\contentsline {subsection}{\numberline {3.1.2}Sơ đồ tổng thể}{18}{subsection.3.1.2}%
+\contentsline {subsection}{\numberline {3.1.3}Hành trình của một giao dịch}{18}{subsection.3.1.3}%
+\contentsline {section}{\numberline {3.2}Mô hình dữ liệu}{21}{section.3.2}%
+\contentsline {subsection}{\numberline {3.2.1}Giao dịch (Transaction)}{21}{subsection.3.2.1}%
+\contentsline {subsection}{\numberline {3.2.2}Block}{21}{subsection.3.2.2}%
+\contentsline {subsection}{\numberline {3.2.3}World State và mô hình UTXO}{22}{subsection.3.2.3}%
+\contentsline {subsection}{\numberline {3.2.4}Log entry của Raft}{22}{subsection.3.2.4}%
+\contentsline {section}{\numberline {3.3}Core Service --- Cổng vào và Tầng tính toán}{23}{section.3.3}%
+\contentsline {subsection}{\numberline {3.3.1}Vai trò}{23}{subsection.3.3.1}%
+\contentsline {subsection}{\numberline {3.3.2}Luồng khởi động}{24}{subsection.3.3.2}%
+\contentsline {subsection}{\numberline {3.3.3}Máy ảo hợp đồng thông minh WASM}{24}{subsection.3.3.3}%
+\contentsline {subsection}{\numberline {3.3.4}Mật mã và quá trình endorsement}{29}{subsection.3.3.4}%
+\contentsline {subsection}{\numberline {3.3.5}Mạng libp2p và Discovery}{32}{subsection.3.3.5}%
+\contentsline {subsection}{\numberline {3.3.6}Lưu trữ}{33}{subsection.3.3.6}%
+\contentsline {subsection}{\numberline {3.3.7}REST API và realtime}{33}{subsection.3.3.7}%
+\contentsline {section}{\numberline {3.4}Ordering Service --- Đồng thuận Raft}{34}{section.3.4}%
+\contentsline {subsection}{\numberline {3.4.1}Vai trò và bài toán tổng sắp thứ tự}{35}{subsection.3.4.1}%
+\contentsline {subsection}{\numberline {3.4.2}Kiến trúc và các thành phần bên trong một node}{35}{subsection.3.4.2}%
+\contentsline {subsection}{\numberline {3.4.3}Mô hình thông điệp và định tuyến}{38}{subsection.3.4.3}%
+\contentsline {subsection}{\numberline {3.4.4}Vòng đời và các trạng thái của node}{40}{subsection.3.4.4}%
+\contentsline {subsection}{\numberline {3.4.5}Quản lý thành viên và độ ưu tiên}{40}{subsection.3.4.5}%
+\contentsline {subsection}{\numberline {3.4.6}Quá bán tính trên tổng số thành viên}{41}{subsection.3.4.6}%
+\contentsline {subsection}{\numberline {3.4.7}Bầu lãnh đạo theo độ ưu tiên}{42}{subsection.3.4.7}%
+\contentsline {subsubsection}{Phát hiện Leader mất tích}{43}{section*.8}%
+\contentsline {subsubsection}{Quy trình bầu cử}{44}{section*.9}%
+\contentsline {subsection}{\numberline {3.4.8}Chống phân ly não (split-brain)}{45}{subsection.3.4.8}%
+\contentsline {subsection}{\numberline {3.4.9}Nhân bản log và cắt block}{46}{subsection.3.4.9}%
+\contentsline {subsubsection}{TxPool và vòng cắt block lai}{46}{section*.10}%
+\contentsline {subsubsection}{Cấu trúc block và chuỗi hash}{47}{section*.11}%
+\contentsline {subsubsection}{Đề xuất, chấp nhận và commit}{48}{section*.12}%
+\contentsline {subsection}{\numberline {3.4.10}Giao block cho tầng ghi sổ (Deliver)}{49}{subsection.3.4.10}%
+\contentsline {subsection}{\numberline {3.4.11}Đồng bộ khi node tụt hậu (Sync)}{50}{subsection.3.4.11}%
+\contentsline {subsection}{\numberline {3.4.12}Tầng mạng}{51}{subsection.3.4.12}%
+\contentsline {subsection}{\numberline {3.4.13}Khởi động và gia nhập cluster}{52}{subsection.3.4.13}%
+\contentsline {subsection}{\numberline {3.4.14}Các đánh đổi thiết kế}{52}{subsection.3.4.14}%
+\contentsline {section}{\numberline {3.5}Committing Peer --- Kiểm tra và Ghi sổ}{53}{section.3.5}%
+\contentsline {subsection}{\numberline {3.5.1}Vai trò và nguyên tắc thiết kế}{53}{subsection.3.5.1}%
+\contentsline {subsection}{\numberline {3.5.2}Kiến trúc tổ chức theo gói}{54}{subsection.3.5.2}%
+\contentsline {subsection}{\numberline {3.5.3}Đường ống xử lý bằng kênh}{55}{subsection.3.5.3}%
+\contentsline {subsection}{\numberline {3.5.4}Nhận block và tự phục hồi}{56}{subsection.3.5.4}%
+\contentsline {subsection}{\numberline {3.5.5}Vai trò endorser và tính hợp lệ endorsement}{57}{subsection.3.5.5}%
+\contentsline {subsection}{\numberline {3.5.6}Kiểm tra hợp lệ block}{58}{subsection.3.5.6}%
+\contentsline {subsection}{\numberline {3.5.7}Mô hình lưu trữ ba lớp}{59}{subsection.3.5.7}%
+\contentsline {subsubsection}{Lớp 1 --- Block storage (sổ cái bất biến)}{59}{section*.13}%
+\contentsline {subsubsection}{Lớp 2 --- World state (UTXO trên LevelDB)}{60}{section*.14}%
+\contentsline {subsubsection}{Lớp 3 --- PostgreSQL mirror (bản sao tra cứu)}{60}{section*.15}%
+\contentsline {subsection}{\numberline {3.5.8}Metrics --- nguồn ground truth}{61}{subsection.3.5.8}%
+\contentsline {subsection}{\numberline {3.5.9}Phục vụ truy vấn UTXO cho client}{61}{subsection.3.5.9}%
+\contentsline {subsection}{\numberline {3.5.10}Khởi động và cấu hình}{61}{subsection.3.5.10}%
+\contentsline {subsection}{\numberline {3.5.11}Ranh giới nhất quán và đánh đổi thiết kế}{62}{subsection.3.5.11}%
+\contentsline {section}{\numberline {3.6}Blockchain Explorer --- Giao diện}{63}{section.3.6}%
+\contentsline {subsection}{\numberline {3.6.1}Tech stack và kiến trúc}{63}{subsection.3.6.1}%
+\contentsline {subsection}{\numberline {3.6.2}Mã hóa payload nhị phân}{64}{subsection.3.6.2}%
+\contentsline {subsection}{\numberline {3.6.3}Cập nhật realtime qua SSE}{64}{subsection.3.6.3}%
+\contentsline {section}{\numberline {3.7}Cơ sở dữ liệu PostgreSQL}{65}{section.3.7}%
+\contentsline {subsection}{\numberline {3.7.1}Các bảng chính}{65}{subsection.3.7.1}%
+\contentsline {subsection}{\numberline {3.7.2}Ghi mirror và đo benchmark}{66}{subsection.3.7.2}%
+\contentsline {section}{\numberline {3.8}Phương pháp đo lường hiệu năng}{66}{section.3.8}%
+\contentsline {subsection}{\numberline {3.8.1}Ba lớp đo lường}{66}{subsection.3.8.1}%
+\contentsline {subsection}{\numberline {3.8.2}Hai chỉ số cốt lõi}{67}{subsection.3.8.2}%
+\contentsline {subsection}{\numberline {3.8.3}Hiện tượng backlog và định luật Little}{67}{subsection.3.8.3}%
+\contentsline {subsection}{\numberline {3.8.4}Kết quả thực nghiệm tham khảo}{67}{subsection.3.8.4}%
+\contentsline {section}{\numberline {3.9}Tổng kết công nghệ}{68}{section.3.9}%
+\contentsline {chapter}{\numberline {4}Thực nghiệm và Đánh giá hiệu năng}{69}{chapter.4}%
+\contentsline {section}{\numberline {4.1}Mục tiêu và câu hỏi thực nghiệm}{69}{section.4.1}%
+\contentsline {section}{\numberline {4.2}Thiết lập thực nghiệm}{70}{section.4.2}%
+\contentsline {subsection}{\numberline {4.2.1}Môi trường và công cụ}{70}{subsection.4.2.1}%
+\contentsline {subsection}{\numberline {4.2.2}Mô hình một node và ý nghĩa của phép đo}{70}{subsection.4.2.2}%
+\contentsline {subsection}{\numberline {4.2.3}Ma trận tham số}{71}{subsection.4.2.3}%
+\contentsline {section}{\numberline {4.3}Kết quả}{71}{section.4.3}%
+\contentsline {subsection}{\numberline {4.3.1}Q1 --- Điểm bão hòa theo tốc độ gửi}{71}{subsection.4.3.1}%
+\contentsline {subsection}{\numberline {4.3.2}Q2 --- Ảnh hưởng của kích thước block}{73}{subsection.4.3.2}%
+\contentsline {subsection}{\numberline {4.3.3}Q3 --- Vai trò của chu kỳ đề xuất block}{74}{subsection.4.3.3}%
+\contentsline {subsection}{\numberline {4.3.4}Q4 --- Ảnh hưởng của số luồng gửi}{75}{subsection.4.3.4}%
+\contentsline {section}{\numberline {4.4}Cấu hình khuyến nghị}{76}{section.4.4}%
+\contentsline {section}{\numberline {4.5}Bàn luận và giới hạn}{76}{section.4.5}%
+\contentsline {section}{\numberline {4.6}Đánh giá end-to-end toàn pipeline}{77}{section.4.6}%
+\contentsline {subsection}{\numberline {4.6.1}Mục tiêu và câu hỏi thực nghiệm}{77}{subsection.4.6.1}%
+\contentsline {subsection}{\numberline {4.6.2}Thiết lập thực nghiệm}{78}{subsection.4.6.2}%
+\contentsline {subsection}{\numberline {4.6.3}Kết quả với ML-DSA-44}{78}{subsection.4.6.3}%
+\contentsline {subsection}{\numberline {4.6.4}Kết quả với Ed25519}{79}{subsection.4.6.4}%
+\contentsline {subsection}{\numberline {4.6.5}So sánh thuật toán ký}{80}{subsection.4.6.5}%
+\contentsline {section}{\numberline {4.7}Kết luận: trần hiệu năng và điểm nghẽn}{81}{section.4.7}%
+\contentsline {chapter}{\numberline {5}Kết luận và Hướng phát triển}{84}{chapter.5}%
+\contentsline {section}{\numberline {5.1}Kết luận}{84}{section.5.1}%
+\contentsline {section}{\numberline {5.2}Giới hạn hiện tại}{85}{section.5.2}%
+\contentsline {section}{\numberline {5.3}Hướng phát triển}{86}{section.5.3}%
+\contentsline {subsection}{\numberline {5.3.1}Nâng cấp mô hình tin cậy lên chịu lỗi Byzantine}{86}{subsection.5.3.1}%
+\contentsline {subsection}{\numberline {5.3.2}Bền vững hoá và phục hồi tầng đồng thuận}{86}{subsection.5.3.2}%
+\contentsline {subsection}{\numberline {5.3.3}Đường ống hoá việc đóng block (pipelining)}{86}{subsection.5.3.3}%
+\contentsline {subsection}{\numberline {5.3.4}Tối ưu đường nóng của Core}{86}{subsection.5.3.4}%
+\contentsline {subsection}{\numberline {5.3.5}Đánh giá trên cụm nhiều node và mạng thật}{87}{subsection.5.3.5}%
+\contentsline {subsection}{\numberline {5.3.6}Cấu hình lại thành viên lúc chạy}{87}{subsection.5.3.6}%
+\contentsline {subsection}{\numberline {5.3.7}Mở rộng theo chiều ngang: đa kênh và phân mảnh}{87}{subsection.5.3.7}%
+\contentsline {subsection}{\numberline {5.3.8}Hoàn thiện hệ sinh thái hợp đồng thông minh}{87}{subsection.5.3.8}%
+\contentsline {subsection}{\numberline {5.3.9}Siết bảo mật và sẵn sàng vận hành}{88}{subsection.5.3.9}%
+\contentsline {chapter}{References}{89}{subsection.5.3.9}%
