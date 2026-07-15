@@ -9,44 +9,38 @@ import (
 	"commiting-peer/internal/types"
 )
 
+type trustedKey struct {
+	algo   crypto.Algorithm
+	pubHex string
+}
+
 // Engine validates blocks and individual transactions before they are committed.
-// When trustedEndorserPubHex is non-empty, each smart-contract transaction must
-// carry valid Ed25519 endorsements and at least one endorser public key must be
-// in the trusted set (comma-separated hex in NewEngine).
 type Engine struct {
-	trustedPubHexes []string
+	trusted []trustedKey
 }
 
 // NewEngine returns a new validation engine. trustedEndorserPubHex may be a
-// single hex public key or comma-separated keys. Empty string skips endorser
-// checks (legacy / dev only).
+// single hex public key, comma-separated keys, or "algo:hex" entries.
+// Empty string skips endorser checks (legacy / dev only).
 func NewEngine(trustedEndorserPubHex string) *Engine {
-	var pubs []string
+	var keys []trustedKey
 	for _, p := range strings.Split(trustedEndorserPubHex, ",") {
-		if s := strings.TrimSpace(p); s != "" {
-			pubs = append(pubs, s)
+		algo, pub, err := crypto.ParseTrustedKey(p)
+		if err != nil || pub == "" {
+			continue
 		}
+		keys = append(keys, trustedKey{algo: algo, pubHex: strings.ToLower(pub)})
 	}
-	return &Engine{trustedPubHexes: pubs}
+	return &Engine{trusted: keys}
 }
 
 // ValidateBlock checks Merkle root and block hash (matching the ordering service).
-// When trusted endorser keys are configured, smart-contract transactions must carry
-// valid endorsements. Note: prev_hash check is skipped; it's still included in block
-// hash computation for structure verification.
-// committedTipHash is the last block hash already on disk (nil if the chain file is empty).
 func (e *Engine) ValidateBlock(b types.Block, committedTipHash []byte) error {
-	// Skip prev_hash chain continuity check
-	// if err := e.verifyPrevHash(b, committedTipHash); err != nil {
-	//	return fmt.Errorf("prev_hash check failed: %w", err)
-	// }
-
 	if err := e.verifyBlockIntegrity(b); err != nil {
 		return fmt.Errorf("block integrity check failed: %w", err)
 	}
 
-	// Verify transaction endorsements (if trusted keys configured)
-	if len(e.trustedPubHexes) == 0 {
+	if len(e.trusted) == 0 {
 		return nil
 	}
 	for _, tx := range b.Transactions {
@@ -58,8 +52,6 @@ func (e *Engine) ValidateBlock(b types.Block, committedTipHash []byte) error {
 }
 
 func (e *Engine) endorsementList(tx types.Transaction) []types.EndorsementEntry {
-	// Only use explicit endorsements array; ignore legacy Signature + SenderPubKey fields
-	// (those are only for compatibility with old serialization, not block validation)
 	if len(tx.Endorsements) > 0 {
 		return tx.Endorsements
 	}
@@ -74,19 +66,28 @@ func (e *Engine) validateEndorsedTx(tx types.Transaction) error {
 	if len(list) == 0 {
 		return fmt.Errorf("tx %s: missing endorsements", tx.Txid)
 	}
-	trusted := make(map[string]struct{}, len(e.trustedPubHexes))
-	for _, p := range e.trustedPubHexes {
-		trusted[strings.ToLower(strings.TrimSpace(p))] = struct{}{}
+
+	trusted := make(map[string]struct{}, len(e.trusted))
+	for _, tk := range e.trusted {
+		trusted[trustedKeyID(tk.algo, tk.pubHex)] = struct{}{}
 	}
+
 	var seenTrusted bool
 	for i, ent := range list {
 		if ent.PublicKey == "" || ent.Signature == "" {
 			return fmt.Errorf("tx %s: endorsement %d incomplete", tx.Txid, i)
 		}
-		if !crypto.VerifyTransaction(tx.Txid, tx.ContractName, tx.Payload, ent.Signature, ent.PublicKey) {
+		algo, err := crypto.ParseAlgorithm(ent.Algorithm)
+		if err != nil {
+			return fmt.Errorf("tx %s: endorsement %d: %w", tx.Txid, i, err)
+		}
+		if algo == "" {
+			algo = crypto.InferAlgorithmFromWire(ent.Signature, ent.PublicKey)
+		}
+		if !crypto.VerifyEndorsement(tx.Txid, tx.ContractName, tx.Payload, algo, ent.Signature, ent.PublicKey) {
 			return fmt.Errorf("tx %s: invalid endorser signature (endorsement %d)", tx.Txid, i)
 		}
-		if _, ok := trusted[strings.ToLower(strings.TrimSpace(ent.PublicKey))]; ok {
+		if _, ok := trusted[trustedKeyID(algo, strings.ToLower(strings.TrimSpace(ent.PublicKey)))]; ok {
 			seenTrusted = true
 		}
 	}
@@ -96,14 +97,15 @@ func (e *Engine) validateEndorsedTx(tx types.Transaction) error {
 	return nil
 }
 
-// ValidateTransaction checks a single transaction (inputs, outputs, scripts,
-// signatures, etc.). Stub for per-tx checks beyond endorser validation.
+func trustedKeyID(algo crypto.Algorithm, pubHex string) string {
+	return string(algo) + ":" + strings.ToLower(strings.TrimSpace(pubHex))
+}
+
+// ValidateTransaction checks a single transaction (stub).
 func (e *Engine) ValidateTransaction(_ types.Transaction) error {
 	return nil
 }
 
-// padHash32 left-pads a hash into 32 bytes the same way the ordering service
-// serializes prev_hash / merkle_root in the block header.
 func padHash32(h []byte) [32]byte {
 	var out [32]byte
 	if len(h) == 0 {
@@ -126,8 +128,6 @@ func (e *Engine) verifyPrevHash(b types.Block, committedTip []byte) error {
 	return nil
 }
 
-// verifyBlockIntegrity requires Merkle root and block hash on the wire and
-// verifies them against transaction txids and the header fields.
 func (e *Engine) verifyBlockIntegrity(b types.Block) error {
 	if len(b.MerkleRoot) == 0 || len(b.Hash) == 0 {
 		return fmt.Errorf("block must include non-empty merkle_root and hash")

@@ -20,8 +20,9 @@ import (
 )
 
 const (
-	AutoProposeBlockSize = 1000                    // max tx per auto-proposed block
-	AutoProposeInterval  = 100 * time.Millisecond   // tick interval for auto-propose loop
+	// Evaluation baseline (Ch. ordering): stable throughput, avoids bimodal dip at 1000.
+	AutoProposeBlockSize = 500
+	AutoProposeInterval  = 100 * time.Millisecond // tick interval for auto-propose loop
 )
 
 // RaftNode represents a node in the Raft-based order service

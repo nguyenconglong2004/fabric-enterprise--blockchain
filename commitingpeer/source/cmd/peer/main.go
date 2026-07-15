@@ -30,50 +30,37 @@ func in(scanner *bufio.Scanner, prompt string) string {
 	return ""
 }
 
-func loadOrGenerateEndorsementKey() (privHex, pubHex string, err error) {
-	// Try to load from environment variable
-	priv := strings.TrimSpace(os.Getenv("COMMIT_PEER_PRIVATE_KEY"))
-
-	// Try to load from file if env var not set
-	if priv == "" {
-		path := strings.TrimSpace(os.Getenv("COMMIT_PEER_KEY_FILE"))
-		if path == "" {
-			path = "endorsement.key"
+func loadOrGenerateEndorsementKey(sc *bufio.Scanner) (crypto.Signer, error) {
+	algoRaw := strings.TrimSpace(os.Getenv("COMMIT_PEER_KEY_ALGO"))
+	if algoRaw == "" {
+		fmt.Println()
+		fmt.Println("🔐 Key algorithm:")
+		fmt.Println("   1) ed25519 (default, fastest)")
+		fmt.Println("   2) mldsa-44 (post-quantum ML-DSA)")
+		choice := in(sc, "COMMIT_PEER_KEY_ALGO [1]: ")
+		if choice == "" {
+			choice = "1"
 		}
-		b, readErr := os.ReadFile(path)
-		if readErr == nil {
-			priv = strings.TrimSpace(string(b))
-		}
+		algoRaw = choice
 	}
 
-	// Generate new key if not found
-	if priv == "" {
-		fmt.Println("🔑 Generating new Ed25519 endorsement key...")
-		kp, genErr := crypto.GenerateKeyPair()
-		if genErr != nil {
-			return "", "", fmt.Errorf("failed to generate key pair: %w", genErr)
-		}
-		priv = kp.PrivateKey
-
-		// Save to default file for future use
-		path := strings.TrimSpace(os.Getenv("COMMIT_PEER_KEY_FILE"))
-		if path == "" {
-			path = "endorsement.key"
-		}
-		if saveErr := os.WriteFile(path, []byte(priv), 0600); saveErr != nil {
-			fmt.Printf("⚠️  Warning: could not save key to %s: %v\n", path, saveErr)
-		} else {
-			fmt.Printf("✅ Saved private key to %s\n", path)
-		}
+	algo, err := crypto.ParseAlgorithm(algoRaw)
+	if err != nil {
+		return nil, err
 	}
 
-	// Get public key
-	pub := strings.TrimSpace(os.Getenv("COMMIT_PEER_PUBLIC_KEY"))
-	if pub != "" {
-		return priv, pub, nil
+	signer, err := crypto.LoadOrGenerateSigner(algo)
+	if err != nil {
+		return nil, err
 	}
-	pub, err = crypto.PublicKeyFromPrivateHex(priv)
-	return priv, pub, err
+
+	switch signer.Algorithm() {
+	case crypto.AlgoMLDSA44:
+		fmt.Println("🔑 Using ML-DSA-44 endorsement key (post-quantum)")
+	default:
+		fmt.Println("🔑 Using Ed25519 endorsement key")
+	}
+	return signer, nil
 }
 
 func main() {
@@ -108,12 +95,16 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	privHex, pubHex, err := loadOrGenerateEndorsementKey()
+	signer, err := loadOrGenerateEndorsementKey(sc)
 	if err != nil {
 		fmt.Printf("Error: endorsement key: %v\n", err)
 		return
 	}
-	fmt.Printf("🔐 Endorser public key: %s...\n", short(pubHex, 24))
+	pubHex := signer.PublicKeyHex()
+	if envPub := strings.TrimSpace(os.Getenv("COMMIT_PEER_PUBLIC_KEY")); envPub != "" {
+		pubHex = envPub
+	}
+	fmt.Printf("🔐 Endorser public key (%s): %s...\n", signer.Algorithm(), short(pubHex, 24))
 
 	blockStore, err := storage.NewBlockStorage(blockFile)
 	if err != nil {
@@ -140,12 +131,12 @@ func main() {
 		fmt.Printf("Error creating deliver client: %v\n", err)
 		return
 	}
-	deliverClient.RegisterTxSignHandler(privHex, pubHex)
+	deliverClient.RegisterTxSignHandler(signer)
 
 	// Comma-separated trusted endorser pubkeys (hex). If unset, defaults to this peer's key.
 	trusted := strings.TrimSpace(os.Getenv("TRUSTED_ENDORSER_PUBLIC_KEYS"))
 	if trusted == "" {
-		trusted = pubHex
+		trusted = signer.TrustedKey()
 	}
 	validator := validation.NewEngine(trusted)
 	peer := peerpkg.New(deliverClient, validator, blockStore, worldState, db)

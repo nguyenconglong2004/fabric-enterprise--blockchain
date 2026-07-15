@@ -6,10 +6,11 @@ import (
 	"fmt"
 )
 
-// EndorsementEntry is one Ed25519 endorsement on (txid + contract_name + payload).
+// EndorsementEntry is one endorsement on (txid + contract_name + payload).
 type EndorsementEntry struct {
 	PublicKey string `json:"public_key"`
 	Signature string `json:"signature"`
+	Algorithm string `json:"algorithm,omitempty"` // ed25519 (default) or mldsa-44
 }
 
 // Transaction supports both UTXO and Smart Contract transactions

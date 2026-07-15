@@ -149,8 +149,9 @@ type ScriptSig struct {
 // Endorsement represents a signature from a peer who endorsed this transaction.
 type Endorsement struct {
 	EndorserID string `json:"endorser_id,omitempty"` // Optional peer label
-	PublicKey  string `json:"public_key,omitempty"`  // Ed25519 public key (hex), from core / commit peer
+	PublicKey  string `json:"public_key,omitempty"`  // Public key (hex), from core / commit peer
 	Signature  string `json:"signature"`             // Signature from the endorser
+	Algorithm  string `json:"algorithm,omitempty"`   // ed25519 (default) or mldsa-44
 	Status     string `json:"status,omitempty"`      // "SUCCESS" or error message
 }
 

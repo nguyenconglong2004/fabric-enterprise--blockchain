@@ -104,8 +104,8 @@ func ReadAll(path string) ([]types.Block, error) {
 
 	var blocks []types.Block
 	scanner := bufio.NewScanner(f)
-	// Allow lines up to 16 MB (large blocks with many transactions).
-	scanner.Buffer(make([]byte, 64*1024), 16*1024*1024)
+	// ML-DSA endorsements inflate JSON lines (~17MB seen at 1000 tx/block).
+	scanner.Buffer(make([]byte, 64*1024), 64*1024*1024)
 	for scanner.Scan() {
 		line := scanner.Bytes()
 		if len(line) == 0 {
