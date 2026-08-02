@@ -200,7 +200,13 @@ func main() {
 	http.HandleFunc("/api/wallet/balance", apiServer.HandleBalance)
 	http.HandleFunc("/api/wallet/balance/stream", apiServer.HandleBalanceStream)
 
-	port := ":8080"
+	port := strings.TrimSpace(os.Getenv("CORE_HTTP_ADDR"))
+	if port == "" {
+		port = ":8080"
+	}
+	if !strings.HasPrefix(port, ":") && !strings.Contains(port, ":") {
+		port = ":" + port
+	}
 	fmt.Printf("🌐 Core Node API Server đang chạy tại http://localhost%s\n", port)
 	if os.Getenv("CORE_RECORD_SUBMIT") == "0" {
 		fmt.Println("📊 Submit recording tắt (CORE_RECORD_SUBMIT=0) — benchmark submit metrics = 0")

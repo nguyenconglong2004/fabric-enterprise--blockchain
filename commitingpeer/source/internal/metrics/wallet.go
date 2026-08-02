@@ -8,8 +8,6 @@ import (
 	"strings"
 
 	"commiting-peer/internal/storage"
-
-	"github.com/syndtr/goleveldb/leveldb"
 )
 
 // WalletHandler exposes mint / balance / state against KV world state (account model).
@@ -103,7 +101,7 @@ func (h *WalletHandler) handleBalance(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// GET /wallet/state?key=... — committed KV from rw_set apply / mint.
+// GET /wallet/state?key=... — committed KV from rw_set apply / mint (+ MVCC version).
 func (h *WalletHandler) handleGetState(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeErr(w, http.StatusMethodNotAllowed, "only GET")
@@ -114,21 +112,23 @@ func (h *WalletHandler) handleGetState(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "missing key")
 		return
 	}
-	val, err := h.WS.GetKV(key)
-	if err == leveldb.ErrNotFound {
-		writeJSON(w, http.StatusOK, map[string]interface{}{
-			"key":   key,
-			"found": false,
-		})
-		return
-	}
+	val, version, found, err := h.WS.GetKVWithVersion(key)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	if !found {
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"key":     key,
+			"found":   false,
+			"version": "",
+		})
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"key":   key,
-		"found": true,
-		"value": hex.EncodeToString(val),
+		"key":     key,
+		"found":   true,
+		"value":   hex.EncodeToString(val),
+		"version": version,
 	})
 }

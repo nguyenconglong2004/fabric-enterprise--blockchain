@@ -89,7 +89,8 @@ func (rw *RWSet) LookupWrite(key string) (val []byte, deleted bool, ok bool) {
 }
 
 // RecordRead appends a read if key not already recorded.
-func (rw *RWSet) RecordRead(key string, val []byte) {
+// version is the MVCC version at simulate time ("" if key did not exist).
+func (rw *RWSet) RecordRead(key string, val []byte, version string) {
 	if rw == nil {
 		return
 	}
@@ -98,7 +99,7 @@ func (rw *RWSet) RecordRead(key string, val []byte) {
 			return
 		}
 	}
-	entry := KVRead{Key: key}
+	entry := KVRead{Key: key, Version: version}
 	if len(val) > 0 {
 		entry.Value = hex.EncodeToString(val)
 	}

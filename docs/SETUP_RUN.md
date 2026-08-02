@@ -180,8 +180,16 @@ Log seed:
 
 ```text
 👤 Seeded alice address=... balance=1000
-📦 Auto-deployed contract transfer ...
 🌐 Core Node API Server đang chạy tại http://localhost:8080
+```
+
+Deploy contract thủ công (ví dụ):
+
+```bash
+cd coreservice/contracts && ./build_wasm.sh
+curl -X POST http://127.0.0.1:8080/api/tx/deploy \
+  -F 'contract_name=transfer' \
+  -F 'file=@transfer/my_contract.wasm'
 ```
 
 Nếu mint fail (`commit peer :8081`): tắt Core, mở lại peer metrics, restart Core.

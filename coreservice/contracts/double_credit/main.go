@@ -1,29 +1,26 @@
-// transfer — account-model contract: execute moves balance:<from> → balance:<to>.
-// Discount (KV discount:<from>): debit = ceil(amount / (1+d)); credit = amount.
+// double_credit — from loses amount; to receives amount*2.
 package main
 
 import (
 	"encoding/json"
-	"math"
 	"strconv"
 
 	"fabricwasm/sdk"
 )
 
 type Payload struct {
-	From   string  `json:"from"`
-	To     string  `json:"to"`
-	Amount int64   `json:"amount"`
-	Memo   string  `json:"memo" schema:"optional"`
+	From   string `json:"from"`
+	To     string `json:"to"`
+	Amount int64  `json:"amount"`
+	Memo   string `json:"memo" schema:"optional"`
 }
 
 func balKey(addr string) []byte { return []byte("balance:" + addr) }
-func discKey(addr string) []byte { return []byte("discount:" + addr) }
 
 func getInt(key []byte) (int64, bool) {
 	n := sdk.SizeOf(key)
 	if n == 0 {
-		return 0, true // missing → 0
+		return 0, true
 	}
 	buf := make([]byte, n)
 	got, ok := sdk.GetState(key, buf)
@@ -37,29 +34,9 @@ func getInt(key []byte) (int64, bool) {
 	return v, true
 }
 
-func getDiscount(addr string) float64 {
-	key := discKey(addr)
-	n := sdk.SizeOf(key)
-	if n == 0 {
-		return 0
-	}
-	buf := make([]byte, n)
-	got, ok := sdk.GetState(key, buf)
-	if !ok || got == 0 {
-		return 0
-	}
-	d, err := strconv.ParseFloat(string(buf[:got]), 64)
-	if err != nil || d < 0 {
-		return 0
-	}
-	return d
-}
-
 func putInt(key []byte, v int64) bool {
 	return sdk.PutState(key, []byte(strconv.FormatInt(v, 10)))
 }
-
-// allocate is provided by fabricwasm/sdk (//export allocate).
 
 //export verify_tx
 func verify_tx(ptr uint32, size uint32) uint32 {
@@ -74,6 +51,10 @@ func verify_tx(ptr uint32, size uint32) uint32 {
 		return 0
 	}
 	if p.From == p.To {
+		return 0
+	}
+	// amount*2 must fit int64
+	if p.Amount > (1<<62)-1 {
 		return 0
 	}
 	if len(p.Memo) > 200 {
@@ -92,18 +73,13 @@ func execute(ptr uint32, size uint32) uint32 {
 	if len(p.From) != 40 || len(p.To) != 40 || p.Amount <= 0 {
 		return 0
 	}
-
-	d := getDiscount(p.From)
-	debit := p.Amount
-	if d > 0 {
-		debit = int64(math.Ceil(float64(p.Amount)/(1+d) - 1e-12))
-		if debit < 1 {
-			debit = 1
-		}
+	if p.Amount > (1<<62)-1 {
+		return 0
 	}
 
+	credit := p.Amount * 2
 	fromBal, ok := getInt(balKey(p.From))
-	if !ok || fromBal < debit {
+	if !ok || fromBal < p.Amount {
 		return 0
 	}
 	toBal, ok := getInt(balKey(p.To))
@@ -111,14 +87,13 @@ func execute(ptr uint32, size uint32) uint32 {
 		return 0
 	}
 
-	if !putInt(balKey(p.From), fromBal-debit) {
+	if !putInt(balKey(p.From), fromBal-p.Amount) {
 		return 0
 	}
-	if !putInt(balKey(p.To), toBal+p.Amount) {
+	if !putInt(balKey(p.To), toBal+credit) {
 		return 0
 	}
-	// Receipt for explorer / audit
-	_ = sdk.PutState([]byte("xfer_receipt:"+p.To), payload)
+	_ = sdk.PutState([]byte("double_receipt:"+p.To), payload)
 	return 1
 }
 

@@ -3,24 +3,21 @@
   "fields": [
     {
       "name": "id",
-      "label": "Asset ID",
+      "label": "Id",
       "type": "string",
-      "required": true,
-      "placeholder": "asset_001"
+      "required": true
     },
     {
       "name": "color",
       "label": "Color",
       "type": "string",
-      "required": true,
-      "placeholder": "red"
+      "required": true
     },
     {
       "name": "action",
       "label": "Action",
       "type": "string",
-      "required": true,
-      "placeholder": "create|update|delete"
+      "required": true
     }
   ]
 }

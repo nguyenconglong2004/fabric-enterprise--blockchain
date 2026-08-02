@@ -1,0 +1,11 @@
+{
+  "name": "bench_ping",
+  "fields": [
+    {
+      "name": "v",
+      "label": "V",
+      "type": "string",
+      "required": true
+    }
+  ]
+}

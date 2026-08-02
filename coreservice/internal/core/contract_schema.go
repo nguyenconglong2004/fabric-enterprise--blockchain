@@ -127,6 +127,18 @@ func GetContractSchema(contractName string) *ContractSchema {
 				},
 			},
 		},
+		"double_credit": {
+			Name: "double_credit",
+			Fields: []FieldSpec{
+				{
+					Name:        "memo",
+					Label:       "Memo",
+					Type:        "string",
+					Required:    false,
+					Placeholder: "alice -10 → bob +20",
+				},
+			},
+		},
 	}
 
 	if schema, ok := schemas[contractName]; ok {
@@ -166,6 +178,10 @@ func ListAvailableContracts() []ContractSchema {
 		{
 			Name:   "transfer",
 			Fields: GetContractSchema("transfer").Fields,
+		},
+		{
+			Name:   "double_credit",
+			Fields: GetContractSchema("double_credit").Fields,
 		},
 	}
 }

@@ -1,0 +1,23 @@
+{
+  "name": "demo_inventory",
+  "fields": [
+    {
+      "name": "op",
+      "label": "Op",
+      "type": "string",
+      "required": true
+    },
+    {
+      "name": "sku",
+      "label": "Sku",
+      "type": "string",
+      "required": true
+    },
+    {
+      "name": "qty",
+      "label": "Qty",
+      "type": "integer",
+      "required": true
+    }
+  ]
+}

@@ -264,13 +264,19 @@ func (p *CommittingPeer) handleBlock(block types.Block) {
 		return
 	}
 
-	if err := p.worldState.ApplyBlock(block); err != nil {
+	// 1-based block height for DB + MVCC version strings.
+	blockNumber := atomic.AddInt64(&p.blockCount, 1)
+	results, err := p.worldState.ApplyBlock(block, blockNumber)
+	if err != nil {
 		log.Printf("[peer] failed to apply block to world state hash=%s: %v", hashHex, err)
 		return
 	}
+	for _, r := range results {
+		if r.Code == storage.TxInvalidMVCC {
+			log.Printf("[peer] tx %s INVALID_MVCC: %s", r.Txid, r.Reason)
+		}
+	}
 
-	// 1-based block height for DB (stable for this block even if async DB write runs later).
-	blockNumber := atomic.AddInt64(&p.blockCount, 1)
 	p.mu.Lock()
 	p.lastBlockHash = block.Hash
 	p.lastBlockTime = time.Unix(block.Timestamp, 0)
@@ -278,7 +284,13 @@ func (p *CommittingPeer) handleBlock(block types.Block) {
 	p.mu.Unlock()
 
 	committedAt := time.Now().UTC()
-	log.Printf("[peer] committed block hash=%s txs=%d", hashHex, len(block.Transactions))
+	validN := 0
+	for _, r := range results {
+		if r.Code == storage.TxValid {
+			validN++
+		}
+	}
+	log.Printf("[peer] committed block hash=%s txs=%d valid=%d", hashHex, len(block.Transactions), validN)
 
 	txids := make([]string, 0, len(block.Transactions))
 	for _, tx := range block.Transactions {

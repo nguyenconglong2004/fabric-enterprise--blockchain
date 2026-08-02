@@ -10,11 +10,9 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
-	"coreservice/internal/core"
 	"coreservice/internal/storage"
 	"coreservice/internal/wallet"
 
@@ -164,88 +162,6 @@ func (s *APIServer) SeedDemoAccounts() {
 				sd.user, acc.Address, sd.balance, sd.pass)
 		}
 	}
-	s.ensureContractDeployed("transfer", transferWASMCandidates())
-	s.ensureContractDeployed("example_asset", exampleAssetWASMCandidates())
-}
-
-func transferWASMCandidates() []string {
-	return wasmCandidates("transfer")
-}
-
-func exampleAssetWASMCandidates() []string {
-	return wasmCandidates("example_asset")
-}
-
-func wasmCandidates(name string) []string {
-	rel := []string{
-		filepath.Join("..", "contracts", name, "my_contract.wasm"),
-		filepath.Join("contracts", name, "my_contract.wasm"),
-		filepath.Join("coreservice", "contracts", name, "my_contract.wasm"),
-	}
-	if wd, err := os.Getwd(); err == nil {
-		rel = append(rel,
-			filepath.Join(wd, "..", "contracts", name, "my_contract.wasm"),
-			filepath.Join(wd, "contracts", name, "my_contract.wasm"),
-			filepath.Join(wd, "coreservice", "contracts", name, "my_contract.wasm"),
-		)
-	}
-	return rel
-}
-
-func (s *APIServer) ensureContractDeployed(name string, paths []string) {
-	if s.Engine == nil || s.Engine.GetDB() == nil {
-		return
-	}
-	var wasm []byte
-	var used string
-	for _, p := range paths {
-		b, err := os.ReadFile(p)
-		if err == nil && len(b) > 0 {
-			wasm = b
-			used = p
-			break
-		}
-	}
-	if len(wasm) == 0 {
-		fmt.Printf("⚠️  contract %s.wasm not found (cd coreservice/contracts && ./build_wasm.sh)\n", name)
-		return
-	}
-	// Always refresh from disk so schema/logic updates after rebuild.
-	if err := s.Engine.GetDB().SaveContract(name, wasm); err != nil {
-		fmt.Printf("⚠️  deploy %s: %v\n", name, err)
-		return
-	}
-	s.Engine.InvalidateContract(name)
-	// Prefer contracts/<name>/schema.json next to wasm; else builtin Go map.
-	var schemaRaw []byte
-	schemaSrc := "none"
-	if sj := strings.TrimSuffix(used, "my_contract.wasm") + "schema.json"; sj != used {
-		if b, err := os.ReadFile(sj); err == nil && len(bytes.TrimSpace(b)) > 0 {
-			var sch core.ContractSchema
-			if json.Unmarshal(b, &sch) == nil {
-				if sch.Name == "" {
-					sch.Name = name
-				}
-				schemaRaw, _ = json.Marshal(sch)
-				schemaSrc = "file:" + sj
-			}
-		}
-	}
-	if len(schemaRaw) == 0 {
-		if schema := core.GetContractSchema(name); schema != nil {
-			schemaRaw, _ = json.Marshal(schema)
-			schemaSrc = "builtin"
-		}
-	}
-	if len(schemaRaw) > 0 {
-		_ = s.Engine.GetDB().SaveContractMetaSchema(name, schemaRaw)
-		if s.DB != nil {
-			_ = s.DB.SaveContract(name, wasm, schemaRaw)
-		}
-	} else if s.DB != nil {
-		_ = s.DB.SaveContract(name, wasm, nil)
-	}
-	fmt.Printf("📦 Deployed contract %s from %s (%d bytes) schema=%s\n", name, used, len(wasm), schemaSrc)
 }
 
 func randomToken() (string, error) {

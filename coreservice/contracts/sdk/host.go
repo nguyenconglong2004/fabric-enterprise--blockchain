@@ -1,8 +1,8 @@
 // Package sdk is the TinyGo guest-side host ABI for Core WASM contracts.
 //
-// Engineers implement:
+// Importing this package exports `allocate` for the Core host (do not re-export it in main).
+// Engineers implement in their main package:
 //
-//	//export allocate
 //	//export verify_tx   — validate payload / business rules (prefer no writes)
 //	//export execute     — side effects via PutState after verify_tx succeeds
 //
@@ -57,10 +57,17 @@ func SizeOf(key []byte) uint32 {
 	return getState(kPtr, uint32(len(key)), 0, 0)
 }
 
-// Allocate is a helper matching the required //export allocate pattern.
+// Allocate reserves size bytes in guest linear memory and returns a pointer
+// the host can Write into. Prefer relying on the exported allocate below;
+// this helper remains for rare custom allocators.
 func Allocate(size uint32) *byte {
 	buf := make([]byte, size)
 	return &buf[0]
+}
+
+//export allocate
+func allocate(size uint32) *byte {
+	return Allocate(size)
 }
 
 // PayloadSlice maps host-written linear memory into a Go byte slice.

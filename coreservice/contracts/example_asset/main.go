@@ -66,10 +66,7 @@ func validAction(a string) bool {
 	return a == "create" || a == "update" || a == "delete"
 }
 
-//export allocate
-func allocate(size uint32) *byte {
-	return sdk.Allocate(size)
-}
+// allocate is provided by fabricwasm/sdk (//export allocate).
 
 //export verify_tx
 func verify_tx(ptr uint32, size uint32) uint32 {

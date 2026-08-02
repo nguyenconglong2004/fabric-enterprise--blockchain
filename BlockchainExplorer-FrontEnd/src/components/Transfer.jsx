@@ -11,6 +11,9 @@ const TRANSFER_FALLBACK_FIELDS = [
     { name: 'memo', label: 'Memo', type: 'string', required: false, placeholder: 'optional note' },
 ];
 
+/** Contracts that move balance and require payload.from (session address). */
+const ACCOUNT_CONTRACTS = new Set(['transfer', 'example_asset', 'double_credit']);
+
 const DEMO_RECIPIENTS = [
     { user: 'alice', address: '499cd177642d01e80a116bf1cc59ad6d7b97ce95' },
     { user: 'bob', address: 'e63b92ab9b5c4e292581fecadd9a4b95864d4522' },
@@ -41,14 +44,16 @@ const Transfer = ({ addNewTransaction }) => {
     const [submitError, setSubmitError] = useState('');
     const [submitResult, setSubmitResult] = useState(null);
 
-    const isTransfer = selectedContract === 'transfer';
+    const needsAccount = ACCOUNT_CONTRACTS.has(selectedContract);
+    const isTransferLike =
+        selectedContract === 'transfer' || selectedContract === 'double_credit';
 
     const customFields = useMemo(() => {
-        if (isTransfer && (!contractSchema?.fields || contractSchema.fields.length === 0)) {
+        if (isTransferLike && (!contractSchema?.fields || contractSchema.fields.length === 0)) {
             return TRANSFER_FALLBACK_FIELDS;
         }
         return customFieldsFromSchema(contractSchema);
-    }, [contractSchema, isTransfer]);
+    }, [contractSchema, isTransferLike]);
 
     useEffect(() => {
         (async () => {
@@ -82,7 +87,10 @@ const Transfer = ({ addNewTransaction }) => {
                     customFieldsFromSchema(data.schema).forEach((field) => {
                         initialFields[field.name] = '';
                     });
-                    if (selectedContract === 'transfer' && customFieldsFromSchema(data.schema).length === 0) {
+                    if (
+                        isTransferLike &&
+                        customFieldsFromSchema(data.schema).length === 0
+                    ) {
                         TRANSFER_FALLBACK_FIELDS.forEach((f) => {
                             initialFields[f.name] = '';
                         });
@@ -127,7 +135,7 @@ const Transfer = ({ addNewTransaction }) => {
         }
 
         const sessionTok = authToken();
-        if ((isTransfer || selectedContract === 'example_asset') && !/^[0-9a-f]{40}$/.test(fromAddr)) {
+        if ((needsAccount) && !/^[0-9a-f]{40}$/.test(fromAddr)) {
             setSubmitError('Sign in first — need your account address as payload.from');
             return;
         }
@@ -267,15 +275,13 @@ const Transfer = ({ addNewTransaction }) => {
                 </select>
             </div>
 
-            {isTransfer && !isAuthenticated && (
+            {needsAccount && !isAuthenticated && (
                 <div className="rounded-xl border border-[rgba(245,197,66,0.3)] bg-[rgba(245,197,66,0.06)] px-3 py-2.5 text-sm text-[var(--warn)]">
-                    Sign in first — transfer moves your account balance on-chain.
-                </div>
-            )}
-
-            {(selectedContract === 'example_asset') && !isAuthenticated && (
-                <div className="rounded-xl border border-[rgba(245,197,66,0.3)] bg-[rgba(245,197,66,0.06)] px-3 py-2.5 text-sm text-[var(--warn)]">
-                    Sign in first — example_asset stores the asset and moves balance (amount → to).
+                    {selectedContract === 'double_credit'
+                        ? 'Sign in first — double_credit debits amount from you and credits amount×2 to the recipient.'
+                        : selectedContract === 'example_asset'
+                          ? 'Sign in first — example_asset stores the asset and moves balance (amount → to).'
+                          : 'Sign in first — this contract moves your account balance on-chain.'}
                 </div>
             )}
 
@@ -357,7 +363,7 @@ const Transfer = ({ addNewTransaction }) => {
                 </div>
             )}
 
-            {customFields.length === 0 && selectedContract && !isTransfer && (
+            {customFields.length === 0 && selectedContract && !isTransferLike && (
                 <div className="rounded-xl border border-[rgba(245,197,66,0.3)] bg-[rgba(245,197,66,0.06)] p-4">
                     <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-[var(--warn)]">
                         Extra payload JSON (optional)

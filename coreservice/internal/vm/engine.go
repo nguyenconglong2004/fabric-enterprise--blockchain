@@ -112,41 +112,48 @@ func NewWasmEngine(db *state.StateDB) *WasmEngine {
 			key := string(keyBytes)
 			rw := rwSetFrom(ctx)
 
-			var val []byte
+			// Write-set overlay (same-tx): do not record into read-set (Fabric-style).
 			if rw != nil {
 				if v, deleted, hit := rw.LookupWrite(key); hit {
 					if deleted {
-						rw.RecordRead(key, nil)
 						return 0
 					}
-					val = v
+					n := uint32(len(v))
+					if outCap == 0 {
+						return n
+					}
+					if n > outCap {
+						return 0
+					}
+					if !m.Memory().Write(outPtr, v) {
+						return 0
+					}
+					return n
 				}
 			}
-			if val == nil {
-				remote, err := e.fetchCommitState(key)
-				if err != nil || remote == nil {
-					if rw != nil {
-						rw.RecordRead(key, nil)
-					}
-					return 0
+
+			remote, version, err := e.fetchCommitState(key)
+			if err != nil || remote == nil {
+				if rw != nil {
+					rw.RecordRead(key, nil, "")
 				}
-				val = remote
+				return 0
 			}
 			if rw != nil {
-				rw.RecordRead(key, val)
+				rw.RecordRead(key, remote, version)
 			}
-			n := uint32(len(val))
+			n := uint32(len(remote))
 			if outCap == 0 {
 				return n
 			}
 			if n > outCap {
 				return 0
 			}
-			if !m.Memory().Write(outPtr, val) {
+			if !m.Memory().Write(outPtr, remote) {
 				return 0
 			}
 			if Verbose() {
-				fmt.Printf("📖 [Host] GetState %s (%d bytes)\n", key, n)
+				fmt.Printf("📖 [Host] GetState %s (%d bytes) ver=%s\n", key, n, version)
 			}
 			return n
 		}).
@@ -159,36 +166,40 @@ func NewWasmEngine(db *state.StateDB) *WasmEngine {
 	return e
 }
 
-func (e *WasmEngine) fetchCommitState(key string) ([]byte, error) {
+func (e *WasmEngine) fetchCommitState(key string) (val []byte, version string, err error) {
 	u := e.commitStateBase + "/wallet/state?key=" + url.QueryEscape(key)
 	resp, err := http.Get(u)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusNotFound {
-		return nil, nil
+		return nil, "", nil
 	}
 	if resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("state HTTP %d", resp.StatusCode)
+		return nil, "", fmt.Errorf("state HTTP %d", resp.StatusCode)
 	}
 	var body struct {
-		Key   string `json:"key"`
-		Value string `json:"value"` // hex
-		Found bool   `json:"found"`
+		Key     string `json:"key"`
+		Value   string `json:"value"` // hex
+		Version string `json:"version"`
+		Found   bool   `json:"found"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-		return nil, err
+		return nil, "", err
 	}
-	if !body.Found || body.Value == "" {
-		if !body.Found {
-			return nil, nil
-		}
+	if !body.Found {
+		return nil, "", nil
 	}
+	version = body.Version
 	if body.Value == "" {
-		return []byte{}, nil
+		return []byte{}, version, nil
 	}
-	return hex.DecodeString(body.Value)
+	raw, err := hex.DecodeString(body.Value)
+	if err != nil {
+		return nil, "", err
+	}
+	return raw, version, nil
 }
 
 // ModulePoolSize is the number of WASM sandboxes kept per contract (env WASM_POOL_SIZE, default 16, max 32).
