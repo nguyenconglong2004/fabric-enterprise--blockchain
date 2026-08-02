@@ -171,12 +171,13 @@ func main() {
 		if metricsAddr == "" {
 			metricsAddr = ":8081"
 		}
-		metrics.StartHTTPServer(ctx, metricsAddr, metrics.DefaultRecorder)
+		metrics.StartHTTPServer(ctx, metricsAddr, metrics.DefaultRecorder, worldState)
 		metricsHost := metricsAddr
 		if strings.HasPrefix(metricsHost, ":") {
 			metricsHost = "127.0.0.1" + metricsHost
 		}
 		fmt.Printf("📊 Commit metrics API: http://%s/metrics/throughput (tắt: COMMIT_PEER_METRICS_ADDR=0)\n", metricsHost)
+		fmt.Printf("💰 Wallet (KV): http://%s/wallet/mint|balance|state\n", metricsHost)
 		fmt.Printf("   Core env: export COMMIT_PEER_METRICS_URL=http://%s\n", metricsHost)
 	}
 

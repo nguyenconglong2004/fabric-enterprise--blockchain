@@ -55,13 +55,6 @@ func GetContractSchema(contractName string) *ContractSchema {
 					Required:    true,
 					Placeholder: "ETH",
 				},
-				{
-					Name:        "amount",
-					Label:       "Amount",
-					Type:        "number",
-					Required:    true,
-					Placeholder: "100",
-				},
 			},
 		},
 		"voting": {
@@ -121,6 +114,19 @@ func GetContractSchema(contractName string) *ContractSchema {
 				},
 			},
 		},
+		"transfer": {
+			Name: "transfer",
+			// amount + to are common FE fields; schema only lists contract-specific params.
+			Fields: []FieldSpec{
+				{
+					Name:        "memo",
+					Label:       "Memo",
+					Type:        "string",
+					Required:    false,
+					Placeholder: "optional note",
+				},
+			},
+		},
 	}
 
 	if schema, ok := schemas[contractName]; ok {
@@ -156,6 +162,10 @@ func ListAvailableContracts() []ContractSchema {
 		{
 			Name:   "bench_ping",
 			Fields: GetContractSchema("bench_ping").Fields,
+		},
+		{
+			Name:   "transfer",
+			Fields: GetContractSchema("transfer").Fields,
 		},
 	}
 }

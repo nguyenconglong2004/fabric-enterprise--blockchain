@@ -2,6 +2,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -44,6 +45,48 @@ type APIServer struct {
 	CommitMetricsClient *commitpeer.Client
 }
 
+// enrichTransferPayload clears vin/vout and sets payload.from when possible.
+// Auth is optional for now: if session is present, inject from; otherwise keep
+// client-supplied from (FE should send account.address when logged in).
+func (s *APIServer) enrichTransferPayload(r *http.Request, tx *core.Transaction) error {
+	if tx == nil {
+		return nil
+	}
+	if tx.ContractName != "" {
+		tx.Vin = nil
+		tx.Vout = nil
+	}
+	needsFrom := tx.ContractName == "transfer" || tx.ContractName == "example_asset"
+	if !needsFrom {
+		return nil
+	}
+
+	var fields map[string]interface{}
+	if len(tx.Payload) > 0 {
+		if err := json.Unmarshal(tx.Payload, &fields); err != nil {
+			return fmt.Errorf("invalid %s payload: %w", tx.ContractName, err)
+		}
+	} else {
+		fields = map[string]interface{}{}
+	}
+
+	// Prefer session address when available; else trust payload.from from FE.
+	if acc, err := s.accountFromRequest(r); err == nil && acc != nil {
+		fields["from"] = strings.ToLower(acc.Address)
+	} else if from, _ := fields["from"].(string); strings.TrimSpace(from) == "" {
+		return fmt.Errorf("%s: missing payload.from (sign in or set from address)", tx.ContractName)
+	} else {
+		fields["from"] = strings.ToLower(strings.TrimSpace(from))
+	}
+
+	raw, err := json.Marshal(fields)
+	if err != nil {
+		return err
+	}
+	tx.Payload = raw
+	return nil
+}
+
 // resolveContractSchema: schema saved at deploy (LevelDB / Postgres) overrides builtin map in core/contract_schema.go.
 func (s *APIServer) resolveContractSchema(contractName string) (*core.ContractSchema, string) {
 	if s.Engine != nil {
@@ -75,33 +118,41 @@ func (s *APIServer) resolveContractSchema(contractName string) (*core.ContractSc
 	return core.GetContractSchema(contractName), "builtin"
 }
 
-// HandleListContracts returns all deployed contracts.
-// GET /api/contracts
+// HandleListContracts returns deployed contracts merged with builtin schemas
+// (so transfer / example_asset always appear in the FE even before first deploy).
 func (s *APIServer) HandleListContracts(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Only GET supported", http.StatusMethodNotAllowed)
 		return
 	}
 
+	seen := map[string]struct{}{}
 	var contracts []string
+	add := func(name string) {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			return
+		}
+		if _, ok := seen[name]; ok {
+			return
+		}
+		seen[name] = struct{}{}
+		contracts = append(contracts, name)
+	}
 
-	// Prefer LevelDB (Engine DB) since DeployContract writes there.
 	if s.Engine != nil {
 		if db := s.Engine.GetDB(); db != nil {
 			if names, err := db.ListContracts(); err == nil {
-				contracts = names
+				for _, n := range names {
+					add(n)
+				}
 			} else {
 				fmt.Printf("⚠️  [API] ListContracts(LevelDB) error: %v\n", err)
 			}
 		}
 	}
-
-	// If no contracts in DB, use available contracts from schema
-	if len(contracts) == 0 {
-		availableContracts := core.ListAvailableContracts()
-		for _, cs := range availableContracts {
-			contracts = append(contracts, cs.Name)
-		}
+	for _, cs := range core.ListAvailableContracts() {
+		add(cs.Name)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -156,8 +207,23 @@ func (s *APIServer) HandleSubmitTx(w http.ResponseWriter, r *http.Request) {
 		fmt.Printf("\n📥 [API] Nhận được giao dịch: %s gọi contract '%s'\n", tx.Txid, tx.ContractName)
 	}
 
-	// Execute contract
-	err = s.Engine.Execute(r.Context(), tx)
+	// Account-model: balances move inside contract execute (RW set). No UTXO middleware.
+	if err := s.enrichTransferPayload(r, &tx); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{
+			"status":  "error",
+			"message": err.Error(),
+		})
+		return
+	}
+	// Stamp submitter identity so explorer can filter "my txs".
+	if acc, err := s.accountFromRequest(r); err == nil && acc != nil {
+		tx.ClientPubKey = strings.ToLower(acc.PubkeyHex)
+	}
+
+	// Execute contract (collects rw_set; does not persist KV on Core)
+	err = s.Engine.Execute(r.Context(), &tx)
 
 	w.Header().Set("Content-Type", "application/json")
 
@@ -299,10 +365,9 @@ func (s *APIServer) HandleDeployContract(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// 3. Lấy file .wasm đính kèm
 	file, _, err := r.FormFile("file")
 	if err != nil {
-		http.Error(w, "Thiếu file đính kèm (field 'file')", http.StatusBadRequest)
+		http.Error(w, "Thiếu file đính kèm (field 'file' = .wasm)", http.StatusBadRequest)
 		return
 	}
 	defer file.Close()
@@ -313,15 +378,10 @@ func (s *APIServer) HandleDeployContract(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	var schemaBytes []byte
-	schemaStr := strings.TrimSpace(r.FormValue("payload_schema"))
-	if schemaStr != "" {
-		var probe map[string]interface{}
-		if err := json.Unmarshal([]byte(schemaStr), &probe); err != nil {
-			http.Error(w, "payload_schema phải là JSON (gợi ý: {\"name\":\"...\",\"fields\":[{\"name\":\"x\",\"label\":\"X\",\"type\":\"string\",\"required\":true}]})", http.StatusBadRequest)
-			return
-		}
-		schemaBytes = []byte(schemaStr)
+	schemaBytes, schemaSource, err := s.readDeploySchema(r, contractName)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
 	}
 
 	err = s.Engine.GetDB().SaveContract(contractName, wasmBytes)
@@ -329,32 +389,84 @@ func (s *APIServer) HandleDeployContract(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "Lỗi lưu vào LevelDB", http.StatusInternalServerError)
 		return
 	}
+	s.Engine.InvalidateContract(contractName)
 
 	if len(schemaBytes) > 0 {
 		if err := s.Engine.GetDB().SaveContractMetaSchema(contractName, schemaBytes); err != nil {
-			fmt.Printf("⚠️  [API] Lỗi lưu payload_schema vào LevelDB: %v\n", err)
+			fmt.Printf("⚠️  [API] Lỗi lưu schema vào LevelDB: %v\n", err)
 		}
 	}
 
-	// Save to PostgreSQL if available
 	if s.DB != nil {
 		if err := s.DB.SaveContract(contractName, wasmBytes, schemaBytes); err != nil {
 			fmt.Printf("⚠️  [API] Lỗi lưu contract vào PostgreSQL: %v\n", err)
-			// Continue even if DB save fails
 		} else {
 			fmt.Printf("✅ [API] Contract saved to PostgreSQL\n")
 		}
 	}
 
-	fmt.Printf("📦 [API] Đã deploy Contract mới: '%s' (%d bytes)\n", contractName, len(wasmBytes))
+	fmt.Printf("📦 [API] Deploy '%s' wasm=%d bytes schema=%s (%d bytes)\n",
+		contractName, len(wasmBytes), schemaSource, len(schemaBytes))
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{
+	json.NewEncoder(w).Encode(map[string]interface{}{
 		"status":        "success",
 		"message":       "Deploy Smart Contract thành công!",
 		"contract_name": contractName,
+		"size_bytes":    len(wasmBytes),
+		"schema_source": schemaSource,
 	})
+}
+
+// readDeploySchema: schema file upload → legacy form field → builtin Go map.
+func (s *APIServer) readDeploySchema(r *http.Request, contractName string) (schemaBytes []byte, source string, err error) {
+	// Preferred: multipart file field "schema" (or "schema_file").
+	for _, field := range []string{"schema", "schema_file"} {
+		f, _, ferr := r.FormFile(field)
+		if ferr != nil {
+			continue
+		}
+		raw, rerr := io.ReadAll(io.LimitReader(f, 1<<20))
+		_ = f.Close()
+		if rerr != nil {
+			return nil, "", fmt.Errorf("đọc file schema: %w", rerr)
+		}
+		raw = bytes.TrimSpace(raw)
+		if len(raw) == 0 {
+			return nil, "", fmt.Errorf("file schema rỗng")
+		}
+		var sch core.ContractSchema
+		if err := json.Unmarshal(raw, &sch); err != nil {
+			return nil, "", fmt.Errorf("schema JSON không hợp lệ: %w", err)
+		}
+		if sch.Name == "" {
+			sch.Name = contractName
+			raw, _ = json.Marshal(sch)
+		}
+		return raw, "upload:"+field, nil
+	}
+
+	// Legacy: inline form value payload_schema=...
+	schemaStr := strings.TrimSpace(r.FormValue("payload_schema"))
+	if schemaStr != "" {
+		var sch core.ContractSchema
+		if err := json.Unmarshal([]byte(schemaStr), &sch); err != nil {
+			return nil, "", fmt.Errorf("payload_schema phải là JSON ContractSchema")
+		}
+		if sch.Name == "" {
+			sch.Name = contractName
+		}
+		raw, _ := json.Marshal(sch)
+		return raw, "form:payload_schema", nil
+	}
+
+	// Builtin map in core/contract_schema.go
+	if sch := core.GetContractSchema(contractName); sch != nil && len(sch.Fields) > 0 {
+		raw, _ := json.Marshal(sch)
+		return raw, "builtin", nil
+	}
+	return nil, "none", nil
 }
 
 // HandleDeployExampleAsset deploys the pre-built example_asset contract
@@ -379,6 +491,7 @@ func (s *APIServer) HandleDeployExampleAsset(w http.ResponseWriter, r *http.Requ
 		http.Error(w, "Lỗi lưu vào LevelDB", http.StatusInternalServerError)
 		return
 	}
+	s.Engine.InvalidateContract(contractName)
 
 	if s.DB != nil {
 		if err := s.DB.SaveContract(contractName, wasmBytes, nil); err != nil {
@@ -412,16 +525,18 @@ func (s *APIServer) HandleGetState(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	val, err := s.Engine.GetDB().GetState(key)
+	// Proxy to Commit Peer — KV lives there after rw_set apply (not Core ledger_db).
+	base := s.commitWalletBase()
+	resp, err := http.Get(base + "/wallet/state?key=" + url.QueryEscape(key))
 	if err != nil {
-		w.WriteHeader(http.StatusNotFound)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Không tìm thấy dữ liệu"})
+		w.WriteHeader(http.StatusBadGateway)
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 		return
 	}
-
+	defer resp.Body.Close()
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	w.Write(val)
+	w.WriteHeader(resp.StatusCode)
+	_, _ = io.Copy(w, resp.Body)
 }
 
 // HandleGetBlock returns a block by hash
@@ -522,7 +637,8 @@ func (s *APIServer) HandleListCommittedBlocks(w http.ResponseWriter, r *http.Req
 }
 
 // HandleListCommittedTransactions returns latest committed transactions from DB.
-// GET /api/transactions?limit=50
+// GET /api/transactions?limit=50&username=alice
+// When username is set (or Bearer session), only that user's txs are returned.
 func (s *APIServer) HandleListCommittedTransactions(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Only GET supported", http.StatusMethodNotAllowed)
@@ -537,6 +653,12 @@ func (s *APIServer) HandleListCommittedTransactions(w http.ResponseWriter, r *ht
 		}
 	}
 
+	username := strings.TrimSpace(r.URL.Query().Get("username"))
+	// Session wins over query — logged-in bob cannot fetch alice by spoofing username.
+	if acc, err := s.accountFromRequest(r); err == nil && acc != nil {
+		username = acc.Username
+	}
+
 	if s.DB == nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
@@ -548,7 +670,36 @@ func (s *APIServer) HandleListCommittedTransactions(w http.ResponseWriter, r *ht
 		return
 	}
 
-	txs, err := s.DB.ListCommittedTransactions(limit)
+	filterAddr, filterPub := "", ""
+	if username != "" {
+		acc, err := s.DB.GetAccountByUsername(username)
+		if err != nil || acc == nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"status":       "success",
+				"transactions": []interface{}{},
+				"count":        0,
+				"username":     username,
+			})
+			return
+		}
+		filterAddr = strings.ToLower(acc.Address)
+		filterPub = strings.ToLower(acc.PubkeyHex)
+	} else {
+		// No username / session → empty (do not leak everyone's txs).
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":       "success",
+			"transactions": []interface{}{},
+			"count":        0,
+			"message":      "pass username= or Authorization Bearer to list your txs",
+		})
+		return
+	}
+
+	txs, err := s.DB.ListCommittedTransactions(limit, filterAddr, filterPub)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
@@ -565,6 +716,7 @@ func (s *APIServer) HandleListCommittedTransactions(w http.ResponseWriter, r *ht
 		"status":       "success",
 		"transactions": txs,
 		"count":        len(txs),
+		"username":     username,
 	})
 }
 
@@ -794,7 +946,7 @@ func (s *APIServer) HandleExplorerStream(w http.ResponseWriter, r *http.Request)
 				}
 			}
 
-			txs, err := s.DB.ListCommittedTransactions(1)
+			txs, err := s.DB.ListCommittedTransactions(1, "", "")
 			if err == nil && len(txs) > 0 {
 				txID := fmt.Sprintf("%v", txs[0]["txid"])
 				if txID == "" || txID == "<nil>" {

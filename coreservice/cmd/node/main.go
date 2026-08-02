@@ -179,6 +179,8 @@ func main() {
 	apiServer.InitSubmitRecorder()
 	defer apiServer.CloseSubmitRecorder()
 
+	apiServer.SeedDemoAccounts()
+
 	http.HandleFunc("/api/tx/deploy", apiServer.HandleDeployContract)
 	http.HandleFunc("/api/deploy-example", apiServer.HandleDeployExampleAsset)
 	http.HandleFunc("/api/tx/submit", apiServer.HandleSubmitTx)
@@ -192,6 +194,11 @@ func main() {
 	http.HandleFunc("/api/metrics/benchmark", apiServer.HandleBenchmarkMetrics)
 	http.HandleFunc("/api/metrics/e2e", apiServer.HandleE2EMetrics)
 	http.HandleFunc("/api/explorer/stream", apiServer.HandleExplorerStream)
+	http.HandleFunc("/api/auth/login", apiServer.HandleLogin)
+	http.HandleFunc("/api/auth/logout", apiServer.HandleLogout)
+	http.HandleFunc("/api/me", apiServer.HandleMe)
+	http.HandleFunc("/api/wallet/balance", apiServer.HandleBalance)
+	http.HandleFunc("/api/wallet/balance/stream", apiServer.HandleBalanceStream)
 
 	port := ":8080"
 	fmt.Printf("🌐 Core Node API Server đang chạy tại http://localhost%s\n", port)

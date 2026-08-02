@@ -1,3 +1,78 @@
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Sora:wght@400;500;600;700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+:root {
+  --bg: #070b12;
+  --bg-elevated: #0d1420;
+  --surface: #121a27;
+  --surface-hover: #182233;
+  --border: #243044;
+  --border-subtle: #1a2435;
+  --text: #e8eef7;
+  --muted: #8b9bb4;
+  --accent: #14f195;
+  --accent-dim: rgba(20, 241, 149, 0.12);
+  --link: #4fd1c5;
+  --warn: #f5c542;
+  --danger: #ff6b7a;
+  --info: #5b9dff;
+}
+
+@layer base {
+  html {
+    color-scheme: dark;
+  }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    font-family: 'Sora', system-ui, sans-serif;
+    background:
+      radial-gradient(1200px 600px at 10% -10%, rgba(20, 241, 149, 0.08), transparent 55%),
+      radial-gradient(900px 500px at 90% 0%, rgba(79, 209, 197, 0.06), transparent 50%),
+      var(--bg);
+    color: var(--text);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  #root {
+    min-height: 100vh;
+  }
+
+  ::selection {
+    background: rgba(20, 241, 149, 0.28);
+  }
+}
+
+@layer components {
+  .font-mono-hash {
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+  }
+
+  .explorer-panel {
+    @apply rounded-xl border bg-[var(--surface)] border-[var(--border)];
+  }
+
+  .explorer-input {
+    @apply w-full rounded-lg border bg-[var(--bg-elevated)] border-[var(--border)] px-3 py-2.5 text-sm text-[var(--text)] placeholder:text-[var(--muted)] outline-none transition focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)];
+  }
+
+  .explorer-btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-45;
+  }
+
+  .explorer-btn-primary {
+    @apply explorer-btn bg-[var(--accent)] text-[#04140e] hover:brightness-110;
+  }
+
+  .explorer-btn-ghost {
+    @apply explorer-btn border border-[var(--border)] bg-transparent text-[var(--text)] hover:bg-[var(--surface-hover)];
+  }
+
+  .explorer-badge {
+    @apply inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-semibold tracking-wide;
+  }
+}

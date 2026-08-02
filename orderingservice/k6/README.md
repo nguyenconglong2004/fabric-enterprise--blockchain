@@ -1,84 +1,43 @@
-# k6 — submit transaction
+# k6 — benchmark submit transaction
 
-Tài liệu đầy đủ: [docs/BENCH_PING_AND_K6.md](../../docs/BENCH_PING_AND_K6.md) (setup + lệnh k6), [docs/BENCHMARK_METRICS.md](../../docs/BENCHMARK_METRICS.md) (đọc metric API).
+Hướng dẫn đầy đủ: [HuongDanCaiDat.txt](../../HuongDanCaiDat.txt), [HuongDanSuDung.txt](../../HuongDanSuDung.txt).
 
-## Cách k6 đang push
-
-| `SCENARIO` | Executor | Hành vi |
-|------------|----------|---------|
-| **`steady`** (mặc định) | `constant-arrival-rate` | Cố **RATE req/s** mỗi giây — **đều** (open-loop) |
-| `maxpush` | `constant-vus` | N VU loop liên tục — **nhanh nhất có thể**, giây nào nhiều giây kia ít |
-
-Tổng tx (ước): **`RATE × thời gian`** với `steady` (vd. `2000 × 10s ≈ 20_000` submit).
-
-## Chạy
+## Chạy nhanh
 
 ```bash
 cd orderingservice/k6
+ulimit -n 65536   # macOS/Linux
 
-# Mặc định: bench_ping, ~6000 req/s × 25s
-k6 run submit-tx.js
-
-# Ép hơn nữa (sau khi restart orderer 100ms interval)
-k6 run -e RATE=8000 -e DURATION=30s -e MAX_VUS=9000 submit-tx.js
-
-# Sweep 4k → 10k (+1500 mỗi 15s)
-k6 run -e SCENARIO=sweep submit-tx.js
-
-# Burst tối đa (không đều — chỉ stress)
-k6 run -e SCENARIO=maxpush -e VUS=200 -e DURATION=5s submit-tx.js
+k6 run -e RATE=2000 -e DURATION=60s -e LEDGER_WAIT=90s \
+  -e MAX_VUS=3000 -e TX_PREFIX=my-run- -e CONTRACT=bench_ping submit-tx.js
 ```
+
+## Scenario
+
+| `SCENARIO` | Hành vi |
+|------------|---------|
+| `steady` (mặc định) | Cố định `RATE` req/s |
+| `sweep` | Tăng dần rate để tìm điểm bão hòa |
+| `maxpush` | N VU loop liên tục — stress burst |
 
 ## Biến môi trường
 
 | Biến | Mặc định | Mô tả |
 |------|----------|--------|
-| `SCENARIO` | `steady` | `steady` hoặc `maxpush` |
-| `CONTRACT` | `bench_ping` | Contract (nhẹ hơn `example_asset`) |
+| `BASE_URL` | `http://localhost:8080` | Core API |
 | `RATE` | `6000` | Target req/s (`steady`) |
-| `DURATION` | `25s` | Thời gian test |
-| `MAX_VUS` | `max(800, RATE+800)` | Trần VU để k6 đạt RATE |
-| `SCENARIO` | `steady` | `steady`, `sweep`, `maxpush` |
-| `SWEEP_*` | 2500→6000 / 15s | Chỉ `sweep` |
-| `PRE_VUS` | `min(MAX_VUS, max(RATE,50))` | VU khởi tạo sẵn |
-| `VUS` | `100` | Chỉ `maxpush` |
-| `LEDGER_WAIT` | `12s` | Chờ mirror PG trước metrics |
-| `TX_PREFIX` | `k6-` | Lọc ledger |
+| `DURATION` | `25s` | Thời gian load |
+| `MAX_VUS` | `max(800, RATE+800)` | Trần VU |
+| `TX_PREFIX` | `k6-` | Prefix txid — **riêng mỗi run** |
+| `LEDGER_WAIT` | `15s` | Chờ drain trước metric E2E |
+| `CONTRACT` | `bench_ping` | Tên contract |
 
-Nếu k6 báo không đủ VU để giữ RATE → tăng `MAX_VUS` hoặc giảm `RATE`.
+Nếu k6 báo thiếu VU → tăng `MAX_VUS` hoặc giảm `RATE`.
 
-## Đo tx/s ledger
+## Đọc kết quả
 
-```bash
-# Giây sát commit mới nhất
-curl -s "http://localhost:8080/api/metrics/throughput?window=1&tx_prefix=k6-"
-
-# Đỉnh 1 giây trong 60s trước latest (so sánh burst)
-curl -s "http://localhost:8080/api/metrics/throughput?mode=peak&lookback=60&window=1&tx_prefix=k6-"
-```
-
-| `mode` | Ý nghĩa |
-|--------|---------|
-| `latest` | Tx trong `(latest − window, latest]` |
-| `peak` | **Max** tx/s trong `lookback` giây (bucket = `window`, thường 1) |
-| `since` | Trung bình từ `since` → now |
-
-**Lưu ý:** `latest` với `window=2,3` thấp hơn `window=1` vì trung bình thêm giây ít tx. Dùng `peak` để tìm giây nóng nhất trong burst.
-
-## Chuẩn bị stack
-
-Postgres → orderer → commit peer → core `:8080`.
-
-Deploy contract (multipart, dùng chung `POST /api/tx/deploy`):
+Dùng block **`benchmark (load window)`** trong log teardown (không dùng load+drain cho throughput).
 
 ```bash
-# example_asset (shortcut)
-curl -X POST http://localhost:8080/api/deploy-example
-
-# bench_ping — sau khi build WASM
-curl -X POST http://localhost:8080/api/tx/deploy \
-  -F "contract_name=bench_ping" \
-  -F "file=@/path/to/coreservice/contracts/bench_ping/my_contract.wasm"
+curl -s "http://localhost:8080/api/metrics/throughput?window=1&tx_prefix=my-run-"
 ```
-
-k6 benchmark: `k6 run -e CONTRACT=bench_ping submit-tx.js`

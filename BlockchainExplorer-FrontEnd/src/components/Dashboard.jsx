@@ -1,7 +1,11 @@
 import React, { useState, useEffect } from 'react';
+import Navbar from './Navbar';
 import Transactions from './Transactions';
 import Transfer from './Transfer';
 import Blocks from './Blocks';
+import Login from './Login';
+import Profile from './Profile';
+import { EmptyState, HashLink, SectionTitle, StatCard, formatTime } from './ui';
 import {
     createExplorerEventSource,
     getContracts,
@@ -9,8 +13,27 @@ import {
     getCommittedBlocks,
     getCommittedTransactions
 } from '../api/client';
+import { useAuth } from '../auth/AuthContext';
+
+function txBelongsToUser(tx, account) {
+    if (!account) return false;
+    const addr = String(account.address || '').toLowerCase();
+    const pub = String(account.pubkey || account.pubkey_hex || '').toLowerCase();
+    const from =
+        String(
+            tx?.payload_decoded?.from ||
+                tx?.payloadData?.from ||
+                tx?.from ||
+                ''
+        ).toLowerCase();
+    const clientPub = String(tx?.client_pubkey || '').toLowerCase();
+    if (addr && from && from === addr) return true;
+    if (pub && clientPub && clientPub === pub) return true;
+    return false;
+}
 
 const Dashboard = ({ section }) => {
+    const { account, token } = useAuth();
     const [transactions, setTransactions] = useState([]);
     const [latestBlocks, setLatestBlocks] = useState([]);
 
@@ -23,22 +46,20 @@ const Dashboard = ({ section }) => {
     const normalizeTx = (t) => ({
         transactionHash: t.transactionHash || t.hash || t.txid || t.TxID || t.id,
         txid: t.txid || t.tx_id || t.Txid || t.TxID,
-        from: t.from || t.From || t.sender || t.Sender || t.client_pub_key || '',
-        to: t.to || t.To || t.receiver || t.Receiver || '',
+        from: t.from || t.From || t.sender || t.Sender || t.payload_decoded?.from || t.client_pub_key || '',
+        to: t.to || t.To || t.receiver || t.Receiver || t.payload_decoded?.to || '',
         gasUsed: t.gasUsed || t.gas_used,
         timestamp: t.timestamp || t.time,
         createdAt: t.createdAt,
         transactionType: t.transactionType || t.type,
         payloadHex: t.payloadHex || t.payload_hex,
         payload_decoded: t.payload_decoded,
-        amount: t.amount,
+        amount: t.amount ?? t.payload_decoded?.amount,
         contract_name: t.contract_name,
         function_name: t.function_name,
         sender_pubkey: t.sender_pubkey,
         client_pubkey: t.client_pubkey,
         signature: t.signature,
-        vin: t.vin,
-        vout: t.vout,
         payload: t.payload,
         payloadData: t.payloadData,
         block_hash: t.block_hash,
@@ -57,6 +78,7 @@ const Dashboard = ({ section }) => {
     };
 
     const upsertTx = (incoming) => {
+        if (account && !txBelongsToUser(incoming, account)) return;
         const normalized = normalizeTx(incoming);
         const incomingId = normalized.txid || normalized.transactionHash;
         if (!incomingId) return;
@@ -78,8 +100,11 @@ const Dashboard = ({ section }) => {
     };
 
     const loadCommittedData = async () => {
+        const username = account?.username;
         const [txRes, blockRes] = await Promise.all([
-            getCommittedTransactions(100),
+            username
+                ? getCommittedTransactions(100, { username, token })
+                : Promise.resolve({ transactions: [] }),
             getCommittedBlocks(20),
         ]);
         const committedTxs = Array.isArray(txRes?.transactions) ? txRes.transactions : [];
@@ -89,7 +114,6 @@ const Dashboard = ({ section }) => {
         setLatestBlocks(committedBlocks.map(normalizeBlock));
     };
 
-    // Load initial backend data from committed DB.
     useEffect(() => {
         let mounted = true;
         (async () => {
@@ -108,9 +132,8 @@ const Dashboard = ({ section }) => {
         return () => {
             mounted = false;
         };
-    }, []);
+    }, [account?.username, token]); // reload txs when login/logout
 
-    // Listen for commit updates from backend SSE and refresh committed data.
     useEffect(() => {
         let mounted = true;
         let reconnectTimer = null;
@@ -207,7 +230,6 @@ const Dashboard = ({ section }) => {
         };
     }, []);
 
-    // Fallback polling when SSE is disconnected.
     useEffect(() => {
         if (streamStatus !== 'disconnected') return undefined;
 
@@ -230,12 +252,9 @@ const Dashboard = ({ section }) => {
             const res = await getBlockByHash(blockHash);
             const block = res?.block;
             const txs = Array.isArray(block?.transactions) ? block.transactions : [];
-
-            // Normalize to the shape our UI expects.
             const normalizedTxs = txs.map(normalizeTx);
 
             setTransactions(normalizedTxs);
-            // Show the queried block as "latest" for now.
             setLatestBlocks([
                 {
                     hash: block?.hash || blockHash,
@@ -251,8 +270,6 @@ const Dashboard = ({ section }) => {
         }
     };
 
-    // Do not append optimistic tx/block data here.
-    // Refresh from committed DB so UI only shows data after commit peer commit.
     const addNewTransaction = async () => {
         try {
             await loadCommittedData();
@@ -261,92 +278,133 @@ const Dashboard = ({ section }) => {
         }
     };
 
+    const tipBlock = latestBlocks[0];
+
     return (
-        <div className="m-6 backdrop-blur-2xl border-4 border-[#8e726a] rounded-md">
-            <div className="bg-white rounded-lg shadow-md p-6">
-                <h2 className="text-xl font-bold text-center mb-8 underline">Blockchain Overview</h2>
+        <>
+            <Navbar streamStatus={streamStatus} contractsCount={contracts.length} />
 
-                {/* Backend status + quick actions */}
-                <div className="mb-6 grid grid-cols-1 gap-3">
-                    {error && (
-                        <div className="bg-red-50 border border-red-200 text-red-800 p-3 rounded">
-                            <strong>Error:</strong> {error}
-                        </div>
-                    )}
+            <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-8">
+                <div className="mb-6">
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--accent)]">
+                        Ledger overview
+                    </p>
+                    <h1 className="mt-1 text-2xl font-semibold tracking-tight sm:text-3xl">
+                        Explore committed blocks & transactions
+                    </h1>
+                    <p className="mt-2 max-w-2xl text-sm text-[var(--muted)]">
+                        Real-time view of the Fabric enterprise chain — blocks and txs after commit peer confirmation.
+                    </p>
+                </div>
 
-                    <div className="bg-gray-50 border rounded p-3">
-                        <div className="flex flex-col md:flex-row md:items-center gap-2">
-                            <label className="text-sm font-medium">Query Block by Hash:</label>
-                            <input
-                                value={blockHash}
-                                onChange={(e) => setBlockHash(e.target.value)}
-                                placeholder="0x..."
-                                className="flex-1 p-2 border rounded font-mono text-sm"
-                            />
-                            <button
-                                type="button"
-                                onClick={handleFetchBlock}
-                                disabled={loading || !blockHash}
-                                className="px-4 py-2 rounded bg-blue-700 text-white disabled:opacity-50"
-                            >
-                                {loading ? 'Loading...' : 'Fetch'}
-                            </button>
-                        </div>
+                <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
+                    <StatCard label="Latest blocks" value={latestBlocks.length} hint="Cached tip" />
+                    <StatCard label="Transactions" value={transactions.length} hint="Recent committed" />
+                    <StatCard
+                        label="Tip height"
+                        value={tipBlock?.number ?? '—'}
+                        hint={tipBlock ? formatTime(tipBlock.timestamp) : 'Waiting for first block'}
+                    />
+                    <StatCard
+                        label="Tip txs"
+                        value={tipBlock?.transactionsCount ?? '—'}
+                        hint={tipBlock ? 'In latest block' : '—'}
+                    />
+                </div>
 
-                        <div className="mt-2 text-xs text-gray-600">
-                            Known deployed contracts: <strong>{contracts.length}</strong>
-                        </div>
-                        <div className="mt-1 text-xs text-gray-600">
-                            Realtime stream:{' '}
-                            <strong className={streamStatus === 'connected' ? 'text-green-700' : streamStatus === 'connecting' ? 'text-yellow-700' : 'text-red-700'}>
-                                {streamStatus}
-                            </strong>
-                        </div>
+                {error && (
+                    <div className="mb-4 rounded-xl border border-[rgba(255,107,122,0.35)] bg-[rgba(255,107,122,0.08)] px-4 py-3 text-sm text-[var(--danger)]">
+                        <strong className="font-semibold">Error:</strong> {error}
+                    </div>
+                )}
+
+                <div className="explorer-panel mb-6 p-4 shadow-panel sm:p-5">
+                    <SectionTitle
+                        title="Lookup block"
+                        subtitle="Fetch a committed block by hash from Core API"
+                    />
+                    <div className="flex flex-col gap-3 sm:flex-row">
+                        <input
+                            value={blockHash}
+                            onChange={(e) => setBlockHash(e.target.value)}
+                            placeholder="Block hash…"
+                            className="explorer-input font-mono-hash flex-1"
+                        />
+                        <button
+                            type="button"
+                            onClick={handleFetchBlock}
+                            disabled={loading || !blockHash}
+                            className="explorer-btn-primary shrink-0"
+                        >
+                            {loading ? 'Fetching…' : 'Fetch block'}
+                        </button>
                     </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4 mt-4">
-                    <div className='w-[95%]'>
-                        <h3 className="font-semibold text-lg mb-4">Latest Blocks</h3>
-                        <ul className='flex flex-col gap-4'>
-                            {latestBlocks.map((block, index) => (
-                                <li key={index} className="border-2 rounded-md py-3 px-4 bg-[#95a9f2] border-[#193dc1] flex flex-col gap-1">
-                                    {block.hash && (
-                                        <>
-                                            <strong>Block Hash:</strong>
-                                            <p className="font-mono text-sm break-all">{block.hash}</p>
-                                        </>
-                                    )}
-                                    {block.number !== undefined && (
-                                        <>
-                                            <strong>Number:</strong> {block.number}
-                                            <br />
-                                        </>
-                                    )}
-                                    {block.timestamp !== undefined && (
-                                        <>
-                                            <strong>Timestamp:</strong> {String(block.timestamp)}
-                                            <br />
-                                        </>
-                                    )}
-                                    {block.transactionsCount !== undefined && (
-                                        <>
-                                            <strong>Tx count:</strong> {block.transactionsCount}
-                                        </>
-                                    )}
-                                </li>
-                            ))}
-                        </ul>
-                    </div>
+                <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
+                    <section className="xl:col-span-5">
+                        <div className="explorer-panel overflow-hidden shadow-panel">
+                            <div className="flex items-center justify-between border-b border-[var(--border)] px-4 py-3">
+                                <h2 className="text-sm font-semibold tracking-wide text-[var(--text)]">
+                                    Latest Blocks
+                                </h2>
+                                <span className="text-xs text-[var(--muted)]">{latestBlocks.length} shown</span>
+                            </div>
 
-                    <div>
-                        {section === 'transactions' && <Transactions transactions={transactions} />}
-                        {section === 'transfer' && <Transfer addNewTransaction={addNewTransaction} />}
-                        {section === 'blocks' && <Blocks transactions={transactions} />}
-                    </div>
+                            {latestBlocks.length === 0 ? (
+                                <div className="p-4">
+                                    <EmptyState title="No blocks yet" body="Waiting for commit peer to mirror ledger." />
+                                </div>
+                            ) : (
+                                <div className="overflow-x-auto">
+                                    <table className="min-w-full text-left text-sm">
+                                        <thead className="bg-[var(--bg-elevated)] text-[11px] uppercase tracking-wider text-[var(--muted)]">
+                                            <tr>
+                                                <th className="px-4 py-2.5 font-medium">#</th>
+                                                <th className="px-4 py-2.5 font-medium">Hash</th>
+                                                <th className="px-4 py-2.5 font-medium">Txs</th>
+                                                <th className="px-4 py-2.5 font-medium">Time</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {latestBlocks.map((block) => (
+                                                <tr
+                                                    key={block.hash || block.number}
+                                                    className="border-t border-[var(--border-subtle)] transition hover:bg-[var(--surface-hover)]"
+                                                >
+                                                    <td className="px-4 py-3 font-semibold text-[var(--accent)]">
+                                                        {block.number ?? '—'}
+                                                    </td>
+                                                    <td className="px-4 py-3">
+                                                        <HashLink value={block.hash} left={8} right={6} />
+                                                    </td>
+                                                    <td className="px-4 py-3 text-[var(--text)]">
+                                                        {block.transactionsCount ?? 0}
+                                                    </td>
+                                                    <td className="px-4 py-3 text-xs text-[var(--muted)]">
+                                                        {formatTime(block.timestamp)}
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+                        </div>
+                    </section>
+
+                    <section className="xl:col-span-7">
+                        <div className="explorer-panel overflow-hidden p-4 shadow-panel sm:p-5">
+                            {section === 'transactions' && <Transactions transactions={transactions} />}
+                            {section === 'transfer' && <Transfer addNewTransaction={addNewTransaction} />}
+                            {section === 'blocks' && <Blocks transactions={transactions} latestBlocks={latestBlocks} />}
+                            {section === 'login' && <Login />}
+                            {section === 'profile' && <Profile />}
+                        </div>
+                    </section>
                 </div>
-            </div>
-        </div>
+            </main>
+        </>
     );
 };
 

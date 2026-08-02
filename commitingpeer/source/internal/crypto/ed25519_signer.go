@@ -50,13 +50,13 @@ func (s *ed25519Signer) PublicKeyHex() string  { return s.publicKeyHex }
 func (s *ed25519Signer) PrivateKeyHex() string { return s.privateKeyHex }
 func (s *ed25519Signer) TrustedKey() string    { return string(AlgoEd25519) + ":" + s.publicKeyHex }
 
-func (s *ed25519Signer) SignTx(txID, contractName string, payload []byte) (string, error) {
-	msg := TxMessage(txID, contractName, payload)
+func (s *ed25519Signer) SignTx(txID, contractName string, payload, rwCanonical []byte) (string, error) {
+	msg := TxMessage(txID, contractName, payload, rwCanonical)
 	sig := ed25519.Sign(s.privateKey, msg)
 	return hex.EncodeToString(sig), nil
 }
 
-func verifyEd25519Tx(txID, contractName string, payload []byte, sigHex, pubHex string) bool {
+func verifyEd25519Tx(txID, contractName string, payload, rwCanonical []byte, sigHex, pubHex string) bool {
 	sig, err := hex.DecodeString(sigHex)
 	if err != nil {
 		return false
@@ -68,9 +68,9 @@ func verifyEd25519Tx(txID, contractName string, payload []byte, sigHex, pubHex s
 	if len(pub) != ed25519.PublicKeySize {
 		return false
 	}
-	return ed25519.Verify(ed25519.PublicKey(pub), TxMessage(txID, contractName, payload), sig)
+	return ed25519.Verify(ed25519.PublicKey(pub), TxMessage(txID, contractName, payload, rwCanonical), sig)
 }
 
-func (s *ed25519Signer) VerifyTx(txID, contractName string, payload []byte, sigHex, pubHex string) bool {
-	return verifyEd25519Tx(txID, contractName, payload, sigHex, pubHex)
+func (s *ed25519Signer) VerifyTx(txID, contractName string, payload, rwCanonical []byte, sigHex, pubHex string) bool {
+	return verifyEd25519Tx(txID, contractName, payload, rwCanonical, sigHex, pubHex)
 }

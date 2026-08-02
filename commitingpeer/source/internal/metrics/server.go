@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"commiting-peer/internal/storage"
 )
 
 func parseTimeQuery(raw string) (time.Time, bool) {
@@ -41,6 +43,11 @@ func writeErr(w http.ResponseWriter, code int, msg string) {
 
 // Handler returns HTTP handlers for commit-peer metrics (ground truth, no Postgres lag).
 func Handler(rec *Recorder) http.Handler {
+	return HandlerWithWallet(rec, nil)
+}
+
+// HandlerWithWallet registers metrics + optional /wallet/* faucet APIs.
+func HandlerWithWallet(rec *Recorder, ws *storage.WorldState) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/metrics/throughput", func(w http.ResponseWriter, r *http.Request) {
 		handleThroughput(w, r, rec)
@@ -54,6 +61,7 @@ func Handler(rec *Recorder) http.Handler {
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
+	(&WalletHandler{WS: ws}).Register(mux)
 	return mux
 }
 
@@ -211,13 +219,13 @@ func handleCommitLookup(w http.ResponseWriter, r *http.Request, rec *Recorder) {
 }
 
 // StartHTTPServer listens on addr (e.g. :8081). Returns the server; caller shuts down via ctx.
-func StartHTTPServer(ctx context.Context, addr string, rec *Recorder) *http.Server {
+func StartHTTPServer(ctx context.Context, addr string, rec *Recorder, ws *storage.WorldState) *http.Server {
 	if addr == "" {
 		addr = ":8081"
 	}
 	srv := &http.Server{
 		Addr:              addr,
-		Handler:           Handler(rec),
+		Handler:           HandlerWithWallet(rec, ws),
 		ReadHeaderTimeout: 10 * time.Second,
 		WriteTimeout:      120 * time.Second,
 	}

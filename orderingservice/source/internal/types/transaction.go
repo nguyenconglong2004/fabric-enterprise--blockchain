@@ -32,6 +32,7 @@ type Transaction struct {
 	SenderPubKey string        `json:"sender_pubkey"` // Public key of the endorser
 	Signature    string        `json:"signature"`     // Signature from endorser
 	Endorsements []Endorsement `json:"endorsements"`  // Array of endorsements from peers
+	RWSet        *RWSet        `json:"rw_set,omitempty"`
 }
 
 // UnmarshalJSON decodes payload as hex (from core node / explorer), not base64.
@@ -49,6 +50,7 @@ func (t *Transaction) UnmarshalJSON(data []byte) error {
 		SenderPubKey string        `json:"sender_pubkey"`
 		Signature    string        `json:"signature"`
 		Endorsements []Endorsement `json:"endorsements"`
+		RWSet        *RWSet        `json:"rw_set"`
 	}
 	aux := &Alias{}
 	if err := json.Unmarshal(data, aux); err != nil {
@@ -65,6 +67,7 @@ func (t *Transaction) UnmarshalJSON(data []byte) error {
 	t.SenderPubKey = aux.SenderPubKey
 	t.Signature = aux.Signature
 	t.Endorsements = aux.Endorsements
+	t.RWSet = aux.RWSet
 	if aux.Payload != "" {
 		b, err := hex.DecodeString(aux.Payload)
 		if err != nil {
@@ -104,9 +107,10 @@ func (t Transaction) MarshalJSON() ([]byte, error) {
 		SenderPubKey string        `json:"sender_pubkey"`
 		Signature    string        `json:"signature"`
 		Endorsements []Endorsement `json:"endorsements"`
+		RWSet        *RWSet        `json:"rw_set,omitempty"`
 	}
 	aux := Alias{
-		Version: t.Version,
+		Version:      t.Version,
 		Vin:          t.Vin,
 		Vout:         t.Vout,
 		LockTime:     t.LockTime,
@@ -117,6 +121,7 @@ func (t Transaction) MarshalJSON() ([]byte, error) {
 		SenderPubKey: t.SenderPubKey,
 		Signature:    t.Signature,
 		Endorsements: t.Endorsements,
+		RWSet:        t.RWSet,
 	}
 	if len(t.Payload) > 0 {
 		aux.Payload = hex.EncodeToString(t.Payload)

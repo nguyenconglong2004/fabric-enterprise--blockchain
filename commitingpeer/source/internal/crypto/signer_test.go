@@ -13,15 +13,34 @@ func TestEd25519SignerRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	payload := []byte("7b2276223a226b362d312d31227d")
-	sig, err := s.SignTx("k6-1-1", "bench_ping", payload)
+	sig, err := s.SignTx("k6-1-1", "bench_ping", payload, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !s.VerifyTx("k6-1-1", "bench_ping", payload, sig, s.PublicKeyHex()) {
+	if !s.VerifyTx("k6-1-1", "bench_ping", payload, nil, sig, s.PublicKeyHex()) {
 		t.Fatal("self-verify failed")
 	}
-	if !VerifyEndorsement("k6-1-1", "bench_ping", payload, AlgoEd25519, sig, s.PublicKeyHex()) {
+	if !VerifyEndorsement("k6-1-1", "bench_ping", payload, nil, AlgoEd25519, sig, s.PublicKeyHex()) {
 		t.Fatal("VerifyEndorsement failed")
+	}
+}
+
+func TestEd25519SignerWithRWSet(t *testing.T) {
+	s, err := generateEd25519Signer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := []byte(`{"v":"x"}`)
+	rw := []byte{1, 2, 3, 4}
+	sig, err := s.SignTx("tx1", "c", payload, rw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.VerifyTx("tx1", "c", payload, nil, sig, s.PublicKeyHex()) {
+		t.Fatal("expected fail without rw bytes")
+	}
+	if !s.VerifyTx("tx1", "c", payload, rw, sig, s.PublicKeyHex()) {
+		t.Fatal("verify with rw failed")
 	}
 }
 
@@ -31,17 +50,17 @@ func TestMLDSA44SignerRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	payload := []byte("7b2276223a226b362d312d31227d")
-	sig, err := s.SignTx("k6-1-1", "bench_ping", payload)
+	sig, err := s.SignTx("k6-1-1", "bench_ping", payload, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(sig) != mldsa44.SignatureSize*2 {
 		t.Fatalf("sig hex len = %d want %d", len(sig), mldsa44.SignatureSize*2)
 	}
-	if !s.VerifyTx("k6-1-1", "bench_ping", payload, sig, s.PublicKeyHex()) {
+	if !s.VerifyTx("k6-1-1", "bench_ping", payload, nil, sig, s.PublicKeyHex()) {
 		t.Fatal("self-verify failed")
 	}
-	if !VerifyEndorsement("k6-1-1", "bench_ping", payload, AlgoMLDSA44, sig, s.PublicKeyHex()) {
+	if !VerifyEndorsement("k6-1-1", "bench_ping", payload, nil, AlgoMLDSA44, sig, s.PublicKeyHex()) {
 		t.Fatal("VerifyEndorsement failed")
 	}
 }
@@ -88,7 +107,7 @@ func TestSignTxMessageCompat(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sig2, err := s.SignTx("tx", "bench_ping", []byte("aa"))
+	sig2, err := s.SignTx("tx", "bench_ping", []byte("aa"), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

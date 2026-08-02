@@ -1,0 +1,26 @@
+{
+  "name": "example_asset",
+  "fields": [
+    {
+      "name": "id",
+      "label": "Asset ID",
+      "type": "string",
+      "required": true,
+      "placeholder": "asset_001"
+    },
+    {
+      "name": "color",
+      "label": "Color",
+      "type": "string",
+      "required": true,
+      "placeholder": "red"
+    },
+    {
+      "name": "action",
+      "label": "Action",
+      "type": "string",
+      "required": true,
+      "placeholder": "create|update|delete"
+    }
+  ]
+}

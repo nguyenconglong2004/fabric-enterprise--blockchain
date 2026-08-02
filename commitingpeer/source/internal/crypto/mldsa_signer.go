@@ -57,8 +57,8 @@ func (s *mldsa44Signer) PublicKeyHex() string  { return s.publicKeyHex }
 func (s *mldsa44Signer) PrivateKeyHex() string { return s.privateKeyHex }
 func (s *mldsa44Signer) TrustedKey() string    { return string(AlgoMLDSA44) + ":" + s.publicKeyHex }
 
-func (s *mldsa44Signer) SignTx(txID, contractName string, payload []byte) (string, error) {
-	msg := TxMessage(txID, contractName, payload)
+func (s *mldsa44Signer) SignTx(txID, contractName string, payload, rwCanonical []byte) (string, error) {
+	msg := TxMessage(txID, contractName, payload, rwCanonical)
 	var sig [mldsa44.SignatureSize]byte
 	if err := mldsa44.SignTo(s.privateKey, msg, nil, false, sig[:]); err != nil {
 		return "", fmt.Errorf("mldsa-44 sign: %w", err)
@@ -66,7 +66,7 @@ func (s *mldsa44Signer) SignTx(txID, contractName string, payload []byte) (strin
 	return hex.EncodeToString(sig[:]), nil
 }
 
-func verifyMLDSA44Tx(txID, contractName string, payload []byte, sigHex, pubHex string) bool {
+func verifyMLDSA44Tx(txID, contractName string, payload, rwCanonical []byte, sigHex, pubHex string) bool {
 	sig, err := hex.DecodeString(sigHex)
 	if err != nil || len(sig) != mldsa44.SignatureSize {
 		return false
@@ -79,9 +79,9 @@ func verifyMLDSA44Tx(txID, contractName string, payload []byte, sigHex, pubHex s
 	if err := pk.UnmarshalBinary(pubBytes); err != nil {
 		return false
 	}
-	return mldsa44.Verify(&pk, TxMessage(txID, contractName, payload), nil, sig)
+	return mldsa44.Verify(&pk, TxMessage(txID, contractName, payload, rwCanonical), nil, sig)
 }
 
-func (s *mldsa44Signer) VerifyTx(txID, contractName string, payload []byte, sigHex, pubHex string) bool {
-	return verifyMLDSA44Tx(txID, contractName, payload, sigHex, pubHex)
+func (s *mldsa44Signer) VerifyTx(txID, contractName string, payload, rwCanonical []byte, sigHex, pubHex string) bool {
+	return verifyMLDSA44Tx(txID, contractName, payload, rwCanonical, sigHex, pubHex)
 }

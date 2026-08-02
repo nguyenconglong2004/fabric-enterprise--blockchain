@@ -41,69 +41,14 @@ export const coercePayloadFieldsBySchema = (schema, fields) => {
 };
 
 /**
- * Tạo UTXO input (VIN)
- */
-export const createVIN = (txid, vout, scriptHex = '') => {
-    return {
-        txid: txid || '',
-        vout: vout || 0,
-        scriptSig: {
-            asm: '',
-            hex: scriptHex || '',
-        },
-    };
-};
-
-/**
- * Tạo UTXO output (VOUT)
- */
-export const createVOUT = (value, n, addresses = []) => {
-    return {
-        value: value || 0,
-        n: n || 0,
-        scriptPubKey: {
-            asm: '',
-            hex: '',
-            addresses: addresses || [],
-        },
-    };
-};
-
-/**
- * Chuẩn hóa VOUT từ API / ledger (camelCase hoặc snake_case).
- */
-export const normalizeVout = (vout) => {
-    if (!vout) return null;
-    const spk = vout.scriptPubKey || vout.script_pub_key || {};
-    const addresses = spk.addresses || spk.Addresses || [];
-    const value = vout.value ?? vout.Value;
-    const n = vout.n ?? vout.N ?? 0;
-    return {
-        value: value !== undefined && value !== null ? value : '—',
-        n,
-        addresses: Array.isArray(addresses) ? addresses : [],
-    };
-};
-
-/** Một dòng mô tả: gửi tới địa chỉ nào, value bao nhiêu. */
-export const formatVoutTransferLine = (vout, index) => {
-    const v = normalizeVout(vout);
-    if (!v) return '';
-    const addr =
-        v.addresses.length > 0 ? v.addresses.join(', ') : '(chưa có địa chỉ)';
-    return `Output ${index + 1}: gửi tới ${addr} · value = ${v.value}`;
-};
-
-/**
- * Tạo Transaction object mới khớp với structure.
- * @param {object|null} [payloadSchema] - schema từ /api/contract/schema (có fields[].type); nếu có thì ép kiểu theo type trước khi build payload hex.
+ * Tạo Transaction object (account / contract model — không vin/vout).
+ * @param {object|null} [payloadSchema] - schema từ /api/contract/schema
  */
 export const createTransaction = (
     txid,
     contractName,
     functionName,
     fields,
-    vouts = [],
     payloadSchema = null
 ) => {
     const normalized =
@@ -119,8 +64,6 @@ export const createTransaction = (
         signature: '',
         client_pubkey: '',
         sender_pubkey: '',
-        vin: [],
-        vout: vouts,
         contract_name: contractName,
         function_name: functionName,
         payload: payload,

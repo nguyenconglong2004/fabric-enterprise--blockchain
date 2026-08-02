@@ -2,8 +2,12 @@ package vm
 
 import (
 	"context"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -18,6 +22,17 @@ import (
 	"github.com/tetratelabs/wazero/imports/wasi_snapshot_preview1"
 )
 
+type rwSetCtxKey struct{}
+
+func withRWSet(ctx context.Context, rw *core.RWSet) context.Context {
+	return context.WithValue(ctx, rwSetCtxKey{}, rw)
+}
+
+func rwSetFrom(ctx context.Context) *core.RWSet {
+	rw, _ := ctx.Value(rwSetCtxKey{}).(*core.RWSet)
+	return rw
+}
+
 type WasmEngine struct {
 	runtime wazero.Runtime
 	db      *state.StateDB
@@ -27,16 +42,36 @@ type WasmEngine struct {
 
 	poolsMu        sync.Mutex
 	pools          map[string]*modulePool
-	instanceSerial uint64 // unique wazero module names for pool / overflow instances
+	instanceSerial uint64
+
+	commitStateBase string // COMMIT_PEER_METRICS_URL for GetState
 }
 
 type modulePool struct {
 	slots chan api.Module
 }
 
+func commitPeerMetricsBase() string {
+	base := strings.TrimSpace(os.Getenv("COMMIT_PEER_METRICS_URL"))
+	if base == "" {
+		base = strings.TrimSpace(os.Getenv("COMMIT_PEER_METRICS_HTTP"))
+	}
+	if base == "" {
+		base = "http://127.0.0.1:8081"
+	}
+	return strings.TrimRight(base, "/")
+}
+
 func NewWasmEngine(db *state.StateDB) *WasmEngine {
 	ctx := context.Background()
 	r := wazero.NewRuntime(ctx)
+	e := &WasmEngine{
+		runtime:         r,
+		db:              db,
+		contractCache:   make(map[string]wazero.CompiledModule),
+		pools:           make(map[string]*modulePool),
+		commitStateBase: commitPeerMetricsBase(),
+	}
 
 	wasi_snapshot_preview1.MustInstantiate(ctx, r)
 
@@ -45,42 +80,115 @@ func NewWasmEngine(db *state.StateDB) *WasmEngine {
 		WithFunc(func(ctx context.Context, m api.Module, keyPtr, keySize, valPtr, valSize uint32) uint32 {
 			keyBytes, ok1 := m.Memory().Read(keyPtr, keySize)
 			valBytes, ok2 := m.Memory().Read(valPtr, valSize)
-
 			if !ok1 || !ok2 {
 				if Verbose() {
 					fmt.Println("❌ [Host] Lỗi đọc RAM của WASM")
 				}
 				return 0
 			}
-
-			key := string(keyBytes)
-
-			err := db.PutState(key, valBytes)
-			if err != nil {
+			rw := rwSetFrom(ctx)
+			if rw == nil {
 				if Verbose() {
-					fmt.Printf("❌ [Host] Lỗi ghi DB: %v\n", err)
+					fmt.Println("❌ [Host] PutState: missing RW set context")
 				}
 				return 0
 			}
-
+			key := string(keyBytes)
+			// Copy value — WASM memory may be reused.
+			val := append([]byte(nil), valBytes...)
+			rw.PutWrite(key, val)
 			if Verbose() {
-				fmt.Printf("💾 [Host] Đã lưu vào Ledger DB: %s = %s\n", key, string(valBytes))
+				fmt.Printf("📝 [Host] RW write-set: %s = %s\n", key, string(val))
 			}
 			return 1
 		}).
 		Export("PutState").
+		NewFunctionBuilder().
+		WithFunc(func(ctx context.Context, m api.Module, keyPtr, keySize, outPtr, outCap uint32) uint32 {
+			keyBytes, ok := m.Memory().Read(keyPtr, keySize)
+			if !ok {
+				return 0
+			}
+			key := string(keyBytes)
+			rw := rwSetFrom(ctx)
+
+			var val []byte
+			if rw != nil {
+				if v, deleted, hit := rw.LookupWrite(key); hit {
+					if deleted {
+						rw.RecordRead(key, nil)
+						return 0
+					}
+					val = v
+				}
+			}
+			if val == nil {
+				remote, err := e.fetchCommitState(key)
+				if err != nil || remote == nil {
+					if rw != nil {
+						rw.RecordRead(key, nil)
+					}
+					return 0
+				}
+				val = remote
+			}
+			if rw != nil {
+				rw.RecordRead(key, val)
+			}
+			n := uint32(len(val))
+			if outCap == 0 {
+				return n
+			}
+			if n > outCap {
+				return 0
+			}
+			if !m.Memory().Write(outPtr, val) {
+				return 0
+			}
+			if Verbose() {
+				fmt.Printf("📖 [Host] GetState %s (%d bytes)\n", key, n)
+			}
+			return n
+		}).
+		Export("GetState").
 		Instantiate(ctx)
 
 	if err != nil {
 		panic(fmt.Errorf("lỗi khởi tạo Host Functions: %v", err))
 	}
+	return e
+}
 
-	return &WasmEngine{
-		runtime:       r,
-		db:            db,
-		contractCache: make(map[string]wazero.CompiledModule),
-		pools:         make(map[string]*modulePool),
+func (e *WasmEngine) fetchCommitState(key string) ([]byte, error) {
+	u := e.commitStateBase + "/wallet/state?key=" + url.QueryEscape(key)
+	resp, err := http.Get(u)
+	if err != nil {
+		return nil, err
 	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, nil
+	}
+	if resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("state HTTP %d", resp.StatusCode)
+	}
+	var body struct {
+		Key   string `json:"key"`
+		Value string `json:"value"` // hex
+		Found bool   `json:"found"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return nil, err
+	}
+	if !body.Found || body.Value == "" {
+		if !body.Found {
+			return nil, nil
+		}
+	}
+	if body.Value == "" {
+		return []byte{}, nil
+	}
+	return hex.DecodeString(body.Value)
 }
 
 // ModulePoolSize is the number of WASM sandboxes kept per contract (env WASM_POOL_SIZE, default 16, max 32).
@@ -115,7 +223,6 @@ func (e *WasmEngine) moduleConfig(instanceName string) wazero.ModuleConfig {
 
 func (e *WasmEngine) nextInstanceName(contractName string) string {
 	n := atomic.AddUint64(&e.instanceSerial, 1)
-	// wazero requires unique module names per runtime (default WASM name is often "main").
 	return fmt.Sprintf("%s-%d", contractName, n)
 }
 
@@ -153,6 +260,31 @@ func (e *WasmEngine) getOrCompile(ctx context.Context, contractName string) (waz
 	e.mu.Unlock()
 
 	return compiled, nil
+}
+
+// InvalidateContract drops compiled cache + sandbox pool so the next Execute
+// reloads WASM from LevelDB (call after deploy / SaveContract).
+func (e *WasmEngine) InvalidateContract(contractName string) {
+	if e == nil || contractName == "" {
+		return
+	}
+	ctx := context.Background()
+
+	e.mu.Lock()
+	delete(e.contractCache, contractName)
+	e.mu.Unlock()
+
+	e.poolsMu.Lock()
+	if pc, ok := e.pools[contractName]; ok {
+		delete(e.pools, contractName)
+		close(pc.slots)
+		for mod := range pc.slots {
+			_ = mod.Close(ctx)
+		}
+	}
+	e.poolsMu.Unlock()
+
+	fmt.Printf("🔄 [VM] Invalidated cache/pool for contract '%s'\n", contractName)
 }
 
 func (e *WasmEngine) poolFor(ctx context.Context, contractName string, compiled wazero.CompiledModule) (*modulePool, error) {
@@ -229,7 +361,11 @@ func (e *WasmEngine) Close() {
 	}
 }
 
-func (e *WasmEngine) Execute(ctx context.Context, tx core.Transaction) error {
+// Execute runs verify_tx then execute, collecting RW set onto tx (no Core ledger persist).
+func (e *WasmEngine) Execute(ctx context.Context, tx *core.Transaction) error {
+	if tx == nil {
+		return fmt.Errorf("nil transaction")
+	}
 	compiled, err := e.getOrCompile(ctx, tx.ContractName)
 	if err != nil {
 		return fmt.Errorf("lỗi nạp contract: %w", err)
@@ -242,6 +378,9 @@ func (e *WasmEngine) Execute(ctx context.Context, tx core.Transaction) error {
 
 	runOK := false
 	defer func() { release(runOK) }()
+
+	rw := &core.RWSet{}
+	ctx = withRWSet(ctx, rw)
 
 	payloadLen := uint64(len(tx.Payload))
 	var ptr uint64 = 0
@@ -265,47 +404,58 @@ func (e *WasmEngine) Execute(ctx context.Context, tx core.Transaction) error {
 		}
 	}
 
-	requestedFunc := strings.TrimSpace(tx.FunctionName)
-	if requestedFunc == "" {
-		requestedFunc = "execute"
+	verifyFn := sandbox.ExportedFunction("verify_tx")
+	executeFn := sandbox.ExportedFunction("execute")
+	if verifyFn == nil && executeFn == nil {
+		name := strings.TrimSpace(tx.FunctionName)
+		if name == "" {
+			return fmt.Errorf("smart contract thiếu verify_tx và execute")
+		}
+		if f := sandbox.ExportedFunction(name); f != nil {
+			if err := callGuest(ctx, f, ptr, payloadLen, name); err != nil {
+				return err
+			}
+			attachRWSet(tx, rw)
+			runOK = true
+			return nil
+		}
+		return fmt.Errorf("smart contract không có hàm: verify_tx, execute, hoặc '%s'", name)
 	}
 
-	candidateFuncs := []string{requestedFunc}
-	switch requestedFunc {
-	case "execute":
-		candidateFuncs = append(candidateFuncs, "verify_tx")
-	case "verify_tx":
-		candidateFuncs = append(candidateFuncs, "execute")
+	if verifyFn != nil {
+		if err := callGuest(ctx, verifyFn, ptr, payloadLen, "verify_tx"); err != nil {
+			return err
+		}
 	}
-
-	var (
-		targetFunc api.Function
-		actualFunc string
-	)
-	for _, fn := range candidateFuncs {
-		if f := sandbox.ExportedFunction(fn); f != nil {
-			targetFunc = f
-			actualFunc = fn
-			break
+	if executeFn != nil {
+		if err := callGuest(ctx, executeFn, ptr, payloadLen, "execute"); err != nil {
+			return err
 		}
 	}
 
-	if targetFunc == nil {
-		return fmt.Errorf("smart contract không có hàm: '%s' (fallback đã thử: %v)", requestedFunc, candidateFuncs)
-	}
-
-	results, err := targetFunc.Call(ctx, ptr, payloadLen)
-	if err != nil {
-		return fmt.Errorf("lỗi hệ thống WASM (runtime error): %w", err)
-	}
-
-	if len(results) > 0 && results[0] == 0 {
-		return fmt.Errorf("bị Smart Contract từ chối (sai logic hoặc không có quyền)")
-	}
-
+	attachRWSet(tx, rw)
 	runOK = true
 	if Verbose() {
-		fmt.Printf("✅ [VM] Giao dịch '%s' đã thực thi thành công qua hàm '%s'!\n", tx.Txid, actualFunc)
+		fmt.Printf("✅ [VM] '%s' OK writes=%d reads=%d\n", tx.Txid, len(rw.Writes), len(rw.Reads))
+	}
+	return nil
+}
+
+func attachRWSet(tx *core.Transaction, rw *core.RWSet) {
+	if rw == nil || (len(rw.Writes) == 0 && len(rw.Reads) == 0) {
+		tx.RWSet = nil
+		return
+	}
+	tx.RWSet = rw
+}
+
+func callGuest(ctx context.Context, fn api.Function, ptr, payloadLen uint64, name string) error {
+	results, err := fn.Call(ctx, ptr, payloadLen)
+	if err != nil {
+		return fmt.Errorf("lỗi hệ thống WASM (%s): %w", name, err)
+	}
+	if len(results) > 0 && results[0] == 0 {
+		return fmt.Errorf("bị Smart Contract từ chối ở '%s' (sai logic hoặc không có quyền)", name)
 	}
 	return nil
 }

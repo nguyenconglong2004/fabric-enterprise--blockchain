@@ -8,7 +8,7 @@ if ! command -v tinygo >/dev/null 2>&1; then
   exit 1
 fi
 cd "$ROOT"
-for dir in example_asset demo_inventory bench_ping; do
+for dir in example_asset demo_inventory bench_ping transfer; do
   echo "==> Building $dir"
   tinygo build -o "$dir/my_contract.wasm" -target wasi -no-debug -scheduler=none "./$dir"
 done

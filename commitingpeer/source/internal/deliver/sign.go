@@ -47,7 +47,12 @@ func (c *Client) RegisterTxSignHandler(signer crypto.Signer) {
 			return
 		}
 
-		sig, err := signer.SignTx(tx.Txid, tx.ContractName, tx.Payload)
+		var rwBytes []byte
+		if tx.RWSet != nil {
+			rwBytes = tx.RWSet.CanonicalBytes()
+		}
+
+		sig, err := signer.SignTx(tx.Txid, tx.ContractName, tx.Payload, rwBytes)
 		if err != nil {
 			log.Printf("[tx-sign] sign txid=%s: %v", tx.Txid, err)
 			_ = json.NewEncoder(s).Encode(txSignResponse{OK: false, Error: "sign failed"})
@@ -64,7 +69,7 @@ func (c *Client) RegisterTxSignHandler(signer crypto.Signer) {
 			tx.ClientPubKey = pubHex
 		}
 
-		if !signer.VerifyTx(tx.Txid, tx.ContractName, tx.Payload, sig, pubHex) {
+		if !signer.VerifyTx(tx.Txid, tx.ContractName, tx.Payload, rwBytes, sig, pubHex) {
 			log.Printf("[tx-sign] self-verify failed txid=%s", tx.Txid)
 			_ = json.NewEncoder(s).Encode(txSignResponse{OK: false, Error: "signature self-verify failed"})
 			return
@@ -85,6 +90,10 @@ func endorsementList(tx *types.Transaction) []types.EndorsementEntry {
 }
 
 func verifyExistingEndorsements(tx *types.Transaction) error {
+	var rwBytes []byte
+	if tx.RWSet != nil {
+		rwBytes = tx.RWSet.CanonicalBytes()
+	}
 	for i, e := range endorsementList(tx) {
 		if e.PublicKey == "" || e.Signature == "" {
 			return fmt.Errorf("endorsement %d: missing public_key or signature", i)
@@ -93,7 +102,7 @@ func verifyExistingEndorsements(tx *types.Transaction) error {
 		if err != nil {
 			return fmt.Errorf("endorsement %d: %w", i, err)
 		}
-		if !crypto.VerifyEndorsement(tx.Txid, tx.ContractName, tx.Payload, algo, e.Signature, e.PublicKey) {
+		if !crypto.VerifyEndorsement(tx.Txid, tx.ContractName, tx.Payload, rwBytes, algo, e.Signature, e.PublicKey) {
 			return fmt.Errorf("endorsement %d: invalid signature", i)
 		}
 	}

@@ -1,26 +1,55 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
     coercePayloadFieldsBySchema,
     createTransaction,
-    createVOUT,
-    formatVoutTransferLine,
 } from '../utils/transactionUtils';
-import { submitTx } from '../api/client';
+import { submitTx, submitTxAuthed } from '../api/client';
+import { useAuth } from '../auth/AuthContext';
+import { HashLink } from './ui';
+
+const TRANSFER_FALLBACK_FIELDS = [
+    { name: 'memo', label: 'Memo', type: 'string', required: false, placeholder: 'optional note' },
+];
+
+const DEMO_RECIPIENTS = [
+    { user: 'alice', address: '499cd177642d01e80a116bf1cc59ad6d7b97ce95' },
+    { user: 'bob', address: 'e63b92ab9b5c4e292581fecadd9a4b95864d4522' },
+    { user: 'charlie', address: '36fdf54d13ca797d3e227687f5085c736379d165' },
+];
+
+const COMMON_FIELD_NAMES = new Set(['amount', 'to', 'address']);
+
+/** amount/to are common — never treat as contract-custom schema. */
+function customFieldsFromSchema(schema) {
+    const fields = schema?.fields || [];
+    return fields.filter((f) => !COMMON_FIELD_NAMES.has(f.name));
+}
 
 const Transfer = ({ addNewTransaction }) => {
+    const { token, isAuthenticated, account } = useAuth();
+    const authToken = () =>
+        token || (typeof localStorage !== 'undefined' ? localStorage.getItem('fabric_auth_token') : '') || '';
+    const fromAddr = String(account?.address || '').trim().toLowerCase();
     const [contracts, setContracts] = useState([]);
     const [selectedContract, setSelectedContract] = useState('');
     const [contractSchema, setContractSchema] = useState(null);
     const [contractFields, setContractFields] = useState({});
-    /** Khi không có fields từ API (contract mới chưa khai schema): nhập JSON object làm payload. */
+    const [amount, setAmount] = useState('100');
+    const [toAddress, setToAddress] = useState('');
     const [rawPayloadJson, setRawPayloadJson] = useState('{}');
-    const [vouts, setVouts] = useState([]);
-    const [currentVout, setCurrentVout] = useState({ address: '', amount: 0 });
     const [submitting, setSubmitting] = useState(false);
     const [submitError, setSubmitError] = useState('');
     const [submitResult, setSubmitResult] = useState(null);
 
-    // Fetch contracts on mount
+    const isTransfer = selectedContract === 'transfer';
+
+    const customFields = useMemo(() => {
+        if (isTransfer && (!contractSchema?.fields || contractSchema.fields.length === 0)) {
+            return TRANSFER_FALLBACK_FIELDS;
+        }
+        return customFieldsFromSchema(contractSchema);
+    }, [contractSchema, isTransfer]);
+
     useEffect(() => {
         (async () => {
             try {
@@ -28,9 +57,11 @@ const Transfer = ({ addNewTransaction }) => {
                 const data = await res.json();
                 if (data.contracts) {
                     setContracts(data.contracts);
-                    // Auto-select first contract
                     if (data.contracts.length > 0) {
-                        setSelectedContract(data.contracts[0]);
+                        const prefer = data.contracts.includes('transfer')
+                            ? 'transfer'
+                            : data.contracts[0];
+                        setSelectedContract(prefer);
                     }
                 }
             } catch (err) {
@@ -39,30 +70,47 @@ const Transfer = ({ addNewTransaction }) => {
         })();
     }, []);
 
-    // Fetch schema when contract changes
     useEffect(() => {
-        if (selectedContract) {
-            (async () => {
-                try {
-                    const res = await fetch(`/api/contract/schema?name=${selectedContract}`);
-                    const data = await res.json();
-                    if (data.schema) {
-                        setContractSchema(data.schema);
-                        const initialFields = {};
-                        (data.schema.fields || []).forEach((field) => {
-                            initialFields[field.name] = '';
+        if (!selectedContract) return;
+        (async () => {
+            try {
+                const res = await fetch(`/api/contract/schema?name=${selectedContract}`);
+                const data = await res.json();
+                if (data.schema) {
+                    setContractSchema(data.schema);
+                    const initialFields = {};
+                    customFieldsFromSchema(data.schema).forEach((field) => {
+                        initialFields[field.name] = '';
+                    });
+                    if (selectedContract === 'transfer' && customFieldsFromSchema(data.schema).length === 0) {
+                        TRANSFER_FALLBACK_FIELDS.forEach((f) => {
+                            initialFields[f.name] = '';
                         });
-                        setContractFields(initialFields);
                     }
-                    setRawPayloadJson('{}');
-                } catch (err) {
-                    console.error('Error fetching schema:', err);
+                    setContractFields(initialFields);
                 }
-            })();
-        }
+                setRawPayloadJson('{}');
+            } catch (err) {
+                console.error('Error fetching schema:', err);
+            }
+        })();
     }, [selectedContract]);
 
-    // Handle field change
+    useEffect(() => {
+        if (!customFields.length) return;
+        setContractFields((prev) => {
+            const next = { ...prev };
+            let changed = false;
+            customFields.forEach((f) => {
+                if (!(f.name in next)) {
+                    next[f.name] = '';
+                    changed = true;
+                }
+            });
+            return changed ? next : prev;
+        });
+    }, [customFields]);
+
     const handleFieldChange = (fieldName, value) => {
         setContractFields((prev) => ({
             ...prev,
@@ -70,29 +118,6 @@ const Transfer = ({ addNewTransaction }) => {
         }));
     };
 
-    // Add VOUT
-    const handleAddVout = () => {
-        if (!currentVout.address || currentVout.amount <= 0) {
-            alert('Please enter valid address and amount');
-            return;
-        }
-
-        const newVout = createVOUT(
-            parseInt(currentVout.amount),
-            vouts.length,
-            [currentVout.address]
-        );
-
-        setVouts((prev) => [...prev, newVout]);
-        setCurrentVout({ address: '', amount: 0 });
-    };
-
-    // Remove VOUT
-    const handleRemoveVout = (index) => {
-        setVouts((prev) => prev.filter((_, i) => i !== index));
-    };
-
-    // Submit transaction
     const handleSubmit = async (e) => {
         e.preventDefault();
 
@@ -101,43 +126,22 @@ const Transfer = ({ addNewTransaction }) => {
             return;
         }
 
-        if (vouts.length === 0) {
-            setSubmitError('Please add at least one output (To Address + Amount)');
+        const sessionTok = authToken();
+        if ((isTransfer || selectedContract === 'example_asset') && !/^[0-9a-f]{40}$/.test(fromAddr)) {
+            setSubmitError('Sign in first — need your account address as payload.from');
             return;
         }
 
-        const hasFormFields = contractSchema?.fields && contractSchema.fields.length > 0;
-        const schemaForPayload = hasFormFields ? contractSchema : null;
-        let fieldsArg;
-        let payloadDataForUi;
+        const amountNum = parseInt(amount, 10);
+        if (!amount || Number.isNaN(amountNum) || amountNum <= 0) {
+            setSubmitError('Amount must be a positive integer');
+            return;
+        }
 
-        if (!hasFormFields) {
-            try {
-                const parsed = JSON.parse(rawPayloadJson.trim() || '{}');
-                if (
-                    typeof parsed !== 'object' ||
-                    parsed === null ||
-                    Array.isArray(parsed)
-                ) {
-                    setSubmitError('Payload phải là JSON object (ví dụ {"id":"a","color":"red"})');
-                    return;
-                }
-                fieldsArg = parsed;
-                payloadDataForUi = parsed;
-            } catch {
-                setSubmitError('Payload JSON không hợp lệ');
-                return;
-            }
-        } else {
-            const allFieldsFilled = contractSchema.fields.every(
-                (field) => !field.required || contractFields[field.name]
-            );
-            if (!allFieldsFilled) {
-                setSubmitError('Please fill all required fields');
-                return;
-            }
-            fieldsArg = contractFields;
-            payloadDataForUi = coercePayloadFieldsBySchema(contractSchema, contractFields);
+        const to = String(toAddress || '').trim().toLowerCase();
+        if (!/^[0-9a-f]{40}$/.test(to)) {
+            setSubmitError('Address must be a 40-char hex P2PKH address');
+            return;
         }
 
         setSubmitting(true);
@@ -145,40 +149,77 @@ const Transfer = ({ addNewTransaction }) => {
         setSubmitResult(null);
 
         try {
-            const txid = crypto.randomUUID();
+            let customPart;
+            let schemaForPayload = null;
 
-            // createTransaction áp schema.fields[].type khi có schema (tránh string từ input HTML)
+            if (customFields.length > 0) {
+                const allFilled = customFields.every(
+                    (field) => !field.required || contractFields[field.name]
+                );
+                if (!allFilled) {
+                    setSubmitError('Please fill all required contract fields');
+                    setSubmitting(false);
+                    return;
+                }
+                schemaForPayload = { name: selectedContract, fields: customFields };
+                customPart = coercePayloadFieldsBySchema(schemaForPayload, contractFields);
+            } else {
+                try {
+                    const parsed = JSON.parse(rawPayloadJson.trim() || '{}');
+                    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+                        setSubmitError('Payload must be a JSON object');
+                        setSubmitting(false);
+                        return;
+                    }
+                    const { amount: _a, to: _t, address: _addr, ...rest } = parsed;
+                    customPart = rest;
+                } catch {
+                    setSubmitError('Invalid payload JSON');
+                    setSubmitting(false);
+                    return;
+                }
+            }
+
+            // Common amount + to; from comes from logged-in account (auth optional on Core).
+            const fieldsArg = {
+                ...customPart,
+                amount: amountNum,
+                to,
+                ...(fromAddr ? { from: fromAddr } : {}),
+            };
+            const txSchema = {
+                name: selectedContract,
+                fields: [
+                    ...(schemaForPayload?.fields || customFields),
+                    { name: 'amount', type: 'integer' },
+                    { name: 'to', type: 'address' },
+                    { name: 'from', type: 'address' },
+                ],
+            };
+
+            const txid = crypto.randomUUID();
             const tx = createTransaction(
                 txid,
                 selectedContract,
                 'execute',
                 fieldsArg,
-                vouts,
-                schemaForPayload
+                txSchema
             );
 
-            // Don't add mock signatures - CommitPeer will sign the transaction
-            // tx.signature, tx.client_pubkey, tx.sender_pubkey will be set by CommitPeer
-            tx.version = 1;
-            tx.locktime = 0;
-            tx.vin = [];
-
-            // Submit
-            const res = await submitTx(tx);
+            const res = sessionTok
+                ? await submitTxAuthed(tx, sessionTok)
+                : await submitTx(tx);
             setSubmitResult(res);
 
-            // Add to transaction list
             addNewTransaction({
                 ...tx,
                 timestamp: new Date().toISOString(),
-                payloadData: payloadDataForUi,
+                payloadData: fieldsArg,
             });
 
-            // Reset form
             setContractFields({});
             setRawPayloadJson('{}');
-            setVouts([]);
-            setCurrentVout({ address: '', amount: 0 });
+            setToAddress('');
         } catch (err) {
             setSubmitError(err?.message || String(err));
         } finally {
@@ -187,31 +228,37 @@ const Transfer = ({ addNewTransaction }) => {
     };
 
     return (
-        <form onSubmit={handleSubmit} className="border-2 border-orange-700 p-4 rounded-lg bg-gray-50 mt-8">
-            <h3 className="font-semibold text-lg mb-4">🔄 Create Transaction</h3>
+        <form onSubmit={handleSubmit} className="space-y-5">
+            <div>
+                <h3 className="text-sm font-semibold tracking-wide text-[var(--text)]">Submit transaction</h3>
+                <p className="mt-0.5 text-xs text-[var(--muted)]">
+                    Amount and address are common; other fields are contract-specific
+                </p>
+            </div>
 
             {submitError && (
-                <div className="mb-4 bg-red-50 border border-red-200 text-red-800 p-3 rounded">
-                    <strong>Error:</strong> {submitError}
+                <div className="rounded-xl border border-[rgba(255,107,122,0.35)] bg-[rgba(255,107,122,0.08)] px-3 py-2.5 text-sm text-[var(--danger)]">
+                    {submitError}
                 </div>
             )}
 
             {submitResult && (
-                <div className="mb-4 bg-green-50 border border-green-200 text-green-900 p-3 rounded text-sm">
-                    <strong>✅ Submitted:</strong> {submitResult.txid || 'Success'}
+                <div className="rounded-xl border border-[rgba(20,241,149,0.35)] bg-[var(--accent-dim)] px-3 py-2.5 text-sm text-[var(--accent)]">
+                    Submitted · <HashLink value={submitResult.txid || submitResult.tx_id} />
                 </div>
             )}
 
-            {/* Contract Selection */}
-            <div className="mb-4">
-                <label className="block text-sm font-medium mb-1">Select Contract *</label>
+            <div>
+                <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-[var(--muted)]">
+                    Contract
+                </label>
                 <select
                     value={selectedContract}
                     onChange={(e) => setSelectedContract(e.target.value)}
-                    className="mt-1 block w-full p-2 border rounded-md"
+                    className="explorer-input"
                     required
                 >
-                    <option value="">Choose a contract...</option>
+                    <option value="">Choose a contract…</option>
                     {contracts.map((contract) => (
                         <option key={contract} value={contract}>
                             {contract}
@@ -220,28 +267,89 @@ const Transfer = ({ addNewTransaction }) => {
                 </select>
             </div>
 
-            {/* Contract Fields — từ schema deploy hoặc builtin */}
-            {contractSchema && contractSchema.fields.length > 0 && (
-                <div className="bg-blue-50 p-4 rounded-md mb-4 border border-blue-200">
-                    <h4 className="font-semibold text-sm mb-3 text-blue-900">
-                        {contractSchema.name} Parameters
-                    </h4>
-                    {contractSchema.fields.map((field) => (
-                        <div key={field.name} className="mb-3">
-                            <label className="block text-sm font-medium">
+            {isTransfer && !isAuthenticated && (
+                <div className="rounded-xl border border-[rgba(245,197,66,0.3)] bg-[rgba(245,197,66,0.06)] px-3 py-2.5 text-sm text-[var(--warn)]">
+                    Sign in first — transfer moves your account balance on-chain.
+                </div>
+            )}
+
+            {(selectedContract === 'example_asset') && !isAuthenticated && (
+                <div className="rounded-xl border border-[rgba(245,197,66,0.3)] bg-[rgba(245,197,66,0.06)] px-3 py-2.5 text-sm text-[var(--warn)]">
+                    Sign in first — example_asset stores the asset and moves balance (amount → to).
+                </div>
+            )}
+
+            <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-elevated)] p-4 space-y-3">
+                <p className="text-xs font-semibold uppercase tracking-wider text-[var(--muted)]">
+                    Common
+                </p>
+                <label className="block">
+                    <span className="mb-1 block text-sm text-[var(--text)]">
+                        Amount <span className="text-[var(--danger)]">*</span>
+                    </span>
+                    <input
+                        type="number"
+                        min={1}
+                        className="explorer-input"
+                        value={amount}
+                        onChange={(e) => setAmount(e.target.value)}
+                        placeholder="100"
+                        required
+                    />
+                </label>
+                <label className="block">
+                    <span className="mb-1 block text-sm text-[var(--text)]">
+                        Address (to) <span className="text-[var(--danger)]">*</span>
+                    </span>
+                    <input
+                        type="text"
+                        className="explorer-input font-mono-hash"
+                        value={toAddress}
+                        onChange={(e) => setToAddress(e.target.value.trim().toLowerCase())}
+                        placeholder="40-char hex — use buttons below or copy full address from Wallet"
+                        spellCheck={false}
+                        required
+                    />
+                    <div className="mt-2 flex flex-wrap gap-2">
+                        {DEMO_RECIPIENTS.filter((r) => r.address !== fromAddr).map((r) => (
+                            <button
+                                key={r.user}
+                                type="button"
+                                className="rounded-lg border border-[var(--border)] px-2.5 py-1 text-xs text-[var(--muted)] hover:border-[var(--accent)] hover:text-[var(--accent)]"
+                                onClick={() => setToAddress(r.address)}
+                                title={r.address}
+                            >
+                                → {r.user}
+                            </button>
+                        ))}
+                    </div>
+                    {toAddress && (
+                        <p className="mt-1 break-all font-mono-hash text-[10px] text-[var(--muted)]">
+                            to={toAddress}
+                        </p>
+                    )}
+                </label>
+            </div>
+
+            {customFields.length > 0 && (
+                <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-elevated)] p-4">
+                    <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-[var(--muted)]">
+                        {selectedContract || 'Contract'} parameters
+                    </p>
+                    {customFields.map((field) => (
+                        <div key={field.name} className="mb-3 last:mb-0">
+                            <label className="mb-1 block text-sm text-[var(--text)]">
                                 {field.label || field.name}
-                                {field.required && <span className="text-red-500"> *</span>}
+                                {field.required && <span className="text-[var(--danger)]"> *</span>}
                             </label>
                             <input
                                 type={
-                                    field.type === 'number' || field.type === 'integer'
-                                        ? 'number'
-                                        : 'text'
+                                    field.type === 'number' || field.type === 'integer' ? 'number' : 'text'
                                 }
                                 value={contractFields[field.name] ?? ''}
                                 onChange={(e) => handleFieldChange(field.name, e.target.value)}
                                 placeholder={field.placeholder}
-                                className="mt-1 block w-full p-2 border rounded-md"
+                                className="explorer-input"
                                 required={field.required}
                             />
                         </div>
@@ -249,107 +357,26 @@ const Transfer = ({ addNewTransaction }) => {
                 </div>
             )}
 
-            {/* Không có field định nghĩa: nhập JSON payload (UTF-8 → hex trong createTransaction) */}
-            {contractSchema && contractSchema.fields.length === 0 && selectedContract && (
-                <div className="bg-amber-50 p-4 rounded-md mb-4 border border-amber-200">
-                    <h4 className="font-semibold text-sm mb-2 text-amber-900">
-                        Payload (JSON object)
-                    </h4>
-                    <p className="text-xs text-amber-800 mb-2">
-                        Contract chưa có schema form — gửi đúng JSON mà WASM mong đợi, hoặc deploy kèm{' '}
-                        <code className="bg-amber-100 px-1">payload_schema</code> để có form tự động.
+            {customFields.length === 0 && selectedContract && !isTransfer && (
+                <div className="rounded-xl border border-[rgba(245,197,66,0.3)] bg-[rgba(245,197,66,0.06)] p-4">
+                    <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-[var(--warn)]">
+                        Extra payload JSON (optional)
+                    </p>
+                    <p className="mb-2 text-xs text-[var(--muted)]">
+                        No custom schema beyond common amount — add extra keys if needed.
                     </p>
                     <textarea
                         value={rawPayloadJson}
                         onChange={(e) => setRawPayloadJson(e.target.value)}
-                        rows={6}
-                        className="mt-1 block w-full p-2 border rounded-md font-mono text-sm"
+                        rows={4}
+                        className="explorer-input font-mono-hash"
                         spellCheck={false}
                     />
                 </div>
             )}
 
-            {/* VOUT Section - To Address + Amount */}
-            <div className="bg-purple-50 p-4 rounded-md mb-4 border border-purple-200">
-                <h4 className="font-semibold text-sm mb-3 text-purple-900">
-                    📤 Transaction Outputs (VOUT)
-                </h4>
-
-                {/* Current VOUT Input */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mb-3">
-                    <div>
-                        <label className="block text-sm font-medium">To Address</label>
-                        <input
-                            type="text"
-                            value={currentVout.address}
-                            onChange={(e) =>
-                                setCurrentVout({ ...currentVout, address: e.target.value })
-                            }
-                            placeholder="0x..."
-                            className="mt-1 block w-full p-2 border rounded-md text-sm"
-                        />
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium">Amount</label>
-                        <input
-                            type="number"
-                            value={currentVout.amount}
-                            onChange={(e) =>
-                                setCurrentVout({ ...currentVout, amount: e.target.value })
-                            }
-                            placeholder="0"
-                            className="mt-1 block w-full p-2 border rounded-md text-sm"
-                        />
-                    </div>
-                    <div className="flex items-end">
-                        <button
-                            type="button"
-                            onClick={handleAddVout}
-                            className="w-full bg-green-600 text-white px-3 py-2 rounded-md hover:bg-green-700 font-medium text-sm"
-                        >
-                            ➕ Add Output
-                        </button>
-                    </div>
-                </div>
-
-                {/* List of VOUTs */}
-                {vouts.length > 0 && (
-                    <div className="space-y-2">
-                        <p className="text-sm font-medium text-purple-900">Đã thêm output (địa chỉ + value):</p>
-                        {vouts.map((vout, index) => (
-                            <div
-                                key={index}
-                                className="bg-white p-2 rounded border border-purple-200 flex justify-between items-start gap-2 text-sm"
-                            >
-                                <p className="font-mono text-xs text-gray-800 break-all flex-1 leading-relaxed">
-                                    {formatVoutTransferLine(vout, index)}
-                                </p>
-                                <button
-                                    type="button"
-                                    onClick={() => handleRemoveVout(index)}
-                                    className="text-red-600 hover:text-red-800 font-bold shrink-0"
-                                >
-                                    ✕
-                                </button>
-                            </div>
-                        ))}
-                    </div>
-                )}
-
-                {vouts.length === 0 && (
-                    <p className="text-sm text-gray-500 italic">
-                        No outputs yet. Add at least one.
-                    </p>
-                )}
-            </div>
-
-            {/* Submit Button */}
-            <button
-                type="submit"
-                disabled={submitting}
-                className="bg-[#036642] text-white px-4 py-2 rounded-md shadow-lg hover:bg-[#1c7555] cursor-pointer w-full font-medium disabled:opacity-60"
-            >
-                {submitting ? '⏳ Submitting...' : '✅ Submit Transaction'}
+            <button type="submit" disabled={submitting} className="explorer-btn-primary w-full">
+                {submitting ? 'Submitting…' : 'Submit transaction'}
             </button>
         </form>
     );

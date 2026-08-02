@@ -237,10 +237,12 @@ func (p *PostgresDB) ListCommittedBlocks(limit int) ([]map[string]interface{}, e
 		limit = 20
 	}
 
+	// Prefer committed_at (and id) over block_number: local peer height can reset
+	// while Postgres still holds older rows with higher block_number from prior runs.
 	query := `
-		SELECT block_data
+		SELECT block_data, block_hash, block_number
 		FROM commit_peer.ledger
-		ORDER BY block_number DESC
+		ORDER BY committed_at DESC NULLS LAST, id DESC
 		LIMIT $1
 	`
 
@@ -252,8 +254,12 @@ func (p *PostgresDB) ListCommittedBlocks(limit int) ([]map[string]interface{}, e
 
 	blocks := make([]map[string]interface{}, 0)
 	for rows.Next() {
-		var raw []byte
-		if err := rows.Scan(&raw); err != nil {
+		var (
+			raw         []byte
+			blockHash   string
+			blockNumber int64
+		)
+		if err := rows.Scan(&raw, &blockHash, &blockNumber); err != nil {
 			return nil, fmt.Errorf("failed to scan committed block: %w", err)
 		}
 
@@ -261,6 +267,13 @@ func (p *PostgresDB) ListCommittedBlocks(limit int) ([]map[string]interface{}, e
 		if err := json.Unmarshal(raw, &block); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal committed block: %w", err)
 		}
+		// Prefer hex hash from ledger column (block_data.hash is often base64 []byte).
+		if blockHash != "" {
+			block["hash"] = blockHash
+			block["block_hash"] = blockHash
+		}
+		block["number"] = blockNumber
+		block["block_number"] = blockNumber
 		blocks = append(blocks, block)
 	}
 
@@ -272,26 +285,51 @@ func (p *PostgresDB) ListCommittedBlocks(limit int) ([]map[string]interface{}, e
 }
 
 // ListCommittedTransactions returns latest committed transactions from commit_peer ledger.
-func (p *PostgresDB) ListCommittedTransactions(limit int) ([]map[string]interface{}, error) {
+// When filterAddress / filterPubkey are set, only txs created by that user are returned
+// (payload_decoded.from or client_pubkey). Filtering is done in Go after a recent-window
+// fetch — JSONB predicates over the full table are too slow on large historical mirrors.
+func (p *PostgresDB) ListCommittedTransactions(limit int, filterAddress, filterPubkey string) ([]map[string]interface{}, error) {
 	if limit <= 0 {
 		limit = 50
 	}
+	filterAddress = strings.ToLower(strings.TrimSpace(filterAddress))
+	filterPubkey = strings.ToLower(strings.TrimSpace(filterPubkey))
+	filter := filterAddress != "" || filterPubkey != ""
+
+	// When filtering, over-fetch recent txs then keep matches (avoids full-table JSON scan).
+	// Keep window modest: joining thousands of historical blocks is slow.
+	fetchLimit := limit
+	if filter {
+		fetchLimit = limit * 5
+		if fetchLimit < 100 {
+			fetchLimit = 100
+		}
+		if fetchLimit > 300 {
+			fetchLimit = 300
+		}
+	}
 
 	query := `
-		SELECT lt.tx_data, l.block_hash, l.block_number
-		FROM commit_peer.ledger_transactions lt
-		JOIN commit_peer.ledger l ON lt.block_id = l.id
-		ORDER BY l.block_number DESC, lt.tx_index ASC
+		WITH recent AS (
+			SELECT id, block_hash, block_number, committed_at
+			FROM commit_peer.ledger
+			ORDER BY committed_at DESC NULLS LAST, id DESC
+			LIMIT $1
+		)
+		SELECT lt.tx_data, recent.block_hash, recent.block_number
+		FROM recent
+		JOIN commit_peer.ledger_transactions lt ON lt.block_id = recent.id
+		ORDER BY recent.committed_at DESC NULLS LAST, recent.id DESC, lt.tx_index ASC
 		LIMIT $1
 	`
 
-	rows, err := p.db.Query(query, limit)
+	rows, err := p.db.Query(query, fetchLimit)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list committed transactions: %w", err)
 	}
 	defer rows.Close()
 
-	txs := make([]map[string]interface{}, 0)
+	txs := make([]map[string]interface{}, 0, limit)
 	for rows.Next() {
 		var (
 			raw         []byte
@@ -308,7 +346,14 @@ func (p *PostgresDB) ListCommittedTransactions(limit int) ([]map[string]interfac
 		}
 		tx["block_hash"] = blockHash
 		tx["block_number"] = blockNumber
+
+		if filter && !txMatchesUser(tx, filterAddress, filterPubkey) {
+			continue
+		}
 		txs = append(txs, tx)
+		if len(txs) >= limit {
+			break
+		}
 	}
 
 	if err := rows.Err(); err != nil {
@@ -316,6 +361,22 @@ func (p *PostgresDB) ListCommittedTransactions(limit int) ([]map[string]interfac
 	}
 
 	return txs, nil
+}
+
+func txMatchesUser(tx map[string]interface{}, addr, pubkey string) bool {
+	if addr != "" {
+		if decoded, ok := tx["payload_decoded"].(map[string]interface{}); ok {
+			if from, ok := decoded["from"].(string); ok && strings.ToLower(from) == addr {
+				return true
+			}
+		}
+	}
+	if pubkey != "" {
+		if pub, ok := tx["client_pubkey"].(string); ok && strings.ToLower(pub) == pubkey {
+			return true
+		}
+	}
+	return false
 }
 
 // Close closes the database connection

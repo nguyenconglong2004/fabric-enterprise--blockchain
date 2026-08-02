@@ -3,6 +3,8 @@ package storage
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
+	"strings"
 
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/util"
@@ -17,15 +19,13 @@ type UTXOEntry struct {
 	Out   types.VOUT
 }
 
-// WorldState is an UTXO-based world state backed by LevelDB.
+// WorldState is account/KV world state backed by LevelDB.
 //
 // Key schema:
 //
-//	utxo:<txid>:<vout_index>  →  JSON-encoded types.VOUT
+//	kv:<key>  →  raw value bytes (from tx.rw_set writes), e.g. balance:<addr>
 //
-// When a block is applied:
-//   - Each VIN removes the UTXO it spends.
-//   - Each VOUT creates a new UTXO entry.
+// ApplyBlock only applies rw_set writes (account model). Legacy utxo:* keys are ignored.
 type WorldState struct {
 	db *leveldb.DB
 }
@@ -39,25 +39,25 @@ func NewWorldState(path string) (*WorldState, error) {
 	return &WorldState{db: db}, nil
 }
 
-// ApplyBlock atomically updates the UTXO set for every transaction in block.
-// All changes are written in a single LevelDB batch for consistency.
+// ApplyBlock applies each tx's rw_set writes into kv:<key>.
 func (ws *WorldState) ApplyBlock(block types.Block) error {
 	batch := new(leveldb.Batch)
 
 	for _, tx := range block.Transactions {
-		// Spend (delete) each referenced input.
-		for _, vin := range tx.Vin {
-			batch.Delete([]byte(utxoKey(vin.Txid, vin.Vout)))
+		if tx.RWSet == nil {
+			continue
 		}
-
-		// Create (put) each new output.
-		for _, vout := range tx.Vout {
-			val, err := json.Marshal(vout)
-			if err != nil {
-				return fmt.Errorf("world state: marshal vout %d of tx %s: %w",
-					vout.N, tx.Txid, err)
+		for _, w := range tx.RWSet.Writes {
+			k := kvKey(w.Key)
+			if w.IsDelete {
+				batch.Delete([]byte(k))
+				continue
 			}
-			batch.Put([]byte(utxoKey(tx.Txid, vout.N)), val)
+			raw, err := w.ValueBytes()
+			if err != nil {
+				return fmt.Errorf("world state: bad rw_set value hex key=%s tx=%s: %w", w.Key, tx.Txid, err)
+			}
+			batch.Put([]byte(k), raw)
 		}
 	}
 
@@ -95,8 +95,14 @@ func (ws *WorldState) AllUTXOs() ([]UTXOEntry, error) {
 		// key format: utxo:<txid>:<n>
 		var txid string
 		var n int
-		fmt.Sscanf(string(iter.Key()), "utxo:%64s", &txid)
-		// Use the N field from the stored VOUT directly — it is authoritative.
+		key := string(iter.Key())
+		// key: utxo:<txid>:<n>
+		parts := strings.Split(key, ":")
+		if len(parts) >= 3 {
+			txid = parts[1]
+			fmt.Sscanf(parts[len(parts)-1], "%d", &n)
+		}
+		// Prefer N from stored VOUT.
 		n = v.N
 		entries = append(entries, UTXOEntry{Txid: txid, Index: n, Out: v})
 	}
@@ -114,6 +120,64 @@ func (ws *WorldState) UTXOCount() (int, error) {
 	return n, iter.Error()
 }
 
+// PutUTXO writes (or overwrites) a single UTXO entry — used by faucet/mint for demo accounts.
+func (ws *WorldState) PutUTXO(txid string, out types.VOUT) error {
+	val, err := json.Marshal(out)
+	if err != nil {
+		return fmt.Errorf("world state: marshal vout: %w", err)
+	}
+	if err := ws.db.Put([]byte(utxoKey(txid, out.N)), val, nil); err != nil {
+		return fmt.Errorf("world state: put utxo: %w", err)
+	}
+	return nil
+}
+
+// UTXOsByAddress returns unspent outputs whose ScriptPubKey.Addresses contain addr.
+func (ws *WorldState) UTXOsByAddress(addr string) ([]UTXOEntry, error) {
+	all, err := ws.AllUTXOs()
+	if err != nil {
+		return nil, err
+	}
+	var out []UTXOEntry
+	for _, e := range all {
+		for _, a := range e.Out.ScriptPubKey.Addresses {
+			if a == addr {
+				out = append(out, e)
+				break
+			}
+		}
+	}
+	return out, nil
+}
+
+// BalanceByAddress is deprecated (UTXO sum). Prefer GetBalance (KV account model).
+func (ws *WorldState) BalanceByAddress(addr string) (int64, error) {
+	return ws.GetBalance(addr)
+}
+
+// GetBalance reads kv balance:<addr> (decimal ASCII). Missing key → 0.
+func (ws *WorldState) GetBalance(addr string) (int64, error) {
+	addr = strings.TrimSpace(strings.ToLower(addr))
+	raw, err := ws.GetKV("balance:" + addr)
+	if err == leveldb.ErrNotFound {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	s := strings.TrimSpace(string(raw))
+	if s == "" {
+		return 0, nil
+	}
+	return strconv.ParseInt(s, 10, 64)
+}
+
+// PutBalance writes kv balance:<addr> as decimal ASCII.
+func (ws *WorldState) PutBalance(addr string, bal int64) error {
+	addr = strings.TrimSpace(strings.ToLower(addr))
+	return ws.PutKV("balance:"+addr, []byte(strconv.FormatInt(bal, 10)))
+}
+
 // Close closes the underlying LevelDB handle.
 func (ws *WorldState) Close() error {
 	return ws.db.Close()
@@ -121,4 +185,18 @@ func (ws *WorldState) Close() error {
 
 func utxoKey(txid string, vout int) string {
 	return fmt.Sprintf("utxo:%s:%d", txid, vout)
+}
+
+func kvKey(key string) string {
+	return "kv:" + key
+}
+
+// GetKV returns committed contract state for key. ErrNotFound if missing.
+func (ws *WorldState) GetKV(key string) ([]byte, error) {
+	return ws.db.Get([]byte(kvKey(key)), nil)
+}
+
+// PutKV writes a KV entry (tests / admin).
+func (ws *WorldState) PutKV(key string, value []byte) error {
+	return ws.db.Put([]byte(kvKey(key)), value, nil)
 }

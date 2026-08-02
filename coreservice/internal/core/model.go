@@ -56,6 +56,7 @@ type Transaction struct {
 	ContractName string `json:"contract_name"`
 	FunctionName string `json:"function_name"`
 	Payload      []byte `json:"-"` // Don't serialize as JSON
+	RWSet        *RWSet `json:"rw_set,omitempty"`
 }
 
 // Custom JSON unmarshaler to handle payload conversion from hex string
@@ -73,6 +74,7 @@ func (t *Transaction) UnmarshalJSON(data []byte) error {
 		ContractName   string             `json:"contract_name"`
 		FunctionName   string             `json:"function_name"`
 		Payload        string             `json:"payload"` // Hex string
+		RWSet          *RWSet             `json:"rw_set"`
 	}
 
 	aux := &Alias{}
@@ -91,6 +93,7 @@ func (t *Transaction) UnmarshalJSON(data []byte) error {
 	t.Vout = aux.Vout
 	t.ContractName = aux.ContractName
 	t.FunctionName = aux.FunctionName
+	t.RWSet = aux.RWSet
 
 	// Convert hex string to bytes
 	if aux.Payload != "" {
@@ -125,6 +128,7 @@ func (t Transaction) MarshalJSON() ([]byte, error) {
 		ContractName   string             `json:"contract_name"`
 		FunctionName   string             `json:"function_name"`
 		Payload        string             `json:"payload"`
+		RWSet          *RWSet             `json:"rw_set,omitempty"`
 	}
 
 	aux := Alias{
@@ -140,6 +144,7 @@ func (t Transaction) MarshalJSON() ([]byte, error) {
 		ContractName:   t.ContractName,
 		FunctionName:   t.FunctionName,
 		Payload:        hex.EncodeToString(t.Payload),
+		RWSet:          t.RWSet,
 	}
 	if len(aux.Endorsements) > 0 {
 		last := aux.Endorsements[len(aux.Endorsements)-1]

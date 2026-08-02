@@ -84,8 +84,17 @@ func (e *Engine) validateEndorsedTx(tx types.Transaction) error {
 		if algo == "" {
 			algo = crypto.InferAlgorithmFromWire(ent.Signature, ent.PublicKey)
 		}
-		if !crypto.VerifyEndorsement(tx.Txid, tx.ContractName, tx.Payload, algo, ent.Signature, ent.PublicKey) {
-			return fmt.Errorf("tx %s: invalid endorser signature (endorsement %d)", tx.Txid, i)
+		var rwBytes []byte
+		hasRW := tx.RWSet != nil && (len(tx.RWSet.Writes) > 0 || len(tx.RWSet.Reads) > 0)
+		if tx.RWSet != nil {
+			rwBytes = tx.RWSet.CanonicalBytes()
+		}
+		if !crypto.VerifyEndorsement(tx.Txid, tx.ContractName, tx.Payload, rwBytes, algo, ent.Signature, ent.PublicKey) {
+			hint := ""
+			if !hasRW {
+				hint = " (tx has no rw_set — orderer may be an old binary that drops rw_set; restart orderer from Thesis repo)"
+			}
+			return fmt.Errorf("tx %s: invalid endorser signature (endorsement %d)%s", tx.Txid, i, hint)
 		}
 		if _, ok := trusted[trustedKeyID(algo, strings.ToLower(strings.TrimSpace(ent.PublicKey)))]; ok {
 			seenTrusted = true

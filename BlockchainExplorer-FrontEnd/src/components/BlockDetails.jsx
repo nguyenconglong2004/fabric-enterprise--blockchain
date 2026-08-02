@@ -1,33 +1,38 @@
 import React from 'react';
+import { HashLink } from './ui';
 
 const BlockDetails = ({ address, balance, gasUsed }) => {
     if (!address) {
-        return (
-            <div className="bg-yellow-100 text-yellow-700 p-4 mt-4 rounded-md">
-                Ethereum address is required to view block details.
-            </div>
-        );
+        return null;
     }
 
     return (
-        <div className="bg-white p-4 mt-4 rounded-lg shadow-md">
-            <h2 className="text-lg font-bold mb-4">Block Details</h2>
-            <table className="min-w-full text-left text-sm">
-                <tbody>
-                    <tr>
-                        <td className="font-medium">Ethereum Address:</td>
-                        <td>{address}</td>
-                    </tr>
-                    <tr>
-                        <td className="font-medium">Balance:</td>
-                        <td>{balance}</td>
-                    </tr>
-                    <tr>
-                        <td className="font-medium">Gas Used:</td>
-                        <td>{gasUsed}</td>
-                    </tr>
-                </tbody>
-            </table>
+        <div className="mt-4 overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface)]">
+            <div className="border-b border-[var(--border)] px-4 py-2.5">
+                <h2 className="text-sm font-semibold text-[var(--text)]">Address details</h2>
+            </div>
+            <dl className="divide-y divide-[var(--border-subtle)] text-sm">
+                <div className="flex flex-col gap-1 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                    <dt className="text-xs font-semibold uppercase tracking-wider text-[var(--muted)]">
+                        Address
+                    </dt>
+                    <dd>
+                        <HashLink value={address} left={12} right={10} />
+                    </dd>
+                </div>
+                <div className="flex items-center justify-between px-4 py-3">
+                    <dt className="text-xs font-semibold uppercase tracking-wider text-[var(--muted)]">
+                        Balance
+                    </dt>
+                    <dd className="font-semibold text-[var(--accent)]">{balance}</dd>
+                </div>
+                <div className="flex items-center justify-between px-4 py-3">
+                    <dt className="text-xs font-semibold uppercase tracking-wider text-[var(--muted)]">
+                        Gas used
+                    </dt>
+                    <dd className="text-[var(--text)]">{gasUsed}</dd>
+                </div>
+            </dl>
         </div>
     );
 };

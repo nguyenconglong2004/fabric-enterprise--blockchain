@@ -19,16 +19,23 @@ const (
 type Signer interface {
 	Algorithm() Algorithm
 	PublicKeyHex() string
-	SignTx(txID, contractName string, payload []byte) (sigHex string, err error)
-	VerifyTx(txID, contractName string, payload []byte, sigHex, pubHex string) bool
+	SignTx(txID, contractName string, payload, rwCanonical []byte) (sigHex string, err error)
+	VerifyTx(txID, contractName string, payload, rwCanonical []byte, sigHex, pubHex string) bool
 	// TrustedKey returns "algo:pubhex" for TRUSTED_ENDORSER_PUBLIC_KEYS.
 	TrustedKey() string
 	PrivateKeyHex() string
 }
 
-// TxMessage is the signed payload (same layout as core / orderer).
-func TxMessage(txID, contractName string, payload []byte) []byte {
-	return []byte(txID + contractName + string(payload))
+// TxMessage is the signed payload: txid || contract || payload || 0x00 || rw_canonical.
+// rw_canonical is sha256 of sorted RWSet JSON (nil/empty → nothing after separator still uses 0x00).
+func TxMessage(txID, contractName string, payload, rwCanonical []byte) []byte {
+	msg := make([]byte, 0, len(txID)+len(contractName)+len(payload)+1+len(rwCanonical))
+	msg = append(msg, txID...)
+	msg = append(msg, contractName...)
+	msg = append(msg, payload...)
+	msg = append(msg, 0)
+	msg = append(msg, rwCanonical...)
+	return msg
 }
 
 // ParseAlgorithm normalizes COMMIT_PEER_KEY_ALGO (default ed25519).
@@ -152,15 +159,15 @@ func InferAlgorithmFromWire(sigHex, pubHex string) Algorithm {
 }
 
 // VerifyEndorsement checks one endorsement entry (empty algorithm = infer from wire).
-func VerifyEndorsement(txID, contractName string, payload []byte, algo Algorithm, sigHex, pubHex string) bool {
+func VerifyEndorsement(txID, contractName string, payload, rwCanonical []byte, algo Algorithm, sigHex, pubHex string) bool {
 	if algo == "" {
 		algo = InferAlgorithmFromWire(sigHex, pubHex)
 	}
 	switch algo {
 	case AlgoEd25519:
-		return verifyEd25519Tx(txID, contractName, payload, sigHex, pubHex)
+		return verifyEd25519Tx(txID, contractName, payload, rwCanonical, sigHex, pubHex)
 	case AlgoMLDSA44:
-		return verifyMLDSA44Tx(txID, contractName, payload, sigHex, pubHex)
+		return verifyMLDSA44Tx(txID, contractName, payload, rwCanonical, sigHex, pubHex)
 	default:
 		return false
 	}
@@ -182,18 +189,18 @@ func ParseTrustedKey(raw string) (Algorithm, string, error) {
 	return AlgoEd25519, raw, nil
 }
 
-// SignTxMessage signs with Ed25519 (legacy helper).
+// SignTxMessage signs with Ed25519 (legacy helper; empty rw set).
 func SignTxMessage(txID, contractName string, payload []byte, privateKeyHex string) (string, error) {
 	s, err := newEd25519Signer(privateKeyHex)
 	if err != nil {
 		return "", err
 	}
-	return s.SignTx(txID, contractName, payload)
+	return s.SignTx(txID, contractName, payload, nil)
 }
 
-// VerifyTxMessage verifies with Ed25519 (legacy helper).
+// VerifyTxMessage verifies with Ed25519 (legacy helper; empty rw set).
 func VerifyTxMessage(txID, contractName string, payload []byte, signatureHex, publicKeyHex string) bool {
-	return verifyEd25519Tx(txID, contractName, payload, signatureHex, publicKeyHex)
+	return verifyEd25519Tx(txID, contractName, payload, nil, signatureHex, publicKeyHex)
 }
 
 // GenerateKeyPair generates Ed25519 keys (legacy helper).
