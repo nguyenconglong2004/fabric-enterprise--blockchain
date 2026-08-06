@@ -54,7 +54,6 @@ func verify_tx(ptr uint32, size uint32) uint32 {
 	if p.From == p.To {
 		return 0
 	}
-	// amount * quantity must fit int64
 	if p.Quantity > 0 && p.Amount > (1<<62)/p.Quantity {
 		return 0
 	}
@@ -69,12 +68,6 @@ func execute(ptr uint32, size uint32) uint32 {
 	raw := sdk.PayloadSlice(ptr, size)
 	var p Payload
 	if err := json.Unmarshal(raw, &p); err != nil {
-		return 0
-	}
-	if len(p.From) != 40 || len(p.To) != 40 || p.Amount <= 0 || p.Quantity <= 0 {
-		return 0
-	}
-	if p.Quantity > 0 && p.Amount > (1<<62)/p.Quantity {
 		return 0
 	}
 

@@ -78,7 +78,7 @@ func (s *APIServer) HandleBalanceStream(w http.ResponseWriter, r *http.Request) 
 		"discount": discount,
 	})
 
-	ticker := time.NewTicker(1 * time.Second)
+	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
 
 	var lastBal int64 = -1
@@ -114,8 +114,8 @@ func (s *APIServer) HandleBalanceStream(w http.ResponseWriter, r *http.Request) 
 			return
 		case <-ticker.C:
 			n++
-			// Re-emit absolute balance every 3s so late UI / missed events still sync.
-			push(n%3 == 0)
+			// Re-emit absolute balance every ~2s so late UI / missed events still sync.
+			push(n%4 == 0)
 		}
 	}
 }

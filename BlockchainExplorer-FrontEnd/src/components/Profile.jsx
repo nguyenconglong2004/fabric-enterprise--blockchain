@@ -134,7 +134,7 @@ const Profile = () => {
         <StatCard
           label="Balance"
           value={balance ?? '—'}
-          hint={streamStatus === 'connected' ? 'Live SSE · 1s poll' : streamStatus}
+          hint={streamStatus === 'connected' ? 'Live SSE · 0.5s poll' : streamStatus}
         />
         <StatCard
           label="Stream"

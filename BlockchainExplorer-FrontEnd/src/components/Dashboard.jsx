@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import Navbar from './Navbar';
 import Transactions from './Transactions';
 import Transfer from './Transfer';
@@ -15,21 +15,8 @@ import {
 } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
 
-function txBelongsToUser(tx, account) {
-    if (!account) return false;
-    const addr = String(account.address || '').toLowerCase();
-    const pub = String(account.pubkey || account.pubkey_hex || '').toLowerCase();
-    const from = String(
-        tx?.payload_decoded?.from || tx?.payloadData?.from || tx?.from || ''
-    ).toLowerCase();
-    const to = String(
-        tx?.payload_decoded?.to || tx?.payloadData?.to || tx?.to || ''
-    ).toLowerCase();
-    const clientPub = String(tx?.client_pubkey || '').toLowerCase();
-    if (addr && from && from === addr) return true;
-    if (addr && to && to === addr) return true;
-    if (pub && clientPub && clientPub === pub) return true;
-    return false;
+function sleep(ms) {
+    return new Promise((r) => setTimeout(r, ms));
 }
 
 const Dashboard = ({ section }) => {
@@ -42,6 +29,13 @@ const Dashboard = ({ section }) => {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
     const [streamStatus, setStreamStatus] = useState('connecting');
+
+    const accountRef = useRef(account);
+    const tokenRef = useRef(token);
+    useEffect(() => {
+        accountRef.current = account;
+        tokenRef.current = token;
+    }, [account, token]);
 
     const normalizeTx = (t) => ({
         transactionHash: t.transactionHash || t.hash || t.txid || t.TxID || t.id,
@@ -77,33 +71,13 @@ const Dashboard = ({ section }) => {
         };
     };
 
-    const upsertTx = (incoming) => {
-        if (account && !txBelongsToUser(incoming, account)) return;
-        const normalized = normalizeTx(incoming);
-        const incomingId = normalized.txid || normalized.transactionHash;
-        if (!incomingId) return;
-        setTransactions((prev) => {
-            const exists = prev.some((tx) => (tx.txid || tx.transactionHash) === incomingId);
-            if (exists) return prev;
-            return [normalized, ...prev].slice(0, 100);
-        });
-    };
-
-    const upsertBlock = (incoming) => {
-        const normalized = normalizeBlock(incoming);
-        if (!normalized?.hash) return;
-        setLatestBlocks((prev) => {
-            const exists = prev.some((b) => b.hash === normalized.hash);
-            if (exists) return prev;
-            return [normalized, ...prev].slice(0, 20);
-        });
-    };
-
-    const loadCommittedData = async () => {
-        const username = account?.username;
+    const loadCommittedData = useCallback(async () => {
+        const acc = accountRef.current;
+        const tok = tokenRef.current;
+        const username = acc?.username;
         const [txRes, blockRes] = await Promise.all([
             username
-                ? getCommittedTransactions(100, { username, token })
+                ? getCommittedTransactions(100, { username, token: tok })
                 : Promise.resolve({ transactions: [] }),
             getCommittedBlocks(20),
         ]);
@@ -112,16 +86,14 @@ const Dashboard = ({ section }) => {
 
         setTransactions(committedTxs.map(normalizeTx));
         setLatestBlocks(committedBlocks.map(normalizeBlock));
-    };
+        return committedTxs;
+    }, []);
 
     useEffect(() => {
         let mounted = true;
         (async () => {
             try {
-                const [res] = await Promise.all([
-                    getContracts(),
-                    loadCommittedData(),
-                ]);
+                const [res] = await Promise.all([getContracts(), loadCommittedData()]);
                 if (!mounted) return;
                 setContracts(res.contracts || []);
             } catch (e) {
@@ -132,7 +104,7 @@ const Dashboard = ({ section }) => {
         return () => {
             mounted = false;
         };
-    }, [account?.username, token]); // reload txs when login/logout
+    }, [account?.username, token, loadCommittedData]);
 
     useEffect(() => {
         let mounted = true;
@@ -164,36 +136,11 @@ const Dashboard = ({ section }) => {
                 setStreamStatus('connected');
             });
 
-            eventSource.addEventListener('ledger_update', async (evt) => {
+            // Full reload on tip change (incremental upsert was flaky on 1st commit).
+            eventSource.addEventListener('ledger_update', async () => {
                 if (!mounted) return;
                 try {
-                    const payload = JSON.parse(evt?.data || '{}');
-                    let usedIncremental = false;
-
-                    if (payload?.latest_block) {
-                        upsertBlock(payload.latest_block);
-                        const blockTxs = Array.isArray(payload.latest_block?.transactions)
-                            ? payload.latest_block.transactions
-                            : [];
-                        blockTxs.forEach((tx) => {
-                            const withBlockInfo = {
-                                ...tx,
-                                block_hash: payload.latest_block?.hash || payload.latest_block?.block_hash,
-                                block_number: payload.latest_block?.number ?? payload.latest_block?.block_number,
-                            };
-                            upsertTx(withBlockInfo);
-                        });
-                        usedIncremental = true;
-                    }
-                    if (payload?.latest_tx) {
-                        upsertTx(payload.latest_tx);
-                        usedIncremental = true;
-                    }
-
-                    if (!usedIncremental) {
-                        await loadCommittedData();
-                    }
-
+                    await loadCommittedData();
                     if (mounted) setError('');
                 } catch (e) {
                     if (!mounted) return;
@@ -228,7 +175,7 @@ const Dashboard = ({ section }) => {
             if (reconnectTimer) clearTimeout(reconnectTimer);
             if (eventSource) eventSource.close();
         };
-    }, []);
+    }, [loadCommittedData]);
 
     useEffect(() => {
         if (streamStatus !== 'disconnected') return undefined;
@@ -239,10 +186,10 @@ const Dashboard = ({ section }) => {
             } catch {
                 // Keep silent; primary error is already reflected by stream status.
             }
-        }, 3000);
+        }, 2000);
 
         return () => clearInterval(intervalId);
-    }, [streamStatus]);
+    }, [streamStatus, loadCommittedData]);
 
     const handleFetchBlock = async () => {
         if (!blockHash) return;
@@ -270,9 +217,20 @@ const Dashboard = ({ section }) => {
         }
     };
 
-    const addNewTransaction = async () => {
+    // Submit returns before commit — poll until txid appears (or ~8s timeout).
+    const addNewTransaction = async (pending) => {
+        const wantId = String(pending?.txid || pending?.transactionHash || '').trim();
         try {
-            await loadCommittedData();
+            for (let i = 0; i < 20; i++) {
+                const txs = await loadCommittedData();
+                if (!wantId) break;
+                const found = (txs || []).some((t) => {
+                    const id = String(t.txid || t.tx_id || t.TxID || '').trim();
+                    return id === wantId;
+                });
+                if (found) return;
+                await sleep(400);
+            }
         } catch (e) {
             setError(e.message || String(e));
         }

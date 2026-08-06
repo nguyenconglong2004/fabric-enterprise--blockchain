@@ -921,11 +921,27 @@ func (s *APIServer) HandleExplorerStream(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	ticker := time.NewTicker(2 * time.Second)
-	defer ticker.Stop()
-
+	// Seed tip silently so the first ledger_update is a real change (not the
+	// already-committed tip at connect time — that made the 1st user tx feel "cold").
 	lastBlockHash := ""
 	lastTxID := ""
+	if blocks, err := s.DB.ListCommittedBlocks(1); err == nil && len(blocks) > 0 {
+		if hash := fmt.Sprintf("%v", blocks[0]["hash"]); hash != "" && hash != "<nil>" {
+			lastBlockHash = hash
+		}
+	}
+	if txs, err := s.DB.ListCommittedTransactions(1, "", ""); err == nil && len(txs) > 0 {
+		txID := fmt.Sprintf("%v", txs[0]["txid"])
+		if txID == "" || txID == "<nil>" {
+			txID = fmt.Sprintf("%v", txs[0]["tx_id"])
+		}
+		if txID != "" && txID != "<nil>" {
+			lastTxID = txID
+		}
+	}
+
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
 
 	for {
 		select {
