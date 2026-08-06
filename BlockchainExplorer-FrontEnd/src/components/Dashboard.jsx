@@ -19,15 +19,15 @@ function txBelongsToUser(tx, account) {
     if (!account) return false;
     const addr = String(account.address || '').toLowerCase();
     const pub = String(account.pubkey || account.pubkey_hex || '').toLowerCase();
-    const from =
-        String(
-            tx?.payload_decoded?.from ||
-                tx?.payloadData?.from ||
-                tx?.from ||
-                ''
-        ).toLowerCase();
+    const from = String(
+        tx?.payload_decoded?.from || tx?.payloadData?.from || tx?.from || ''
+    ).toLowerCase();
+    const to = String(
+        tx?.payload_decoded?.to || tx?.payloadData?.to || tx?.to || ''
+    ).toLowerCase();
     const clientPub = String(tx?.client_pubkey || '').toLowerCase();
     if (addr && from && from === addr) return true;
+    if (addr && to && to === addr) return true;
     if (pub && clientPub && clientPub === pub) return true;
     return false;
 }

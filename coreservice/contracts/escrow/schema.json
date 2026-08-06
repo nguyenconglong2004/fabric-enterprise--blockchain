@@ -1,5 +1,5 @@
 {
-  "name": "example_asset",
+  "name": "escrow",
   "fields": [
     {
       "name": "id",
@@ -8,16 +8,16 @@
       "required": true
     },
     {
-      "name": "color",
-      "label": "Color",
-      "type": "string",
-      "required": true
-    },
-    {
       "name": "action",
       "label": "Action",
       "type": "string",
       "required": true
+    },
+    {
+      "name": "memo",
+      "label": "Memo",
+      "type": "string",
+      "required": false
     }
   ],
   "needs_from": true

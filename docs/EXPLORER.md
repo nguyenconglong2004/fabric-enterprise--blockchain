@@ -15,6 +15,6 @@ GET /api/transactions?limit=100&username=alice
 
 - Có session → username lấy từ session.
 - Không username/session → `[]`.
-- Khớp `payload_decoded.from` hoặc `client_pubkey` trong `tx_data`.
+- Khớp nếu address là **`payload_decoded.from` hoặc `payload_decoded.to`**, hoặc khớp `client_pubkey` trong `tx_data` (người submit).
 
-FE chỉ load khi đã login; SSE cũng bỏ tx không thuộc account.
+FE chỉ load khi đã login; SSE cũng giữ tx thuộc account (gửi **hoặc** nhận).

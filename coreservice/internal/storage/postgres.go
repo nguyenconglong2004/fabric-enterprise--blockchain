@@ -285,9 +285,10 @@ func (p *PostgresDB) ListCommittedBlocks(limit int) ([]map[string]interface{}, e
 }
 
 // ListCommittedTransactions returns latest committed transactions from commit_peer ledger.
-// When filterAddress / filterPubkey are set, only txs created by that user are returned
-// (payload_decoded.from or client_pubkey). Filtering is done in Go after a recent-window
-// fetch — JSONB predicates over the full table are too slow on large historical mirrors.
+// When filterAddress / filterPubkey are set, only txs involving that user are returned
+// (payload_decoded.from, payload_decoded.to, or client_pubkey). Filtering is done in Go
+// after a recent-window fetch — JSONB predicates over the full table are too slow on large
+// historical mirrors.
 func (p *PostgresDB) ListCommittedTransactions(limit int, filterAddress, filterPubkey string) ([]map[string]interface{}, error) {
 	if limit <= 0 {
 		limit = 50
@@ -367,6 +368,9 @@ func txMatchesUser(tx map[string]interface{}, addr, pubkey string) bool {
 	if addr != "" {
 		if decoded, ok := tx["payload_decoded"].(map[string]interface{}); ok {
 			if from, ok := decoded["from"].(string); ok && strings.ToLower(from) == addr {
+				return true
+			}
+			if to, ok := decoded["to"].(string); ok && strings.ToLower(to) == addr {
 				return true
 			}
 		}

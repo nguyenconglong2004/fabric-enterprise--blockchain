@@ -94,7 +94,7 @@ export POSTGRES_URL='postgres://fabric:fabric123@localhost:5432/blockchain?sslmo
 export GOMODCACHE="${GOMODCACHE:-$HOME/go/pkg/mod}"
 
 # WASM contracts (gồm transfer)
-cd coreservice/contracts && bash build_wasm.sh && cd ../..
+cd coreservice/contracts && bash build_wasm.sh transfer && cd ../..
 
 # Binaries (tuỳ chọn — có thể go run)
 cd coreservice && go build -o /tmp/coreservice ./cmd/node && cd ..
@@ -186,10 +186,11 @@ Log seed:
 Deploy contract thủ công (ví dụ):
 
 ```bash
-cd coreservice/contracts && ./build_wasm.sh
+cd coreservice/contracts && ./build_wasm.sh transfer
+
 curl -X POST http://127.0.0.1:8080/api/tx/deploy \
   -F 'contract_name=transfer' \
-  -F 'file=@transfer/my_contract.wasm'
+  -F 'file=@transfer/transfer.wasm'
 ```
 
 Nếu mint fail (`commit peer :8081`): tắt Core, mở lại peer metrics, restart Core.
@@ -273,7 +274,7 @@ Alice có thể gửi tới `floor(in × 1.1)` (công thức A).
 | FE `ECONNREFUSED :8080` | Core đang chờ prompt `CommitPeerP2P` — nhập addr |
 | Login 503 / no accounts | Postgres down hoặc thiếu bảng — chạy mục 1.2 |
 | Endorsement verify fail | Binary cũ/mới lệch RW set — restart **peer + core** cùng bản code mới |
-| `transfer` missing | `cd coreservice/contracts && bash build_wasm.sh` rồi restart Core |
+| `transfer` missing | `cd coreservice/contracts && ./build_wasm.sh transfer` rồi deploy |
 | init.sql không chạy | Volume cũ — dùng 1.2 hoặc `docker compose down -v` |
 
 ---

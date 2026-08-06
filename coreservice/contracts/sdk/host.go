@@ -6,7 +6,7 @@
 //	//export verify_tx   — validate payload / business rules (prefer no writes)
 //	//export execute     — side effects via PutState after verify_tx succeeds
 //
-// Build with: tinygo build -o my_contract.wasm -target wasi -no-debug -scheduler=none .
+// Build: cd coreservice/contracts && ./build_wasm.sh <name>  → <name>/<name>.wasm
 package sdk
 
 import "unsafe"

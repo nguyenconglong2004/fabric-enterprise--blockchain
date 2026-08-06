@@ -3,8 +3,9 @@ package core
 
 // ContractSchema định nghĩa cấu trúc của một smart contract
 type ContractSchema struct {
-	Name   string      `json:"name"`
-	Fields []FieldSpec `json:"fields"`
+	Name      string      `json:"name"`
+	Fields    []FieldSpec `json:"fields"`
+	NeedsFrom bool        `json:"needs_from,omitempty"` // inject/require payload.from (account model)
 }
 
 // FieldSpec định nghĩa một field trong contract
@@ -20,7 +21,8 @@ type FieldSpec struct {
 func GetContractSchema(contractName string) *ContractSchema {
 	schemas := map[string]*ContractSchema{
 		"example_asset": {
-			Name: "example_asset",
+			Name:      "example_asset",
+			NeedsFrom: true,
 			Fields: []FieldSpec{
 				{
 					Name:        "id",
@@ -115,7 +117,8 @@ func GetContractSchema(contractName string) *ContractSchema {
 			},
 		},
 		"transfer": {
-			Name: "transfer",
+			Name:      "transfer",
+			NeedsFrom: true,
 			// amount + to are common FE fields; schema only lists contract-specific params.
 			Fields: []FieldSpec{
 				{
@@ -128,7 +131,8 @@ func GetContractSchema(contractName string) *ContractSchema {
 			},
 		},
 		"double_credit": {
-			Name: "double_credit",
+			Name:      "double_credit",
+			NeedsFrom: true,
 			Fields: []FieldSpec{
 				{
 					Name:        "memo",
@@ -136,6 +140,66 @@ func GetContractSchema(contractName string) *ContractSchema {
 					Type:        "string",
 					Required:    false,
 					Placeholder: "alice -10 → bob +20",
+				},
+			},
+		},
+		"escrow": {
+			Name:      "escrow",
+			NeedsFrom: true,
+			Fields: []FieldSpec{
+				{
+					Name:        "id",
+					Label:       "Escrow ID",
+					Type:        "string",
+					Required:    true,
+					Placeholder: "deal-001",
+				},
+				{
+					Name:        "action",
+					Label:       "Action",
+					Type:        "string",
+					Required:    true,
+					Placeholder: "lock|release|refund",
+				},
+				{
+					Name:        "memo",
+					Label:       "Memo",
+					Type:        "string",
+					Required:    false,
+					Placeholder: "optional",
+				},
+			},
+		},
+		"loyalty_xfer": {
+			Name:      "loyalty_xfer",
+			NeedsFrom: true,
+			Fields: []FieldSpec{
+				{
+					Name:        "memo",
+					Label:       "Memo",
+					Type:        "string",
+					Required:    false,
+					Placeholder: "fee tiers + loyalty points",
+				},
+			},
+		},
+		"qty_credit": {
+			Name:      "qty_credit",
+			NeedsFrom: true,
+			Fields: []FieldSpec{
+				{
+					Name:        "quantity",
+					Label:       "Quantity",
+					Type:        "integer",
+					Required:    true,
+					Placeholder: "2",
+				},
+				{
+					Name:        "memo",
+					Label:       "Memo",
+					Type:        "string",
+					Required:    false,
+					Placeholder: "optional",
 				},
 			},
 		},
@@ -182,6 +246,18 @@ func ListAvailableContracts() []ContractSchema {
 		{
 			Name:   "double_credit",
 			Fields: GetContractSchema("double_credit").Fields,
+		},
+		{
+			Name:   "escrow",
+			Fields: GetContractSchema("escrow").Fields,
+		},
+		{
+			Name:   "loyalty_xfer",
+			Fields: GetContractSchema("loyalty_xfer").Fields,
+		},
+		{
+			Name:   "qty_credit",
+			Fields: GetContractSchema("qty_credit").Fields,
 		},
 	}
 }

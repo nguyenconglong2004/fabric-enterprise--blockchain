@@ -11,9 +11,6 @@ const TRANSFER_FALLBACK_FIELDS = [
     { name: 'memo', label: 'Memo', type: 'string', required: false, placeholder: 'optional note' },
 ];
 
-/** Contracts that move balance and require payload.from (session address). */
-const ACCOUNT_CONTRACTS = new Set(['transfer', 'example_asset', 'double_credit']);
-
 const DEMO_RECIPIENTS = [
     { user: 'alice', address: '499cd177642d01e80a116bf1cc59ad6d7b97ce95' },
     { user: 'bob', address: 'e63b92ab9b5c4e292581fecadd9a4b95864d4522' },
@@ -44,16 +41,16 @@ const Transfer = ({ addNewTransaction }) => {
     const [submitError, setSubmitError] = useState('');
     const [submitResult, setSubmitResult] = useState(null);
 
-    const needsAccount = ACCOUNT_CONTRACTS.has(selectedContract);
-    const isTransferLike =
-        selectedContract === 'transfer' || selectedContract === 'double_credit';
+    // From schema.needs_from (set by gen_schema when Payload has json:"from") — no name hardcode.
+    const needsAccount = Boolean(contractSchema?.needs_from);
 
     const customFields = useMemo(() => {
-        if (isTransferLike && (!contractSchema?.fields || contractSchema.fields.length === 0)) {
+        const fields = customFieldsFromSchema(contractSchema);
+        if (needsAccount && fields.length === 0) {
             return TRANSFER_FALLBACK_FIELDS;
         }
-        return customFieldsFromSchema(contractSchema);
-    }, [contractSchema, isTransferLike]);
+        return fields;
+    }, [contractSchema, needsAccount]);
 
     useEffect(() => {
         (async () => {
@@ -87,15 +84,10 @@ const Transfer = ({ addNewTransaction }) => {
                     customFieldsFromSchema(data.schema).forEach((field) => {
                         initialFields[field.name] = '';
                     });
-                    if (
-                        isTransferLike &&
-                        customFieldsFromSchema(data.schema).length === 0
-                    ) {
-                        TRANSFER_FALLBACK_FIELDS.forEach((f) => {
-                            initialFields[f.name] = '';
-                        });
-                    }
                     setContractFields(initialFields);
+                } else {
+                    setContractSchema(null);
+                    setContractFields({});
                 }
                 setRawPayloadJson('{}');
             } catch (err) {
@@ -277,11 +269,7 @@ const Transfer = ({ addNewTransaction }) => {
 
             {needsAccount && !isAuthenticated && (
                 <div className="rounded-xl border border-[rgba(245,197,66,0.3)] bg-[rgba(245,197,66,0.06)] px-3 py-2.5 text-sm text-[var(--warn)]">
-                    {selectedContract === 'double_credit'
-                        ? 'Sign in first — double_credit debits amount from you and credits amount×2 to the recipient.'
-                        : selectedContract === 'example_asset'
-                          ? 'Sign in first — example_asset stores the asset and moves balance (amount → to).'
-                          : 'Sign in first — this contract moves your account balance on-chain.'}
+                    Sign in first — this contract needs your account address as payload.from.
                 </div>
             )}
 
@@ -363,7 +351,7 @@ const Transfer = ({ addNewTransaction }) => {
                 </div>
             )}
 
-            {customFields.length === 0 && selectedContract && !isTransferLike && (
+            {customFields.length === 0 && selectedContract && !needsAccount && (
                 <div className="rounded-xl border border-[rgba(245,197,66,0.3)] bg-[rgba(245,197,66,0.06)] p-4">
                     <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-[var(--warn)]">
                         Extra payload JSON (optional)

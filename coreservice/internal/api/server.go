@@ -56,9 +56,10 @@ func (s *APIServer) enrichTransferPayload(r *http.Request, tx *core.Transaction)
 		tx.Vin = nil
 		tx.Vout = nil
 	}
-	needsFrom := tx.ContractName == "transfer" ||
-		tx.ContractName == "example_asset" ||
-		tx.ContractName == "double_credit"
+	needsFrom := false
+	if sch, _ := s.resolveContractSchema(tx.ContractName); sch != nil {
+		needsFrom = sch.NeedsFrom
+	}
 	if !needsFrom {
 		return nil
 	}
@@ -100,6 +101,7 @@ func (s *APIServer) resolveContractSchema(contractName string) (*core.ContractSc
 					if sch.Name == "" {
 						sch.Name = contractName
 					}
+					inheritNeedsFrom(&sch, contractName)
 					return &sch, "deployed"
 				}
 			}
@@ -113,11 +115,22 @@ func (s *APIServer) resolveContractSchema(contractName string) (*core.ContractSc
 				if sch.Name == "" {
 					sch.Name = contractName
 				}
+				inheritNeedsFrom(&sch, contractName)
 				return &sch, "deployed"
 			}
 		}
 	}
 	return core.GetContractSchema(contractName), "builtin"
+}
+
+// inheritNeedsFrom fills NeedsFrom from builtin when older deployed schemas omitted the flag.
+func inheritNeedsFrom(sch *core.ContractSchema, contractName string) {
+	if sch == nil || sch.NeedsFrom {
+		return
+	}
+	if b := core.GetContractSchema(contractName); b != nil && b.NeedsFrom {
+		sch.NeedsFrom = true
+	}
 }
 
 // HandleListContracts returns only contracts actually deployed in LevelDB
@@ -467,7 +480,7 @@ func (s *APIServer) HandleDeployExampleAsset(w http.ResponseWriter, r *http.Requ
 	}
 
 	contractName := "example_asset"
-	wasmPath := "../contracts/example_asset/my_contract.wasm"
+	wasmPath := "../contracts/example_asset/example_asset.wasm"
 
 	wasmBytes, err := os.ReadFile(wasmPath)
 	if err != nil {
@@ -627,7 +640,7 @@ func (s *APIServer) HandleListCommittedBlocks(w http.ResponseWriter, r *http.Req
 
 // HandleListCommittedTransactions returns latest committed transactions from DB.
 // GET /api/transactions?limit=50&username=alice
-// When username is set (or Bearer session), only that user's txs are returned.
+// When username is set (or Bearer session), txs where user is sender or recipient are returned.
 func (s *APIServer) HandleListCommittedTransactions(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Only GET supported", http.StatusMethodNotAllowed)

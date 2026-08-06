@@ -2,6 +2,9 @@
 // for the Explorer (ContractSchema wire format). Run via contracts/build_wasm.sh.
 //
 // Usage: go run ./cmd/gen_schema -dir contracts/transfer
+//
+// If Payload has json:"from", schema gets "needs_from": true so FE/Core inject
+// session address without hard-coding contract names.
 package main
 
 import (
@@ -30,8 +33,9 @@ type fieldSpec struct {
 }
 
 type contractSchema struct {
-	Name   string      `json:"name"`
-	Fields []fieldSpec `json:"fields"`
+	Name      string      `json:"name"`
+	Fields    []fieldSpec `json:"fields"`
+	NeedsFrom bool        `json:"needs_from,omitempty"`
 }
 
 func main() {
@@ -55,12 +59,12 @@ func main() {
 	}
 
 	mainGo := filepath.Join(contractDir, "main.go")
-	fields, err := payloadFieldsFromMain(mainGo)
+	fields, needsFrom, err := payloadFieldsFromMain(mainGo)
 	if err != nil {
 		fatal(err)
 	}
 
-	sch := contractSchema{Name: contractName, Fields: fields}
+	sch := contractSchema{Name: contractName, Fields: fields, NeedsFrom: needsFrom}
 	raw, err := json.MarshalIndent(sch, "", "  ")
 	if err != nil {
 		fatal(err)
@@ -74,7 +78,7 @@ func main() {
 	if err := os.WriteFile(outPath, raw, 0644); err != nil {
 		fatal(err)
 	}
-	fmt.Printf("wrote %s (%d fields)\n", outPath, len(fields))
+	fmt.Printf("wrote %s (%d fields, needs_from=%v)\n", outPath, len(fields), needsFrom)
 }
 
 func fatal(err error) {
@@ -82,11 +86,11 @@ func fatal(err error) {
 	os.Exit(1)
 }
 
-func payloadFieldsFromMain(mainGoPath string) ([]fieldSpec, error) {
+func payloadFieldsFromMain(mainGoPath string) ([]fieldSpec, bool, error) {
 	fset := token.NewFileSet()
 	f, err := parser.ParseFile(fset, mainGoPath, nil, parser.ParseComments)
 	if err != nil {
-		return nil, fmt.Errorf("parse %s: %w", mainGoPath, err)
+		return nil, false, fmt.Errorf("parse %s: %w", mainGoPath, err)
 	}
 
 	var payload *ast.StructType
@@ -103,15 +107,19 @@ func payloadFieldsFromMain(mainGoPath string) ([]fieldSpec, error) {
 		return false
 	})
 	if payload == nil {
-		return nil, fmt.Errorf("type Payload not found in %s", mainGoPath)
+		return nil, false, fmt.Errorf("type Payload not found in %s", mainGoPath)
 	}
 
 	var out []fieldSpec
+	needsFrom := false
 	for _, fld := range payload.Fields.List {
 		if len(fld.Names) == 0 {
 			continue // embedded
 		}
 		jsonName, optional, label, skip := parseFieldTags(fld.Tag)
+		if jsonName == "from" {
+			needsFrom = true
+		}
 		if skip || jsonName == "" || jsonName == "-" {
 			continue
 		}
@@ -132,7 +140,7 @@ func payloadFieldsFromMain(mainGoPath string) ([]fieldSpec, error) {
 			Required: !optional,
 		})
 	}
-	return out, nil
+	return out, needsFrom, nil
 }
 
 func parseFieldTags(tag *ast.BasicLit) (jsonName string, optional bool, label string, skip bool) {

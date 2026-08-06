@@ -1,6 +1,12 @@
 {
-  "name": "transfer",
+  "name": "qty_credit",
   "fields": [
+    {
+      "name": "quantity",
+      "label": "Quantity",
+      "type": "integer",
+      "required": true
+    },
     {
       "name": "memo",
       "label": "Memo",
